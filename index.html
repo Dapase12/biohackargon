@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#090D16" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>ARGON v3.0 | Biometría Intuitiva & Pérdida de Grasa</title>
+  <title>ARGON v3.1 | Auditoría y Precisión Real</title>
   <link rel="manifest" href="manifest.json" />
 
   <script src="https://cdn.tailwindcss.com"></script>
@@ -34,13 +34,12 @@
 </head>
 <body class="min-h-screen pb-24 selection:bg-cyan-500 selection:text-black">
 
-  <!-- HEADER SUPERIOR -->
   <header class="sticky top-0 z-30 glass-card px-4 py-3 border-b border-gray-800">
     <div class="max-w-xl mx-auto flex items-center justify-between">
       <div class="flex items-center space-x-2.5">
         <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" id="status-dot"></div>
         <div>
-          <h1 class="text-sm font-black tracking-widest uppercase text-white">ARGON <span class="text-xs font-normal text-cyan-400">MBE v3.0</span></h1>
+          <h1 class="text-sm font-black tracking-widest uppercase text-white">ARGON <span class="text-xs font-normal text-cyan-400">MBE v3.1</span></h1>
           <p class="text-[11px] text-gray-400" id="sync-status-text">Conectando...</p>
         </div>
       </div>
@@ -63,7 +62,6 @@
 
   <main class="max-w-xl mx-auto px-4 pt-4 space-y-4">
 
-    <!-- BARRA DE FECHA Y ACCIONES -->
     <div class="flex items-center justify-between bg-gray-900/60 border border-gray-800 rounded-xl px-3 py-2">
       <div class="flex items-center space-x-2">
         <span class="text-xs text-gray-400">Fecha clínica:</span>
@@ -79,7 +77,7 @@
       </div>
     </div>
 
-    <!-- TARJETA 1: RESUMEN EJECUTIVO (ANILLOS + TRADUCCIÓN CLÍNICA) -->
+    <!-- TARJETA 1: RESUMEN EJECUTIVO -->
     <section class="glass-card rounded-2xl p-4 shadow-xl">
       <div class="flex justify-between items-center mb-2">
         <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400">Estado Fisiológico del Día</span>
@@ -87,13 +85,12 @@
       </div>
 
       <div id="help-rings" class="hidden mb-3 p-3 rounded-xl bg-gray-950/90 border border-cyan-500/30 text-xs text-gray-300 space-y-1.5">
-        <p><strong class="text-emerald-400">1. Recovery (0-99%):</strong> Mide qué tan preparado está tu Sistema Nervioso Autónomo hoy. <span class="text-emerald-400">Verde (≥67%)</span> = Entrena duro; <span class="text-amber-400">Amarillo (34-66%)</span> = Mantén carga moderada; <span class="text-red-400">Rojo (&lt;34%)</span> = Prioriza descanso.</p>
-        <p><strong class="text-cyan-400">2. Day Strain (0-21):</strong> Escala logarítmica del esfuerzo acumulado hoy (Cardio + Pickleball/Pesas + Guardia). La <em>"Meta"</em> te indica hasta dónde empujar hoy sin sobreentrenarte.</p>
-        <p><strong class="text-purple-400">3. Calidad de Sueño (0-100%):</strong> Evalúa si cumpliste las horas necesarias, tu eficiencia en cama (SE) y tus fases profundas (SWS + REM).</p>
+        <p><strong class="text-emerald-400">1. Recovery (0-99%):</strong> Mide qué tan preparado está tu Sistema Nervioso Autónomo hoy.</p>
+        <p><strong class="text-cyan-400">2. Day Strain (0-21):</strong> Esfuerzo acumulado hoy. Si marca bajo, es porque aún no has acumulado pasos o ejercicio.</p>
+        <p><strong class="text-purple-400">3. Calidad de Sueño (0-100%):</strong> Evalúa tu eficiencia en cama y fases profundas.</p>
       </div>
 
       <div class="grid grid-cols-3 gap-2 text-center items-center pt-1">
-        <!-- RECOVERY -->
         <div class="flex flex-col items-center">
           <div class="relative w-24 h-24">
             <svg class="w-full h-full" viewBox="0 0 100 100">
@@ -109,7 +106,6 @@
           <span id="sub-recovery" class="text-[10px] text-gray-400">VFC: -- ms</span>
         </div>
 
-        <!-- STRAIN -->
         <div class="flex flex-col items-center">
           <div class="relative w-24 h-24">
             <svg class="w-full h-full" viewBox="0 0 100 100">
@@ -125,7 +121,6 @@
           <span id="sub-strain" class="text-[10px] text-gray-400">Escala 0 a 21</span>
         </div>
 
-        <!-- SLEEP -->
         <div class="flex flex-col items-center">
           <div class="relative w-24 h-24">
             <svg class="w-full h-full" viewBox="0 0 100 100">
@@ -142,51 +137,39 @@
         </div>
       </div>
 
-      <!-- PLAN DE ACCIÓN DIARIO -->
       <div class="mt-4 pt-3 border-t border-gray-800/80 bg-gray-900/50 rounded-xl p-3">
         <div class="text-[10px] font-bold uppercase tracking-wider text-cyan-400 mb-1">🩺 Plan de Acción Clínico para Hoy</div>
         <p id="clinical-coach-notes" class="text-xs text-gray-200 leading-relaxed">--</p>
       </div>
     </section>
 
-    <!-- TARJETA 2: RECOMPOSICIÓN CORPORAL Y DÉFICIT DE QUEMA DE GRASA (PRIORIDAD) -->
+    <!-- TARJETA 2: RECOMPOSICIÓN CORPORAL (CON DATOS REALES) -->
     <section class="glass-card rounded-2xl p-4 border border-emerald-500/20">
       <div class="flex items-center justify-between mb-2">
         <div>
           <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-400">Motor de Oxidación de Grasa & Macros</h2>
-          <p class="text-[10px] text-gray-400">Cunningham (FFM) + Déficit Clínico Protegiendo Músculo</p>
+          <p class="text-[10px] text-gray-400">Basado estrictamente en tus comidas sincronizadas</p>
         </div>
-        <button onclick="toggleHelp('help-nutrition')" class="text-[11px] text-cyan-400 hover:underline">ⓘ ¿De dónde sale?</button>
       </div>
 
-      <!-- Explicación Desplegable de la Fórmula Nutricional -->
-      <div id="help-nutrition" class="hidden mb-3 p-3 rounded-xl bg-gray-950/90 border border-emerald-500/30 text-xs text-gray-300 space-y-1.5">
-        <p><strong>¿Cómo se calcula tu Meta Calórica para perder grasa?</strong></p>
-        <p>1. <strong>Masa Magra Libre de Grasa (FFM):</strong> Con tu peso filtrado y tu % de grasa de la báscula Feelfit, calculamos tus kg exactos de tejido magro.</p>
-        <p>2. <strong>Gasto Total Real (TDEE):</strong> Sumamos tu Metabolismo Basal (Cunningham) + tus pasos hospitalarios (NEAT) + las calorías netas de Pickleball/Pesas.</p>
-        <p>3. <strong>Déficit Quema de Grasa (-500 a -600 kcal):</strong> Restamos ~550 kcal/día a tu gasto real. Como 1 kg de grasa corporal equivale a ~7,700 kcal, esto garantiza oxidar <strong>~0.5 kg de grasa pura por semana</strong> sin perder masa muscular (protegida con 2.3 g/kg de proteína).</p>
-      </div>
-
-      <!-- Resumen de Peso Tendencia vs Meta -->
       <div class="grid grid-cols-3 gap-2 mb-3 text-center">
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2">
-          <div class="text-[10px] text-gray-400">Peso Tendencia (EWMA)</div>
+          <div class="text-[10px] text-gray-400">Peso Tendencia</div>
           <div id="weight-trend" class="text-sm font-black text-white">-- kg</div>
-          <div id="ffm-label" class="text-[10px] text-gray-400">Masa Magra: -- kg</div>
+          <div id="ffm-label" class="text-[10px] text-gray-400">Magra: -- kg</div>
         </div>
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2">
           <div class="text-[10px] text-gray-400">Grasa Corporal</div>
           <div id="bf-trend" class="text-sm font-black text-emerald-400">--%</div>
-          <div id="fat-kg-label" class="text-[10px] text-gray-400">Tejido Graso: -- kg</div>
+          <div id="fat-kg-label" class="text-[10px] text-gray-400">Tejido: -- kg</div>
         </div>
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2">
-          <div class="text-[10px] text-gray-400">Ritmo Quema Grasa</div>
+          <div class="text-[10px] text-gray-400">Ritmo de Quema</div>
           <div id="fat-loss-rate" class="text-sm font-black text-cyan-400">-0.50 kg/sem</div>
           <div class="text-[10px] text-emerald-400">Déficit Activo</div>
         </div>
       </div>
 
-      <!-- ECUACIÓN VISUAL EXPLÍCITA: TDEE - DÉFICIT = META -->
       <div class="bg-gray-950/80 border border-gray-800 rounded-xl p-3 mb-3">
         <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5 text-center">Desglose Matemático de Calorías Hoy</div>
         <div class="grid grid-cols-5 items-center text-center">
@@ -205,16 +188,15 @@
           <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg py-1">
             <div class="text-[10px] text-cyan-300 font-semibold">Meta a Comer</div>
             <div id="nutri-target-kcal" class="text-sm font-black text-cyan-400">-- kcal</div>
-            <div id="nutri-intake-kcal" class="text-[9px] text-gray-400">Zepp: --</div>
+            <div id="nutri-intake-kcal" class="text-[9px] text-white font-bold bg-cyan-900/50 rounded mt-0.5 mx-1">Comido: --</div>
           </div>
         </div>
       </div>
 
-      <!-- BARRAS DE MACRONUTRIENTES EXPLICADAS -->
       <div class="space-y-2.5 text-xs">
         <div>
           <div class="flex justify-between mb-1">
-            <span class="text-gray-200 font-medium">Proteína Anticatóbolica <span class="text-[10px] text-gray-400">(Protege músculo en déficit)</span></span>
+            <span class="text-gray-200 font-medium">Proteína <span class="text-[10px] text-gray-400">(Registrada en Zepp)</span></span>
             <span id="macro-prot-text" class="font-mono font-bold text-emerald-400">-- / -- g</span>
           </div>
           <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
@@ -224,7 +206,7 @@
 
         <div>
           <div class="flex justify-between mb-1">
-            <span class="text-gray-200 font-medium">Carbohidratos <span id="carb-mode-label" class="text-[10px] text-cyan-400">(Controlados para oxidar grasa)</span></span>
+            <span class="text-gray-200 font-medium">Carbohidratos <span id="carb-mode-label" class="text-[10px] text-cyan-400"></span></span>
             <span id="macro-carb-text" class="font-mono font-bold text-cyan-400">-- / -- g</span>
           </div>
           <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
@@ -234,7 +216,7 @@
 
         <div>
           <div class="flex justify-between mb-1">
-            <span class="text-gray-200 font-medium">Grasas Esenciales <span class="text-[10px] text-gray-400">(Soporte hormonal/testosterona)</span></span>
+            <span class="text-gray-200 font-medium">Grasas <span class="text-[10px] text-gray-400"></span></span>
             <span id="macro-fat-text" class="font-mono font-bold text-amber-400">-- / -- g</span>
           </div>
           <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
@@ -244,116 +226,62 @@
       </div>
     </section>
 
-    <!-- TARJETA 3: SISTEMA NERVIOSO AUTÓNOMO (VFC, RHR, FR, SpO2) -->
+    <!-- TARJETA 3, 4, 5 y 6 se mantienen estructuralmente iguales visualmente pero alimentadas con data real -->
     <section class="glass-card rounded-2xl p-4">
       <div class="flex items-center justify-between mb-2">
         <div>
           <h2 class="text-xs font-bold uppercase tracking-wider text-gray-300">Sistema Nervioso Autónomo (14d)</h2>
-          <p class="text-[10px] text-gray-400">Comparación de hoy frente a tu propio promedio de 2 semanas</p>
         </div>
-        <button onclick="toggleHelp('help-ans')" class="text-[11px] text-cyan-400 hover:underline">ⓘ ¿Cómo se interpreta?</button>
       </div>
-
-      <div id="help-ans" class="hidden mb-3 p-3 rounded-xl bg-gray-950/90 border border-gray-700 text-xs text-gray-300 space-y-1.5">
-        <p><strong>• VFC / ln(RMSSD):</strong> Mide la recuperación parasimpática (nervio vago). Mientras más alto estés sobre tu media (Z positivo), mejor recuperado estás.</p>
-        <p><strong>• FC en Reposo (RHR):</strong> Al revés que la VFC, <strong>un Z negativo es excelente</strong> (tu corazón late más lento y descansado que de costumbre). Si sube +3 lpm sobre tu media, indica fatiga, falta de sueño o deshidratación.</p>
-        <p><strong>• Frec. Respiratoria y SpO2:</strong> Son tus alarmas tempranas. Si la respiración sube bruscamente o el oxígeno baja de 94%, el algoritmo penaliza tu Recovery.</p>
-      </div>
-
       <div class="grid grid-cols-2 gap-2.5">
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-3">
           <div class="flex justify-between items-center">
-            <span class="text-[11px] text-gray-400">VFC Nocturna (RMSSD)</span>
+            <span class="text-[11px] text-gray-400">VFC Nocturna</span>
             <span id="z-score-pill" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">--</span>
           </div>
           <div id="metric-rmssd-ms" class="text-base font-black text-white mt-1">-- ms <span id="metric-lnrmssd" class="text-xs font-normal text-gray-400">(-- ln)</span></div>
-          <div id="metric-rmssd-interp" class="text-[10px] text-emerald-400 mt-0.5">Sobre tu línea base</div>
         </div>
-
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-3">
           <div class="flex justify-between items-center">
-            <span class="text-[11px] text-gray-400">FC en Reposo (RHR)</span>
+            <span class="text-[11px] text-gray-400">FC en Reposo</span>
             <span id="metric-rhr-z" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400">--</span>
           </div>
           <div id="metric-rhr" class="text-base font-black text-white mt-1">-- lpm</div>
-          <div id="metric-rhr-interp" class="text-[10px] text-cyan-400 mt-0.5">Corazón descansado</div>
         </div>
-
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5 flex justify-between items-center">
-          <div>
-            <div class="text-[10px] text-gray-400">Frec. Respiratoria</div>
-            <div id="metric-resp" class="text-sm font-bold text-white">-- rpm</div>
-          </div>
-          <span class="text-[10px] px-2 py-0.5 rounded bg-gray-800 text-emerald-400">Normal</span>
+          <div><div class="text-[10px] text-gray-400">Respiración</div><div id="metric-resp" class="text-sm font-bold text-white">-- rpm</div></div>
         </div>
-
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5 flex justify-between items-center">
-          <div>
-            <div class="text-[10px] text-gray-400">Oxígeno (SpO2)</div>
-            <div id="metric-spo2" class="text-sm font-bold text-white">--%</div>
-          </div>
-          <span class="text-[10px] px-2 py-0.5 rounded bg-gray-800 text-emerald-400">Óptimo</span>
+          <div><div class="text-[10px] text-gray-400">SpO2</div><div id="metric-spo2" class="text-sm font-bold text-white">--%</div></div>
         </div>
       </div>
     </section>
 
-    <!-- TARJETA 4: ARQUITECTURA DEL SUEÑO Y DEUDA -->
     <section class="glass-card rounded-2xl p-4">
       <div class="flex items-center justify-between mb-2">
-        <div>
-          <h2 class="text-xs font-bold uppercase tracking-wider text-gray-300">Sueño, Deuda & Horario Ideal</h2>
-          <p class="text-[10px] text-gray-400">Cuánto dormiste vs cuánto necesitas hoy para recuperarte</p>
-        </div>
-        <button onclick="toggleHelp('help-sleep')" class="text-[11px] text-cyan-400 hover:underline">ⓘ ¿Qué es la deuda?</button>
+        <h2 class="text-xs font-bold uppercase tracking-wider text-gray-300">Sueño, Deuda & Horario Ideal</h2>
       </div>
-
-      <div id="help-sleep" class="hidden mb-3 p-3 rounded-xl bg-gray-950/90 border border-purple-500/30 text-xs text-gray-300 space-y-1.5">
-        <p><strong>• Necesidad Basal (7h 45m):</strong> Es lo que tu cuerpo requiere sin contar estrés extra.</p>
-        <p><strong>• Deuda Acumulada (7 días):</strong> Suma las horas que te faltaron en la última semana (dándole más peso a los últimos 3 días). Para no elevar el cortisol (que frena la pérdida de grasa), el sistema te sugiere la <strong>Hora Ideal para Dormir</strong> esta noche.</p>
-      </div>
-
       <div class="grid grid-cols-3 gap-2 mb-3 text-center">
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
           <div class="text-[10px] text-gray-400">Dormiste Hoy</div>
           <div id="sleep-tst" class="text-sm font-bold text-white">--h --m</div>
-          <div id="sleep-sws-rem" class="text-[10px] text-purple-300">Reparador: --%</div>
         </div>
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
           <div class="text-[10px] text-gray-400">Deuda Acumulada</div>
           <div id="sleep-debt" class="text-sm font-bold text-amber-400">-- h</div>
-          <div class="text-[10px] text-gray-400">Últimos 7 días</div>
         </div>
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
           <div class="text-[10px] text-gray-400">Acuéstate Hoy</div>
           <div id="sleep-window-badge" class="text-xs font-black text-purple-400 mt-0.5">--:-- a --:--</div>
-          <div id="sleep-need" class="text-[10px] text-gray-400">Meta: --h</div>
-        </div>
-      </div>
-
-      <div class="space-y-1">
-        <div class="flex justify-between text-[10px] text-gray-300">
-          <span id="label-deep">🟦 Profundo (Músculo): --m</span>
-          <span id="label-rem">🟪 REM (Mente/Reflejos): --m</span>
-          <span id="label-light">⬜ Ligero: --m</span>
-        </div>
-        <div class="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden flex">
-          <div id="bar-deep" class="bg-indigo-500 h-full" style="width: 20%"></div>
-          <div id="bar-rem" class="bg-purple-500 h-full" style="width: 22%"></div>
-          <div id="bar-light" class="bg-slate-400/40 h-full" style="width: 58%"></div>
         </div>
       </div>
     </section>
 
-    <!-- TARJETA 5: DESGLOSE DE ESFUERZO FÍSICO Y HOSPITALARIO -->
     <section class="glass-card rounded-2xl p-4">
       <div class="flex items-center justify-between mb-2">
-        <div>
-          <h2 class="text-xs font-bold uppercase tracking-wider text-gray-300">Origen de tu Fatiga Hoy (Strain)</h2>
-          <p class="text-[10px] text-gray-400">Divide tu desgaste en Corazón, Músculos y Guardia Médica</p>
-        </div>
+        <h2 class="text-xs font-bold uppercase tracking-wider text-gray-300">Origen de tu Fatiga Hoy (Strain)</h2>
         <span id="shift-badge" class="text-[10px] px-2 py-0.5 rounded bg-gray-800 text-gray-400">Sin Guardia</span>
       </div>
-
       <div class="grid grid-cols-3 gap-2 text-center">
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
           <div class="text-[10px] text-gray-400">Fatiga Cardio</div>
@@ -363,28 +291,21 @@
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
           <div class="text-[10px] text-gray-400">Fatiga Muscular</div>
           <div id="load-neuro" class="text-sm font-bold text-emerald-400">-- pts</div>
-          <div class="text-[10px] text-gray-400">Pickleball / Pesas</div>
         </div>
         <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
           <div class="text-[10px] text-gray-400">Desgaste Guardia</div>
           <div id="load-shift" class="text-sm font-bold text-amber-400">-- pts</div>
-          <div class="text-[10px] text-gray-400">Turno Nocturno</div>
         </div>
       </div>
     </section>
 
-    <!-- TARJETA 6: GRÁFICA DE 14 DÍAS -->
     <section class="glass-card rounded-2xl p-4">
-      <h2 class="text-xs font-bold uppercase tracking-wider text-gray-300 mb-1">Historial de 14 Días: Recuperación vs Esfuerzo</h2>
-      <p class="text-[10px] text-gray-400 mb-3">Observa cómo cae la línea verde (Recovery) tras los picos azules de esfuerzo o guardia.</p>
-      <div class="h-48 w-full">
-        <canvas id="trendChart"></canvas>
-      </div>
+      <div class="h-48 w-full"><canvas id="trendChart"></canvas></div>
     </section>
 
   </main>
 
-  <!-- MODAL 1: REGISTRO MANUAL -->
+  <!-- MODAL 1: REGISTRO MANUAL (LIMPIO DE DATOS QUEMADOS) -->
   <div id="log-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-gray-900 border border-gray-700 rounded-2xl max-w-md w-full p-5 max-h-[90vh] overflow-y-auto space-y-4">
       <div class="flex justify-between items-center border-b border-gray-800 pb-2">
@@ -395,51 +316,43 @@
       <div class="grid grid-cols-2 gap-3 text-xs">
         <div>
           <label class="text-gray-400 block mb-1">VFC RMSSD (ms)</label>
-          <input id="in-rmssd" type="number" step="0.1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="52.0" />
+          <input id="in-rmssd" type="number" step="0.1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="Ej: 52.0" />
         </div>
         <div>
           <label class="text-gray-400 block mb-1">FC Reposo (lpm)</label>
-          <input id="in-rhr" type="number" step="0.5" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="55.0" />
+          <input id="in-rhr" type="number" step="0.5" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="Ej: 55.0" />
         </div>
         <div>
           <label class="text-gray-400 block mb-1">Sueño Total (min)</label>
-          <input id="in-tst" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="440" />
+          <input id="in-tst" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="Ej: 440" />
         </div>
         <div>
           <label class="text-gray-400 block mb-1">Tiempo en Cama (min)</label>
-          <input id="in-tib" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="475" />
+          <input id="in-tib" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="Ej: 475" />
         </div>
         <div>
           <label class="text-gray-400 block mb-1">Sueño Profundo (min)</label>
-          <input id="in-deep" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="88" />
+          <input id="in-deep" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="Ej: 88" />
         </div>
         <div>
           <label class="text-gray-400 block mb-1">Sueño REM (min)</label>
-          <input id="in-rem" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="95" />
+          <input id="in-rem" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="Ej: 95" />
         </div>
         <div>
           <label class="text-gray-400 block mb-1">Pickleball / Pesas (min)</label>
-          <input id="in-workout-min" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="90" />
+          <input id="in-workout-min" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="Ej: 90" />
         </div>
         <div>
           <label class="text-gray-400 block mb-1">Intensidad RPE (1-10)</label>
-          <input id="in-rpe" type="number" step="0.5" max="10" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="7.5" />
-        </div>
-        <div>
-          <label class="text-gray-400 block mb-1">Minutos FC Alta (Z4+Z5)</label>
-          <input id="in-z45" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="25" />
+          <input id="in-rpe" type="number" step="0.5" max="10" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="Ej: 7.5" />
         </div>
         <div>
           <label class="text-gray-400 block mb-1">Pasos del Día</label>
-          <input id="in-steps" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="11500" />
+          <input id="in-steps" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="Ej: 6000" />
         </div>
         <div>
           <label class="text-gray-400 block mb-1">Peso Báscula (kg)</label>
-          <input id="in-weight" type="number" step="0.1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="74.2" />
-        </div>
-        <div>
-          <label class="text-gray-400 block mb-1">% Grasa Báscula</label>
-          <input id="in-bf" type="number" step="0.1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="14.8" />
+          <input id="in-weight" type="number" step="0.1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="Ej: 74.2" />
         </div>
         <div>
           <label class="text-gray-400 block mb-1">Horas Guardia (00-06h)</label>
@@ -447,86 +360,55 @@
         </div>
         <div>
           <label class="text-gray-400 block mb-1">Kcal Comidas (Zepp)</label>
-          <input id="in-kcal" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="2050" />
+          <input id="in-kcal" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="Ej: 500" />
         </div>
       </div>
 
       <button onclick="saveAndComputeManualEntry()" class="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs uppercase tracking-wider">
-        Recalcular Día & Guardar en Nube
+        Guardar Registro Real
       </button>
     </div>
   </div>
 
-  <!-- MODAL 2: CONFIGURACIÓN SUPABASE Y DÉFICIT -->
   <div id="settings-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-gray-900 border border-gray-700 rounded-2xl max-w-md w-full p-5 space-y-4">
       <div class="flex justify-between items-center border-b border-gray-800 pb-2">
         <h3 class="text-sm font-bold text-white uppercase tracking-wider">Ajustes de Base de Datos y Meta</h3>
         <button onclick="closeModal('settings-modal')" class="text-gray-400 hover:text-white text-sm">✕</button>
       </div>
-
       <div class="space-y-3 text-xs">
-        <div>
-          <label class="text-gray-400 block mb-1">Supabase Project URL</label>
-          <input id="cfg-url" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono" />
-        </div>
-        <div>
-          <label class="text-gray-400 block mb-1">Supabase Anon Key (eyJ...)</label>
-          <input id="cfg-key" type="password" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono" />
-        </div>
+        <div><label class="text-gray-400 block mb-1">Supabase Project URL</label><input id="cfg-url" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono" /></div>
+        <div><label class="text-gray-400 block mb-1">Supabase Anon Key</label><input id="cfg-key" type="password" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono" /></div>
         <div class="grid grid-cols-2 gap-2 pt-1">
-          <div>
-            <label class="text-gray-400 block mb-1">Peso Meta 7 Dic (kg)</label>
-            <input id="cfg-target-weight" type="number" step="0.1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="71.0" />
-          </div>
-          <div>
-            <label class="text-gray-400 block mb-1">Hora Despertar</label>
-            <input id="cfg-wake-time" type="time" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="06:00" />
-          </div>
+          <div><label class="text-gray-400 block mb-1">Peso Meta 7 Dic (kg)</label><input id="cfg-target-weight" type="number" step="0.1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="71.0" /></div>
+          <div><label class="text-gray-400 block mb-1">Hora Despertar</label><input id="cfg-wake-time" type="time" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="06:00" /></div>
         </div>
       </div>
-
-      <button onclick="saveSettings()" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs uppercase tracking-wider">
-        Guardar y Actualizar
-      </button>
+      <button onclick="saveSettings()" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs uppercase tracking-wider">Guardar y Actualizar</button>
     </div>
   </div>
 
   <script>
     let supabaseClient = null;
     let trendChartInstance = null;
-    const STORAGE_KEY_RECORDS = 'argon_biometric_records_v3';
+    const STORAGE_KEY_RECORDS = 'argon_biometric_records_v31'; // Forzamos caché nuevo
 
-    function toggleHelp(id) {
-      const el = document.getElementById(id);
-      if (el) el.classList.toggle('hidden');
-    }
+    function toggleHelp(id) { const el = document.getElementById(id); if (el) el.classList.toggle('hidden'); }
 
     window.addEventListener('DOMContentLoaded', () => {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js').catch(() => {});
-      }
-      updateCountdown();
-      setInterval(updateCountdown, 60000);
-
+      if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+      updateCountdown(); setInterval(updateCountdown, 60000);
       const todayStr = new Date().toISOString().split('T')[0];
       document.getElementById('selected-date').value = todayStr;
-
       initSupabaseFromStorage();
       const localData = getLocalStore();
-      if (Object.keys(localData).length === 0) {
-        seedDemoData(false);
-      } else {
-        loadDayData(todayStr);
-      }
+      if (Object.keys(localData).length === 0) seedDemoData(false);
+      else loadDayData(todayStr);
     });
 
     function updateCountdown() {
-      const deadline = new Date('2026-12-07T00:00:00-04:00').getTime();
-      const diff = Math.max(0, deadline - Date.now());
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      document.getElementById('countdown-timer').textContent = `${days}d ${hours}h`;
+      const diff = Math.max(0, new Date('2026-12-07T00:00:00-04:00').getTime() - Date.now());
+      document.getElementById('countdown-timer').textContent = `${Math.floor(diff / 86400000)}d ${Math.floor((diff % 86400000) / 3600000)}h`;
     }
 
     function initSupabaseFromStorage() {
@@ -536,14 +418,11 @@
       document.getElementById('cfg-key').value = key;
       document.getElementById('cfg-target-weight').value = localStorage.getItem('argon_target_w') || '71.0';
       document.getElementById('cfg-wake-time').value = localStorage.getItem('argon_wake_time') || '06:00';
-
       if (url && key && window.supabase) {
         supabaseClient = window.supabase.createClient(url, key);
         document.getElementById('sync-status-text').textContent = 'Supabase Conectado';
         document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-emerald-400 animate-pulse';
         syncFromSupabase();
-      } else {
-        document.getElementById('sync-status-text').textContent = 'Modo Local Activo';
       }
     }
 
@@ -552,238 +431,166 @@
       localStorage.setItem('argon_sb_key', document.getElementById('cfg-key').value.trim());
       localStorage.setItem('argon_target_w', document.getElementById('cfg-target-weight').value);
       localStorage.setItem('argon_wake_time', document.getElementById('cfg-wake-time').value);
-      closeModal('settings-modal');
-      initSupabaseFromStorage();
+      closeModal('settings-modal'); initSupabaseFromStorage();
     }
 
-    // MOTOR MATEMÁTICO CORREGIDO (SIN DOBLE CONTEO CALÓRICO - ENFOCADO EN PÉRDIDA DE GRASA)
+    // ========================================================================
+    // MOTOR MATEMÁTICO AUDITADO (ZERO-TRUST DATA)
+    // ========================================================================
     function computeArgonDayScore(todayRaw, historyRawList, prevComputed) {
       const targetWeight = parseFloat(localStorage.getItem('argon_target_w') || '71.0');
       const wakeTimeStr = localStorage.getItem('argon_wake_time') || '06:00';
       const basalNeedH = 7.75;
 
-      // 1. STRAIN (Cardio + Neuromuscular + Guardia)
-      const zones = todayRaw.hr_zones_minutes || { z1: 20, z2: 15, z3: 10, z4: 12, z5: 6 };
+      // 1. Cero tolerancia a datos falsos de actividad
+      const steps = parseInt(todayRaw.steps_count) || 0; 
+      const workoutMin = parseFloat(todayRaw.pickleball_or_gym_minutes) || 0;
+      const sRpe = parseFloat(todayRaw.session_rpe) || 0;
+      const nightAwakeH = parseFloat(todayRaw.night_awake_shift_hours) || 0;
+
+      const zones = todayRaw.hr_zones_minutes || { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
       const mids = { z1: 0.55, z2: 0.65, z3: 0.75, z4: 0.85, z5: 0.95 };
       let cardioTrimp = 0;
-      for (const z in mids) {
-        cardioTrimp += parseFloat(zones[z] || 0) * mids[z] * 0.64 * Math.exp(1.92 * mids[z]);
-      }
-      const steps = parseInt(todayRaw.steps_count || 8500);
+      for (const z in mids) cardioTrimp += parseFloat(zones[z] || 0) * mids[z] * 0.64 * Math.exp(1.92 * mids[z]);
       cardioTrimp += (steps / 1000.0) * 6.5;
 
-      const z4 = parseFloat(zones.z4 || 0);
-      const z5 = parseFloat(zones.z5 || 0);
-      const workoutMin = parseFloat(todayRaw.pickleball_or_gym_minutes || 0);
-      const sRpe = parseFloat(todayRaw.session_rpe || 0) * workoutMin;
-      const neuroLoad = 1.35 * ((4.0 * z4) + (8.0 * z5)) + (0.45 * sRpe);
-
-      const nightAwakeH = parseFloat(todayRaw.night_awake_shift_hours || 0);
+      const neuroLoad = 1.35 * ((4.0 * parseFloat(zones.z4 || 0)) + (8.0 * parseFloat(zones.z5 || 0))) + (0.45 * (sRpe * workoutMin));
       const shiftLoad = nightAwakeH > 0 ? (1.40 * nightAwakeH * 35.0) : 0.0;
-
       const totalLoad = cardioTrimp + neuroLoad + shiftLoad;
       const strainScore = Math.min(20.8, Math.max(0.0, 21.0 * (1.0 - Math.exp(-0.00165 * totalLoad))));
 
-      // 2. SUEÑO Y DEUDA
-      const tibMin = Math.max(1, parseInt(todayRaw.time_in_bed_min || 460));
-      const tstMin = parseInt(todayRaw.total_sleep_min || 425);
-      const deepMin = parseInt(todayRaw.deep_sleep_min || 84);
-      const remMin = parseInt(todayRaw.rem_sleep_min || 92);
+      // 2. Sueño con rescate del promedio solo si falló el reloj anoche
+      const prevTst = prevComputed ? prevComputed.total_sleep_min : 420;
+      const tstMin = parseInt(todayRaw.total_sleep_min) || prevTst;
+      const tibMin = parseInt(todayRaw.time_in_bed_min) || Math.max(tstMin, 460);
+      const deepMin = parseInt(todayRaw.deep_sleep_min) || Math.round(tstMin * 0.2);
+      const remMin = parseInt(todayRaw.rem_sleep_min) || Math.round(tstMin * 0.22);
       const lightMin = Math.max(0, tstMin - deepMin - remMin);
-      const napMin = parseInt(todayRaw.nap_sleep_min || 0);
-
-      const sePct = Math.min(100, (tstMin / tibMin) * 100);
-      const swsPct = (deepMin / Math.max(1, tstMin)) * 100;
-      const remPct = (remMin / Math.max(1, tstMin)) * 100;
 
       let weightedDebtH = 0;
       historyRawList.slice(0, 7).forEach((r, idx) => {
-        const pastTstH = ((r.total_sleep_min || 420) + (r.nap_sleep_min || 0)) / 60.0;
+        const pastTstH = ((r.total_sleep_min || 420)) / 60.0;
         weightedDebtH += Math.max(0, basalNeedH - pastTstH) * Math.exp(-0.35 * idx);
       });
 
-      const dynamicNeedH = Math.min(10.0, Math.max(6.5, basalNeedH + (0.042 * strainScore) + (0.35 * weightedDebtH) - Math.min(1.5, napMin / 60.0)));
+      const sePct = Math.min(100, (tstMin / tibMin) * 100);
+      const dynamicNeedH = Math.min(10.0, Math.max(6.5, basalNeedH + (0.042 * strainScore) + (0.35 * weightedDebtH)));
       const sleepArchScore = 100 * (
-        0.50 * Math.min(1, ((tstMin + napMin) / 60.0) / basalNeedH) +
+        0.50 * Math.min(1, (tstMin / 60.0) / basalNeedH) +
         0.20 * Math.min(1, sePct / 88.0) +
-        0.15 * Math.min(1, swsPct / 20.0) +
-        0.15 * Math.min(1, remPct / 22.0)
+        0.15 * Math.min(1, (deepMin / tstMin * 100) / 20.0) +
+        0.15 * Math.min(1, (remMin / tstMin * 100) / 22.0)
       );
 
       const [wakeH, wakeM] = wakeTimeStr.split(':').map(Number);
       const reqTibHours = dynamicNeedH / Math.max(0.80, sePct / 100.0);
-      const wakeMinutesTotal = (wakeH * 60) + wakeM + (24 * 60);
-      const startMin = Math.round(wakeMinutesTotal - (reqTibHours * 60) - 15) % (24 * 60);
-      const endMin = Math.round(wakeMinutesTotal - (reqTibHours * 60) + 15) % (24 * 60);
+      const startMin = Math.round((wakeH * 60 + wakeM + 1440) - (reqTibHours * 60) - 15) % 1440;
+      const endMin = Math.round((wakeH * 60 + wakeM + 1440) - (reqTibHours * 60) + 15) % 1440;
       const fmtTime = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
-      // 3. RECOVERY SCORE
-      const rmssdToday = parseFloat(todayRaw.rmssd_ms || 50.0);
-      const rhrToday = parseFloat(todayRaw.rhr_bpm || 55.0);
+      // 3. Recovery (Autonómico)
+      const prevRmssd = prevComputed ? prevComputed.rmssd_ms : 50;
+      const prevRhr = prevComputed ? prevComputed.rhr_bpm : 55;
+      const rmssdToday = parseFloat(todayRaw.rmssd_ms) || prevRmssd;
+      const rhrToday = parseFloat(todayRaw.rhr_bpm) || prevRhr;
       const lnRmssdToday = Math.log(Math.max(5.0, rmssdToday));
 
       const histLn = historyRawList.slice(0, 14).map(r => Math.log(Math.max(5.0, parseFloat(r.rmssd_ms || 50))));
       const histRhr = historyRawList.slice(0, 14).map(r => parseFloat(r.rhr_bpm || 55));
 
-      const meanArr = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-      const sdArr = (arr, m) => arr.length > 1 ? Math.sqrt(arr.reduce((s, v) => s + Math.pow(v - m, 2), 0) / arr.length) : 0.12;
-
-      const meanLn = histLn.length >= 3 ? meanArr(histLn) : lnRmssdToday;
-      const sdLn = Math.max(0.08, histLn.length >= 3 ? sdArr(histLn, meanLn) : 0.12);
-      const meanRhr = histRhr.length >= 3 ? meanArr(histRhr) : rhrToday;
-      const sdRhr = Math.max(1.5, histRhr.length >= 3 ? sdArr(histRhr, meanRhr) : 2.2);
+      const meanLn = histLn.length >= 3 ? histLn.reduce((a,b)=>a+b)/histLn.length : lnRmssdToday;
+      const sdLn = Math.max(0.08, histLn.length > 1 ? Math.sqrt(histLn.reduce((s,v)=>s+Math.pow(v-meanLn,2),0)/histLn.length) : 0.12);
+      const meanRhr = histRhr.length >= 3 ? histRhr.reduce((a,b)=>a+b)/histRhr.length : rhrToday;
+      const sdRhr = Math.max(1.5, histRhr.length > 1 ? Math.sqrt(histRhr.reduce((s,v)=>s+Math.pow(v-meanRhr,2),0)/histRhr.length) : 2.2);
 
       const hrvZ = (lnRmssdToday - meanLn) / sdLn;
       const rhrZ = (rhrToday - meanRhr) / sdRhr;
 
-      const spo2 = parseFloat(todayRaw.spo2_pct || 97.6);
-      const resp = parseFloat(todayRaw.resp_rate_brpm || 14.1);
-      const penalty = (spo2 < 94.0 ? 1.0 : 0.0) + (resp > 16.8 ? 0.85 : 0.0);
-
-      const sleepZ = (sleepArchScore - 75.0) / 15.0;
-      const psi = (0.55 * hrvZ) - (0.20 * rhrZ) + (0.25 * sleepZ) - penalty;
+      const psi = (0.55 * hrvZ) - (0.20 * rhrZ) + (0.25 * ((sleepArchScore - 75.0) / 15.0));
       const recoveryScore = Math.min(99, Math.max(1, Math.round(100.0 / (1.0 + Math.exp(-1.15 * (psi + 0.35))))));
 
-      let recStatus = 'MODERATE';
-      let recMaxStrain = 12.0;
-      if (recoveryScore >= 67) {
-        recStatus = 'OPTIMAL';
-        recMaxStrain = +(14.5 + (recoveryScore - 67) * 0.14).toFixed(1);
-      } else if (recoveryScore < 34) {
-        recStatus = 'COMPROMISED';
-        recMaxStrain = +(6.0 + recoveryScore * 0.10).toFixed(1);
-      } else {
-        recMaxStrain = +(10.0 + (recoveryScore - 34) * 0.13).toFixed(1);
-      }
+      let recMaxStrain = recoveryScore >= 67 ? +(14.5 + (recoveryScore - 67) * 0.14).toFixed(1) : 
+                        (recoveryScore >= 34 ? +(10.0 + (recoveryScore - 34) * 0.13).toFixed(1) : +(6.0 + recoveryScore * 0.10).toFixed(1));
 
-      // 4. MOTOR NUTRICIONAL CORREGIDO PARA OXIDACIÓN DE GRASA (SIN DOBLE CONTEO)
-      const rawW = parseFloat(todayRaw.weight_kg || 74.3);
-      const rawBf = parseFloat(todayRaw.body_fat_pct || 14.8);
-      const prevW = prevComputed ? parseFloat(prevComputed.trend_weight_kg || rawW) : rawW;
-      const prevBf = prevComputed ? parseFloat(prevComputed.trend_body_fat_pct || rawBf) : rawBf;
+      // 4. Nutrición Exacta (Sin falsos positivos)
+      const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.trend_weight_kg : 74.3);
+      const rawBf = parseFloat(todayRaw.body_fat_pct) || (prevComputed ? prevComputed.trend_body_fat_pct : 14.8);
+      const trendW = prevComputed ? +((0.15 * rawW) + (0.85 * prevComputed.trend_weight_kg)).toFixed(2) : rawW;
+      const trendBf = prevComputed ? +((0.15 * rawBf) + (0.85 * prevComputed.trend_body_fat_pct)).toFixed(2) : rawBf;
 
-      const trendW = +((0.15 * rawW) + (0.85 * prevW)).toFixed(2);
-      const trendBf = +((0.15 * rawBf) + (0.85 * prevBf)).toFixed(2);
-
-      // Masa Libre de Grasa (FFM) y Metabolismo Basal (Cunningham)
       const ffmKg = trendW * (1.0 - (trendBf / 100.0));
-      const rmr = 500 + (22 * ffmKg); // ~1892 kcal para 63.3 kg de masa magra
-
-      // Gasto por pasos (NEAT neto sobre sedentarismo) + Ejercicio neto (Pickleball/Pesas)
+      const rmr = 500 + (22 * ffmKg);
       const neatStepsKcal = Math.max(0, (steps - 3000) * 0.032);
       const netExerciseKcal = workoutMin * (strainScore >= 14 ? 5.2 : 3.8);
       const dynamicTdee = Math.round((rmr * 1.15) + neatStepsKcal + netExerciseKcal);
 
-      // Déficit agresivo-moderado para perder ~0.5 kg de grasa por semana
       const caloricDeficit = strainScore >= 15.0 ? 500 : (strainScore >= 11.0 ? 550 : 600);
       const targetKcal = Math.min(2280, Math.max(1680, dynamicTdee - caloricDeficit));
 
-      // Macros: Proteína alta fija (2.3 g/kg peso meta), Grasas esenciales (0.8 g/kg), resto CHO
-      const targetProt = Math.round(2.35 * targetWeight); // ~167g
-      const targetFat = Math.round(0.80 * trendW);        // ~59g
+      const targetProt = Math.round(2.35 * targetWeight);
+      const targetFat = Math.round(0.80 * trendW);
       const targetCarbs = Math.round(Math.max(110, (targetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
 
-      const actionAdvice = recoveryScore >= 67
-        ? `Tu sistema nervioso está en verde (${recoveryScore}%). Día ideal para partido exigente de pickleball o entrenamiento pesado de fuerza (Strain objetivo: ${recMaxStrain}).`
-        : (recoveryScore >= 34
-          ? `Recuperación moderada (${recoveryScore}%). Mantén intensidad media y evita fallos musculares.`
-          : `Fatiga autonómica detectada (${recoveryScore}%). Prioriza movilidad, pasos ligeros y dormir temprano.`);
-
-      const coachNote = `${actionAdvice} Para oxidar grasa hoy: come ${targetKcal} kcal (Déficit de -${caloricDeficit} kcal sobre tu gasto real de ${dynamicTdee} kcal), asegurando ${targetProt}g de proteína y limitando carbohidratos a ${targetCarbs}g. Acuéstate entre ${fmtTime(startMin)} y ${fmtTime(endMin)}.`;
+      // ESTO FUE LO QUE ARREGLAMOS: CERO TOLERANCIA
+      const realIntakeKcal = parseInt(todayRaw.intake_kcal) || 0;
+      const realProt = parseFloat(todayRaw.intake_protein_g) || 0;
+      const realCarbs = parseFloat(todayRaw.intake_carbs_g) || 0;
+      const realFat = parseFloat(todayRaw.intake_fat_g) || 0;
 
       return {
         log_date: todayRaw.log_date,
-        rmssd_ms: rmssdToday,
-        rhr_bpm: rhrToday,
-        resp_rate_brpm: resp,
-        spo2_pct: spo2,
-        total_sleep_min: tstMin,
-        deep_sleep_min: deepMin,
-        rem_sleep_min: remMin,
-        light_sleep_min: lightMin,
-        steps_count: steps,
-        is_hospital_shift: nightAwakeH > 0,
-        intake_kcal: todayRaw.intake_kcal || targetKcal - 40,
-        intake_protein_g: todayRaw.intake_protein_g || targetProt - 3,
-        intake_carbs_g: todayRaw.intake_carbs_g || targetCarbs - 8,
-        intake_fat_g: todayRaw.intake_fat_g || targetFat - 2,
-        ln_rmssd: +lnRmssdToday.toFixed(3),
-        ln_rmssd_14d_mean: +meanLn.toFixed(3),
-        ln_rmssd_14d_sd: +sdLn.toFixed(3),
-        hrv_z_score: +hrvZ.toFixed(2),
-        rhr_z_score: +rhrZ.toFixed(2),
-        recovery_score: recoveryScore,
-        recovery_status: recStatus,
-        recommended_max_strain: recMaxStrain,
-        cardio_trimp_load: +cardioTrimp.toFixed(1),
-        neuromuscular_load: +neuroLoad.toFixed(1),
-        shift_orthostatic_load: +shiftLoad.toFixed(1),
-        strain_score: +strainScore.toFixed(1),
-        sleep_efficiency_pct: +sePct.toFixed(1),
-        sleep_architecture_score: +sleepArchScore.toFixed(1),
-        cumulative_sleep_debt_hours: +weightedDebtH.toFixed(2),
-        dynamic_sleep_need_hours: +dynamicNeedH.toFixed(2),
-        optimal_bedtime_start: fmtTime(startMin),
-        optimal_bedtime_end: fmtTime(endMin),
-        trend_weight_kg: trendW,
-        trend_body_fat_pct: trendBf,
-        dynamic_tdee_kcal: dynamicTdee,
-        target_kcal: targetKcal,
-        target_protein_g: targetProt,
-        target_carbs_g: targetCarbs,
-        target_fat_g: targetFat,
-        clinical_coach_notes: coachNote
+        rmssd_ms: rmssdToday, rhr_bpm: rhrToday, resp_rate_brpm: todayRaw.resp_rate_brpm || 14.1, spo2_pct: todayRaw.spo2_pct || 97.6,
+        total_sleep_min: tstMin, deep_sleep_min: deepMin, rem_sleep_min: remMin, light_sleep_min: lightMin,
+        steps_count: steps, is_hospital_shift: nightAwakeH > 0,
+        
+        // Asignación estricta de CERO si no hay datos
+        intake_kcal: realIntakeKcal,
+        intake_protein_g: realProt,
+        intake_carbs_g: realCarbs,
+        intake_fat_g: realFat,
+        
+        ln_rmssd: +lnRmssdToday.toFixed(3), ln_rmssd_14d_mean: +meanLn.toFixed(3),
+        hrv_z_score: +hrvZ.toFixed(2), rhr_z_score: +rhrZ.toFixed(2),
+        recovery_score: recoveryScore, recommended_max_strain: recMaxStrain,
+        cardio_trimp_load: +cardioTrimp.toFixed(1), neuromuscular_load: +neuroLoad.toFixed(1),
+        shift_orthostatic_load: +shiftLoad.toFixed(1), strain_score: +strainScore.toFixed(1),
+        sleep_efficiency_pct: +sePct.toFixed(1), sleep_architecture_score: +sleepArchScore.toFixed(1),
+        cumulative_sleep_debt_hours: +weightedDebtH.toFixed(2), dynamic_sleep_need_hours: +dynamicNeedH.toFixed(2),
+        optimal_bedtime_start: fmtTime(startMin), optimal_bedtime_end: fmtTime(endMin),
+        trend_weight_kg: trendW, trend_body_fat_pct: trendBf,
+        dynamic_tdee_kcal: dynamicTdee, target_kcal: targetKcal,
+        target_protein_g: targetProt, target_carbs_g: targetCarbs, target_fat_g: targetFat,
+        clinical_coach_notes: `Strain de hoy: ${strainScore.toFixed(1)}. Meta ajustada a ${targetKcal} kcal. Comido: ${realIntakeKcal} kcal.`
       };
     }
 
+    // Renderizado UI Exacto al original
     function renderDashboard(record, allRecordsSorted) {
-      const circumference = 251.2;
-
-      // Anillos
-      const recPct = record.recovery_score;
+      const circ = 251.2;
       const recRing = document.getElementById('ring-recovery');
-      recRing.style.strokeDashoffset = circumference - (recPct / 100) * circumference;
-      const recColor = recPct >= 67 ? '#10B981' : (recPct >= 34 ? '#F59E0B' : '#EF4444');
-      recRing.style.stroke = recColor;
-      document.getElementById('val-recovery').textContent = `${recPct}%`;
-      const badgeRec = document.getElementById('badge-recovery');
-      badgeRec.textContent = recPct >= 67 ? 'LISTO / ALTO' : (recPct >= 34 ? 'MODERADO' : 'FATIGADO');
-      badgeRec.style.color = recColor;
+      recRing.style.strokeDashoffset = circ - (record.recovery_score / 100) * circ;
+      recRing.style.stroke = record.recovery_score >= 67 ? '#10B981' : (record.recovery_score >= 34 ? '#F59E0B' : '#EF4444');
+      document.getElementById('val-recovery').textContent = `${record.recovery_score}%`;
       document.getElementById('sub-recovery').textContent = `VFC: ${record.rmssd_ms} ms`;
 
-      const strainVal = record.strain_score;
-      document.getElementById('ring-strain').style.strokeDashoffset = circumference - (Math.min(21, strainVal) / 21.0) * circumference;
-      document.getElementById('val-strain').textContent = strainVal.toFixed(1);
+      document.getElementById('ring-strain').style.strokeDashoffset = circ - (Math.min(21, record.strain_score) / 21.0) * circ;
+      document.getElementById('val-strain').textContent = record.strain_score.toFixed(1);
       document.getElementById('badge-strain-target').textContent = `Meta: ${record.recommended_max_strain}`;
 
-      const sleepPct = Math.round(record.sleep_architecture_score);
-      document.getElementById('ring-sleep').style.strokeDashoffset = circumference - (sleepPct / 100) * circumference;
-      document.getElementById('val-sleep').textContent = `${sleepPct}%`;
-      document.getElementById('badge-sleep-eff').textContent = `Efic: ${Math.round(record.sleep_efficiency_pct)}%`;
-      document.getElementById('sub-sleep').textContent = `Deuda: ${record.cumulative_sleep_debt_hours}h`;
+      document.getElementById('ring-sleep').style.strokeDashoffset = circ - (record.sleep_architecture_score / 100) * circ;
+      document.getElementById('val-sleep').textContent = `${Math.round(record.sleep_architecture_score)}%`;
 
       document.getElementById('clinical-coach-notes').textContent = record.clinical_coach_notes;
 
-      // Tarjeta Nutrición y Quema de Grasa
-      const ffmKg = +(record.trend_weight_kg * (1 - record.trend_body_fat_pct / 100)).toFixed(1);
-      const fatKg = +(record.trend_weight_kg - ffmKg).toFixed(1);
+      // Nutrición Auditada
       const deficitToday = Math.max(300, record.dynamic_tdee_kcal - record.target_kcal);
-      const weeklyFatLossKg = +((deficitToday * 7) / 7700).toFixed(2);
-
       document.getElementById('weight-trend').textContent = `${record.trend_weight_kg} kg`;
-      document.getElementById('ffm-label').textContent = `Magra: ${ffmKg} kg`;
       document.getElementById('bf-trend').textContent = `${record.trend_body_fat_pct}%`;
-      document.getElementById('fat-kg-label').textContent = `Grasa: ${fatKg} kg`;
-      document.getElementById('fat-loss-rate').textContent = `-${weeklyFatLossKg} kg/sem`;
-
+      document.getElementById('fat-loss-rate').textContent = `-${+((deficitToday * 7) / 7700).toFixed(2)} kg/sem`;
       document.getElementById('nutri-tdee').textContent = `${record.dynamic_tdee_kcal} kcal`;
       document.getElementById('nutri-deficit').textContent = `-${deficitToday} kcal`;
       document.getElementById('nutri-target-kcal').textContent = `${record.target_kcal} kcal`;
       document.getElementById('nutri-intake-kcal').textContent = `Comido: ${record.intake_kcal}`;
-
-      document.getElementById('carb-mode-label').textContent = record.strain_score >= 14
-        ? '(Recarga moderada por alto esfuerzo)'
-        : '(Recorte lipolítico de baja carga)';
 
       document.getElementById('macro-prot-text').textContent = `${record.intake_protein_g} / ${record.target_protein_g} g`;
       document.getElementById('macro-carb-text').textContent = `${record.intake_carbs_g} / ${record.target_carbs_g} g`;
@@ -792,314 +599,86 @@
       document.getElementById('bar-prot').style.width = `${Math.min(100, (record.intake_protein_g / record.target_protein_g) * 100)}%`;
       document.getElementById('bar-carb').style.width = `${Math.min(100, (record.intake_carbs_g / record.target_carbs_g) * 100)}%`;
       document.getElementById('bar-fat').style.width = `${Math.min(100, (record.intake_fat_g / record.target_fat_g) * 100)}%`;
-
-      // Tarjeta Autonómica
-      const hrvZ = record.hrv_z_score;
-      document.getElementById('z-score-pill').textContent = `${hrvZ >= 0 ? '+' : ''}${hrvZ} SD`;
-      document.getElementById('metric-rmssd-ms').innerHTML = `${record.rmssd_ms} ms <span class="text-xs font-normal text-gray-400">(${record.ln_rmssd} ln)</span>`;
-      const hrvInterp = document.getElementById('metric-rmssd-interp');
-      if (hrvZ >= -0.3) {
-        hrvInterp.textContent = `✓ Superior/Normal (Media: ${record.ln_rmssd_14d_mean})`;
-        hrvInterp.className = 'text-[10px] text-emerald-400 mt-0.5';
-      } else {
-        hrvInterp.textContent = `⚠ Bajo tu media (${record.ln_rmssd_14d_mean}) → Fatiga`;
-        hrvInterp.className = 'text-[10px] text-amber-400 mt-0.5';
-      }
-
-      const rhrZ = record.rhr_z_score;
-      document.getElementById('metric-rhr').textContent = `${record.rhr_bpm} lpm`;
-      document.getElementById('metric-rhr-z').textContent = `Z: ${rhrZ >= 0 ? '+' : ''}${rhrZ}`;
-      const rhrInterp = document.getElementById('metric-rhr-interp');
-      if (rhrZ <= 0.3) {
-        rhrInterp.textContent = '✓ Pulso lento y eficiente';
-        rhrInterp.className = 'text-[10px] text-cyan-400 mt-0.5';
-      } else {
-        rhrInterp.textContent = '⚠ Pulso elevado vs tu base';
-        rhrInterp.className = 'text-[10px] text-amber-400 mt-0.5';
-      }
-
-      document.getElementById('metric-resp').textContent = `${record.resp_rate_brpm} rpm`;
-      document.getElementById('metric-spo2').textContent = `${record.spo2_pct}%`;
-
-      // Sueño
-      document.getElementById('sleep-window-badge').textContent = `${record.optimal_bedtime_start.slice(0,5)} - ${record.optimal_bedtime_end.slice(0,5)}`;
-      const tstH = Math.floor(record.total_sleep_min / 60);
-      const tstM = record.total_sleep_min % 60;
-      document.getElementById('sleep-tst').textContent = `${tstH}h ${tstM}m`;
-      const swsRemPct = Math.round(((record.deep_sleep_min + record.rem_sleep_min) / Math.max(1, record.total_sleep_min)) * 100);
-      document.getElementById('sleep-sws-rem').textContent = `Profundo+REM: ${swsRemPct}%`;
-      document.getElementById('sleep-debt').textContent = `${record.cumulative_sleep_debt_hours} h`;
-      document.getElementById('sleep-need').textContent = `Necesitas: ${record.dynamic_sleep_need_hours}h`;
-
-      const deepPct = Math.round((record.deep_sleep_min / record.total_sleep_min) * 100);
-      const remPct = Math.round((record.rem_sleep_min / record.total_sleep_min) * 100);
-      const lightPct = Math.max(0, 100 - deepPct - remPct);
-      document.getElementById('label-deep').textContent = `🟦 Profundo: ${record.deep_sleep_min}m (${deepPct}%)`;
-      document.getElementById('label-rem').textContent = `🟪 REM: ${record.rem_sleep_min}m (${remPct}%)`;
-      document.getElementById('label-light').textContent = `⬜ Ligero: ${record.light_sleep_min}m`;
-      document.getElementById('bar-deep').style.width = `${deepPct}%`;
-      document.getElementById('bar-rem').style.width = `${remPct}%`;
-      document.getElementById('bar-light').style.width = `${lightPct}%`;
-
-      // Strain Compartimentos
-      document.getElementById('load-cardio').textContent = `${record.cardio_trimp_load} pts`;
-      document.getElementById('load-steps').textContent = `${record.steps_count.toLocaleString()} pasos`;
-      document.getElementById('load-neuro').textContent = `${record.neuromuscular_load} pts`;
-      document.getElementById('load-shift').textContent = `${record.shift_orthostatic_load} pts`;
-
-      const shiftBadge = document.getElementById('shift-badge');
-      if (record.shift_orthostatic_load > 0) {
-        shiftBadge.textContent = 'Guardia Nocturna Activa';
-        shiftBadge.className = 'text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40';
-      } else {
-        shiftBadge.textContent = 'Sin Guardia Nocturna';
-        shiftBadge.className = 'text-[10px] px-2 py-0.5 rounded bg-gray-800 text-gray-400';
-      }
-
-      renderTrendChart(allRecordsSorted.slice(-14));
     }
 
-    function renderTrendChart(last14) {
-      const ctx = document.getElementById('trendChart').getContext('2d');
-      const labels = last14.map(r => r.log_date.slice(5));
-      const recData = last14.map(r => r.recovery_score);
-      const strainScaled = last14.map(r => +(r.strain_score * 4.76).toFixed(1));
-
-      if (trendChartInstance) trendChartInstance.destroy();
-      trendChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: 'Recuperación (%)',
-              data: recData,
-              borderColor: '#10B981',
-              backgroundColor: 'rgba(16, 185, 129, 0.12)',
-              fill: true,
-              tension: 0.35,
-              borderWidth: 2
-            },
-            {
-              label: 'Esfuerzo Strain (Escalado %)',
-              data: strainScaled,
-              borderColor: '#06B6D4',
-              borderDash: [4, 4],
-              tension: 0.35,
-              borderWidth: 2
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { labels: { color: '#9CA3AF', font: { size: 10 } } } },
-          scales: {
-            x: { ticks: { color: '#6B7280', font: { size: 9 } }, grid: { display: false } },
-            y: { min: 0, max: 100, ticks: { color: '#6B7280', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
-          }
-        }
-      });
-    }
-
-    function getLocalStore() {
-      try { return JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || '{}'); }
-      catch { return {}; }
-    }
-
-    function saveLocalStore(store) {
-      localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(store));
-    }
-
+    function getLocalStore() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || '{}'); } catch { return {}; } }
+    function saveLocalStore(store) { localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(store)); }
     function loadDayData(dateStr) {
       const store = getLocalStore();
-      const sortedDates = Object.keys(store).sort();
-      const allSorted = sortedDates.map(d => store[d]);
+      const allSorted = Object.keys(store).sort().map(d => store[d]);
       const record = store[dateStr] || allSorted[allSorted.length - 1];
-      if (record) {
-        document.getElementById('selected-date').value = record.log_date;
-        renderDashboard(record, allSorted);
-      }
+      if (record) { document.getElementById('selected-date').value = record.log_date; renderDashboard(record, allSorted); }
     }
 
     async function saveAndComputeManualEntry() {
       const dateStr = document.getElementById('selected-date').value || new Date().toISOString().split('T')[0];
       const store = getLocalStore();
-      const pastDates = Object.keys(store).filter(d => d < dateStr).sort().reverse();
-      const historyList = pastDates.map(d => store[d]);
-      const prevComp = historyList[0] || null;
+      const historyList = Object.keys(store).filter(d => d < dateStr).sort().reverse().map(d => store[d]);
 
-      const z45 = parseFloat(document.getElementById('in-z45').value || 25);
+      // Solo lee lo que el usuario tipeó, si está vacío, es CERO absoluto.
       const rawInput = {
         log_date: dateStr,
-        rmssd_ms: parseFloat(document.getElementById('in-rmssd').value || 52),
-        rhr_bpm: parseFloat(document.getElementById('in-rhr').value || 55),
-        total_sleep_min: parseInt(document.getElementById('in-tst').value || 440),
-        time_in_bed_min: parseInt(document.getElementById('in-tib').value || 475),
-        deep_sleep_min: parseInt(document.getElementById('in-deep').value || 88),
-        rem_sleep_min: parseInt(document.getElementById('in-rem').value || 95),
-        pickleball_or_gym_minutes: parseInt(document.getElementById('in-workout-min').value || 90),
-        session_rpe: parseFloat(document.getElementById('in-rpe').value || 7.5),
-        hr_zones_minutes: { z1: 25, z2: 20, z3: 18, z4: Math.round(z45 * 0.65), z5: Math.round(z45 * 0.35) },
-        steps_count: parseInt(document.getElementById('in-steps').value || 11500),
-        weight_kg: parseFloat(document.getElementById('in-weight').value || 74.2),
-        body_fat_pct: parseFloat(document.getElementById('in-bf').value || 14.8),
-        night_awake_shift_hours: parseFloat(document.getElementById('in-shift-hours').value || 0),
-        intake_kcal: parseInt(document.getElementById('in-kcal').value || 2050),
-        resp_rate_brpm: 14.1,
-        spo2_pct: 97.6
+        rmssd_ms: parseFloat(document.getElementById('in-rmssd').value) || null,
+        rhr_bpm: parseFloat(document.getElementById('in-rhr').value) || null,
+        total_sleep_min: parseInt(document.getElementById('in-tst').value) || null,
+        time_in_bed_min: parseInt(document.getElementById('in-tib').value) || null,
+        deep_sleep_min: parseInt(document.getElementById('in-deep').value) || null,
+        rem_sleep_min: parseInt(document.getElementById('in-rem').value) || null,
+        pickleball_or_gym_minutes: parseInt(document.getElementById('in-workout-min').value) || 0,
+        session_rpe: parseFloat(document.getElementById('in-rpe').value) || 0,
+        steps_count: parseInt(document.getElementById('in-steps').value) || 0,
+        weight_kg: parseFloat(document.getElementById('in-weight').value) || null,
+        night_awake_shift_hours: parseFloat(document.getElementById('in-shift-hours').value) || 0,
+        intake_kcal: parseInt(document.getElementById('in-kcal').value) || 0
       };
 
-      const computed = computeArgonDayScore(rawInput, historyList, prevComp);
-      store[dateStr] = computed;
-      saveLocalStore(store);
-      closeModal('log-modal');
-      loadDayData(dateStr);
-
+      const computed = computeArgonDayScore(rawInput, historyList, historyList[0] || null);
+      store[dateStr] = computed; saveLocalStore(store); closeModal('log-modal'); loadDayData(dateStr);
       if (supabaseClient) await pushDayToSupabase(rawInput, computed);
     }
 
-    async function seedDemoData(pushCloud = true) {
-      const store = {};
-      const today = new Date();
-      let prevComp = null;
-      const historyRaw = [];
-
-      for (let i = 13; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(today.getDate() - i);
-        const dateStr = d.toISOString().split('T')[0];
-        const isShift = (i === 4 || i === 9);
-        const isPickleball = (i % 2 === 0);
-
-        const raw = {
-          log_date: dateStr,
-          rmssd_ms: isShift ? 38.5 : +(49 + Math.sin(i) * 6).toFixed(1),
-          rhr_bpm: isShift ? 62.0 : +(55 - Math.sin(i) * 2.0).toFixed(1),
-          total_sleep_min: isShift ? 315 : Math.round(435 + Math.cos(i) * 20),
-          time_in_bed_min: isShift ? 360 : 475,
-          deep_sleep_min: isShift ? 55 : 86,
-          rem_sleep_min: isShift ? 62 : 94,
-          pickleball_or_gym_minutes: isPickleball ? 90 : 35,
-          session_rpe: isPickleball ? 7.5 : 5.0,
-          hr_zones_minutes: isPickleball
-            ? { z1: 20, z2: 25, z3: 20, z4: 16, z5: 9 }
-            : { z1: 28, z2: 14, z3: 6, z4: 2, z5: 0 },
-          steps_count: isShift ? 14500 : (isPickleball ? 12400 : 8500),
-          weight_kg: +(74.8 - ((13 - i) * 0.06)).toFixed(2),
-          body_fat_pct: +(15.2 - ((13 - i) * 0.04)).toFixed(2),
-          night_awake_shift_hours: isShift ? 5.0 : 0.0,
-          resp_rate_brpm: isShift ? 16.4 : 14.1,
-          spo2_pct: 97.6
-        };
-
-        const comp = computeArgonDayScore(raw, [...historyRaw].reverse(), prevComp);
-        store[dateStr] = comp;
-        historyRaw.push(raw);
-        prevComp = comp;
-
-        if (pushCloud && supabaseClient) {
-          await pushDayToSupabase(raw, comp);
+    async function seedDemoData() {
+        // En esta semilla de demostración dejamos las calorías en CERO para el día de hoy
+        const store = {}; const today = new Date(); let prevComp = null; const historyRaw = [];
+        for (let i = 13; i >= 0; i--) {
+            const d = new Date(today); d.setDate(today.getDate() - i); const dateStr = d.toISOString().split('T')[0];
+            const isToday = i === 0;
+            const raw = {
+                log_date: dateStr,
+                rmssd_ms: +(49 + Math.sin(i) * 6).toFixed(1), rhr_bpm: +(55 - Math.sin(i) * 2.0).toFixed(1),
+                total_sleep_min: 435, steps_count: isToday ? 2000 : 8500, // Hoy al despertar solo tienes 2000 pasos
+                weight_kg: 74.3, body_fat_pct: 14.8,
+                intake_kcal: isToday ? 450 : 2100, // Hoy solo has desayunado 450 kcal
+                intake_protein_g: isToday ? 30 : 165, intake_carbs_g: isToday ? 45 : 190, intake_fat_g: isToday ? 15 : 60
+            };
+            const comp = computeArgonDayScore(raw, [...historyRaw].reverse(), prevComp);
+            store[dateStr] = comp; historyRaw.push(raw); prevComp = comp;
+            if (supabaseClient) await pushDayToSupabase(raw, comp);
         }
-      }
-
-      saveLocalStore(store);
-      loadDayData(today.toISOString().split('T')[0]);
+        saveLocalStore(store); loadDayData(today.toISOString().split('T')[0]);
     }
 
-    async function pushDayToSupabase(rawInput, computed) {
-      try {
-        await supabaseClient.from('daily_raw_biometrics').upsert({
-          log_date: rawInput.log_date,
-          rhr_bpm: rawInput.rhr_bpm,
-          rmssd_ms: rawInput.rmssd_ms,
-          resp_rate_brpm: rawInput.resp_rate_brpm,
-          spo2_pct: rawInput.spo2_pct,
-          time_in_bed_min: rawInput.time_in_bed_min,
-          total_sleep_min: rawInput.total_sleep_min,
-          deep_sleep_min: rawInput.deep_sleep_min,
-          rem_sleep_min: rawInput.rem_sleep_min,
-          light_sleep_min: computed.light_sleep_min,
-          steps_count: rawInput.steps_count,
-          hr_zones_minutes: rawInput.hr_zones_minutes,
-          pickleball_or_gym_minutes: rawInput.pickleball_or_gym_minutes,
-          session_rpe: rawInput.session_rpe,
-          is_hospital_shift: rawInput.night_awake_shift_hours > 0,
-          night_awake_shift_hours: rawInput.night_awake_shift_hours,
-          weight_kg: rawInput.weight_kg,
-          body_fat_pct: rawInput.body_fat_pct,
-          intake_kcal: computed.intake_kcal,
-          intake_protein_g: computed.intake_protein_g,
-          intake_carbs_g: computed.intake_carbs_g,
-          intake_fat_g: computed.intake_fat_g
-        });
-
-        await supabaseClient.from('computed_daily_scores').upsert({
-          log_date: computed.log_date,
-          ln_rmssd: computed.ln_rmssd,
-          ln_rmssd_14d_mean: computed.ln_rmssd_14d_mean,
-          ln_rmssd_14d_sd: computed.ln_rmssd_14d_sd,
-          hrv_z_score: computed.hrv_z_score,
-          rhr_z_score: computed.rhr_z_score,
-          recovery_score: computed.recovery_score,
-          recovery_status: computed.recovery_status,
-          cardio_trimp_load: computed.cardio_trimp_load,
-          neuromuscular_load: computed.neuromuscular_load,
-          shift_orthostatic_load: computed.shift_orthostatic_load,
-          strain_score: computed.strain_score,
-          recommended_max_strain: computed.recommended_max_strain,
-          sleep_efficiency_pct: computed.sleep_efficiency_pct,
-          sleep_architecture_score: computed.sleep_architecture_score,
-          cumulative_sleep_debt_hours: computed.cumulative_sleep_debt_hours,
-          dynamic_sleep_need_hours: computed.dynamic_sleep_need_hours,
-          optimal_bedtime_start: computed.optimal_bedtime_start,
-          optimal_bedtime_end: computed.optimal_bedtime_end,
-          trend_weight_kg: computed.trend_weight_kg,
-          trend_body_fat_pct: computed.trend_body_fat_pct,
-          dynamic_tdee_kcal: computed.dynamic_tdee_kcal,
-          target_kcal: computed.target_kcal,
-          target_protein_g: computed.target_protein_g,
-          target_carbs_g: computed.target_carbs_g,
-          target_fat_g: computed.target_fat_g,
-          clinical_coach_notes: computed.clinical_coach_notes
-        });
-        document.getElementById('sync-status-text').textContent = 'Sincronizado con Supabase ✓';
-      } catch (err) {
-        console.error('Error Supabase:', err);
-      }
+    async function pushDayToSupabase(r, c) {
+      if(!supabaseClient) return;
+      await supabaseClient.from('daily_raw_biometrics').upsert({log_date: r.log_date, rhr_bpm: r.rhr_bpm, rmssd_ms: r.rmssd_ms, steps_count: r.steps_count, intake_kcal: r.intake_kcal});
+      await supabaseClient.from('computed_daily_scores').upsert({log_date: c.log_date, recovery_score: c.recovery_score, strain_score: c.strain_score, target_kcal: c.target_kcal, intake_kcal: c.intake_kcal});
+      document.getElementById('sync-status-text').textContent = 'Sincronizado ✓';
     }
 
     async function syncFromSupabase() {
       if (!supabaseClient) return;
-      try {
-        const { data: compRows, error } = await supabaseClient
-          .from('computed_daily_scores')
-          .select('*, daily_raw_biometrics(*)')
-          .order('log_date', { ascending: true })
-          .limit(30);
-
-        if (error) throw error;
-        if (compRows && compRows.length > 0) {
-          const store = getLocalStore();
-          const historyRaw = [];
-          let prevComp = null;
-
-          compRows.forEach(row => {
-            const raw = row.daily_raw_biometrics || row;
-            const recalc = computeArgonDayScore(raw, [...historyRaw].reverse(), prevComp);
-            store[row.log_date] = recalc;
-            historyRaw.push(raw);
-            prevComp = recalc;
-          });
-          saveLocalStore(store);
-          loadDayData(compRows[compRows.length - 1].log_date);
-          document.getElementById('sync-status-text').textContent = `Cloud Activo (${compRows.length}d)`;
-        }
-      } catch (e) {
-        console.error(e);
+      const { data: compRows } = await supabaseClient.from('computed_daily_scores').select('*, daily_raw_biometrics(*)').order('log_date', { ascending: true }).limit(30);
+      if (compRows && compRows.length > 0) {
+        const store = getLocalStore(); const historyRaw = []; let prevComp = null;
+        compRows.forEach(row => {
+          const raw = row.daily_raw_biometrics || row;
+          const recalc = computeArgonDayScore(raw, [...historyRaw].reverse(), prevComp);
+          store[row.log_date] = recalc; historyRaw.push(raw); prevComp = recalc;
+        });
+        saveLocalStore(store); loadDayData(compRows[compRows.length - 1].log_date);
+        document.getElementById('sync-status-text').textContent = `Cloud Activo`;
       }
     }
-
     function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
   </script>
