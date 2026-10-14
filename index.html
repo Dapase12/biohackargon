@@ -720,10 +720,11 @@
       }
 
       // 4. Motor de Oxidación de Grasa (Cunningham FFM + Déficit Clínico Real)
-      const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.trend_weight_kg : 74.3);
-      const rawBf = parseFloat(todayRaw.body_fat_pct) || (prevComputed ? prevComputed.trend_body_fat_pct : 14.8);
-      const prevW = prevComputed && prevComputed.trend_weight_kg ? parseFloat(prevComputed.trend_weight_kg) : rawW;
-      const prevBf = prevComputed && prevComputed.trend_body_fat_pct ? parseFloat(prevComputed.trend_body_fat_pct) : rawBf;
+      // Ajuste Termodinámico Atwater:
+      const targetProt = Math.round(2.2 * targetWeight); // Ajustado de 2.35 a 2.2 para evitar exceso calórico
+      const targetFat = Math.round(0.75 * trendW);       // Ajustado de 0.80 a 0.75
+      // Eliminamos el piso forzado de 105g para que cuadre exactamente con la Meta Calórica
+      const targetCarbs = Math.round(Math.max(50, (targetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
 
       const trendW = +((0.15 * rawW) + (0.85 * prevW)).toFixed(2);
       const trendBf = +((0.15 * rawBf) + (0.85 * prevBf)).toFixed(2);
