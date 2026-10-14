@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#090D16" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>ARGON | Biometría Clínica & Rendimiento</title>
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            argon: {
+              bg: '#090D16',
+              card: '#111827',
+              border: '#1F2937',
+              green: '#10B981',
+              amber: '#F59E0B',
+              red: '#EF4444',
+              strain: '#06B6D4',
+              sleep: '#8B5CF6'
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Supabase SDK & Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    body {
+      background-color: #090D16;
+      color: #F9FAFB;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .ring-progress {
+      transition: stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.4s ease;
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+    }
+    .glass-card {
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+  </style>
+</head>
+<body class="min-h-screen pb-24 selection:bg-cyan-500 selection:text-black">
+
+  <!-- TOP BAR: ESTADO, CUENTA REGRESIVA Y CONFIGURACIÓN -->
+  <header class="sticky top-0 z-30 glass-card px-4 py-3 border-b border-gray-800">
+    <div class="max-w-xl mx-auto flex items-center justify-between">
+      <div class="flex items-center space-x-2.5">
+        <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" id="status-dot"></div>
+        <div>
+          <h1 class="text-sm font-black tracking-widest uppercase text-white">ARGON <span class="text-xs font-normal text-cyan-400">MBE v2.6</span></h1>
+          <p class="text-[11px] text-gray-400" id="sync-status-text">Modo Local / Listo</p>
+        </div>
+      </div>
+
+      <!-- Countdown 7 Dic 2026 -->
+      <div class="text-right bg-gray-900/90 border border-gray-700/70 rounded-lg px-2.5 py-1">
+        <div class="text-[10px] uppercase tracking-wider text-gray-400">Meta 7 Dic 2026</div>
+        <div class="text-xs font-bold text-cyan-400 font-mono" id="countdown-timer">--d --h</div>
+      </div>
+
+      <!-- Botones de Acción -->
+      <div class="flex items-center space-x-1.5">
+        <button onclick="openModal('log-modal')" title="Registrar Guardia / Pickleball / Biometría" class="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 text-xs font-semibold">
+          + Día
+        </button>
+        <button onclick="openModal('settings-modal')" title="Configurar Supabase" class="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs">
+          ⚙️
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- CONTENIDO PRINCIPAL -->
+  <main class="max-w-xl mx-auto px-4 pt-4 space-y-4">
+
+    <!-- SELECTOR DE FECHA Y BOTÓN DE RECALCULAR -->
+    <div class="flex items-center justify-between bg-gray-900/60 border border-gray-800 rounded-xl px-3 py-2">
+      <div class="flex items-center space-x-2">
+        <span class="text-xs text-gray-400">Fecha clínica:</span>
+        <input type="date" id="selected-date" onchange="loadDayData(this.value)" class="bg-transparent text-xs font-bold text-white focus:outline-none" />
+      </div>
+      <div class="flex space-x-2">
+        <button onclick="seedDemoData()" class="text-[11px] px-2.5 py-1 rounded bg-purple-500/15 border border-purple-500/40 text-purple-300 hover:bg-purple-500/25">
+          Semilla 14d
+        </button>
+        <button onclick="syncFromSupabase()" class="text-[11px] px-2.5 py-1 rounded bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25">
+          ↻ Sincronizar
+        </button>
+      </div>
+    </div>
+
+    <!-- TARJETA 1: TRIPLE ANILLO BIOMÉTRICO (RECOVERY / STRAIN / SLEEP) -->
+    <section class="glass-card rounded-2xl p-4 shadow-xl">
+      <div class="grid grid-cols-3 gap-2 text-center items-center">
+
+        <!-- ANILLO 1: RECOVERY -->
+        <div class="flex flex-col items-center">
+          <div class="relative w-24 h-24">
+            <svg class="w-full h-full" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="40" stroke="#1F2937" stroke-width="8" fill="transparent" />
+              <circle id="ring-recovery" class="ring-progress" cx="50" cy="50" r="40" stroke="#10B981" stroke-width="8" stroke-linecap="round" fill="transparent" stroke-dasharray="251.2" stroke-dashoffset="251.2" />
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center">
+              <span id="val-recovery" class="text-xl font-black text-white">--%</span>
+              <span id="badge-recovery" class="text-[9px] font-bold uppercase tracking-wider text-emerald-400">ÓPTIMO</span>
+            </div>
+          </div>
+          <span class="mt-1 text-xs font-semibold text-gray-300">Recovery</span>
+          <span id="sub-recovery" class="text-[10px] text-gray-400">HRV: -- ms</span>
+        </div>
+
+        <!-- ANILLO 2: STRAIN (0 - 21.0) -->
+        <div class="flex flex-col items-center">
+          <div class="relative w-24 h-24">
+            <svg class="w-full h-full" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="40" stroke="#1F2937" stroke-width="8" fill="transparent" />
+              <circle id="ring-strain" class="ring-progress" cx="50" cy="50" r="40" stroke="#06B6D4" stroke-width="8" stroke-linecap="round" fill="transparent" stroke-dasharray="251.2" stroke-dashoffset="251.2" />
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center">
+              <span id="val-strain" class="text-xl font-black text-white">--</span>
+              <span id="badge-strain-target" class="text-[9px] font-bold uppercase tracking-wider text-cyan-400">Meta: --</span>
+            </div>
+          </div>
+          <span class="mt-1 text-xs font-semibold text-gray-300">Day Strain</span>
+          <span id="sub-strain" class="text-[10px] text-gray-400">TRIMP + SNC</span>
+        </div>
+
+        <!-- ANILLO 3: SLEEP ARCHITECTURE -->
+        <div class="flex flex-col items-center">
+          <div class="relative w-24 h-24">
+            <svg class="w-full h-full" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="40" stroke="#1F2937" stroke-width="8" fill="transparent" />
+              <circle id="ring-sleep" class="ring-progress" cx="50" cy="50" r="40" stroke="#8B5CF6" stroke-width="8" stroke-linecap="round" fill="transparent" stroke-dasharray="251.2" stroke-dashoffset="251.2" />
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center">
+              <span id="val-sleep" class="text-xl font-black text-white">--%</span>
+              <span id="badge-sleep-eff" class="text-[9px] font-bold uppercase tracking-wider text-purple-400">SE: --%</span>
+            </div>
+          </div>
+          <span class="mt-1 text-xs font-semibold text-gray-300">Sueño Arq.</span>
+          <span id="sub-sleep" class="text-[10px] text-gray-400">Deuda: --h</span>
+        </div>
+
+      </div>
+
+      <!-- PRESCRIPCIÓN CLÍNICA DEL DÍA (COACH MBE) -->
+      <div class="mt-4 pt-3 border-t border-gray-800/80 flex items-start space-x-2.5">
+        <span class="text-lg">🩺</span>
+        <p id="clinical-coach-notes" class="text-xs text-gray-300 leading-relaxed">
+          Conecta Supabase o pulsa "Semilla 14d" para inicializar la línea base móvil de 14 días.
+        </p>
+      </div>
+    </section>
+
+    <!-- TARJETA 2: MARCADORES AUTONÓMICOS (VFC lnRMSSD, RHR, FR, SpO2) -->
+    <section class="glass-card rounded-2xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400">Balance Autonómico vs Línea Base (14d)</h2>
+        <span id="z-score-pill" class="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-800 text-emerald-400">Z-HRV: --</span>
+      </div>
+
+      <div class="grid grid-cols-4 gap-2 text-center">
+        <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
+          <div class="text-[10px] text-gray-400">ln(RMSSD)</div>
+          <div id="metric-lnrmssd" class="text-sm font-bold text-white mt-0.5">--</div>
+          <div id="metric-rmssd-base" class="text-[10px] text-emerald-400 font-mono">Base: --</div>
+        </div>
+        <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
+          <div class="text-[10px] text-gray-400">RHR Basal</div>
+          <div id="metric-rhr" class="text-sm font-bold text-white mt-0.5">-- lpm</div>
+          <div id="metric-rhr-z" class="text-[10px] text-cyan-400 font-mono">Z: --</div>
+        </div>
+        <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
+          <div class="text-[10px] text-gray-400">Frec. Resp.</div>
+          <div id="metric-resp" class="text-sm font-bold text-white mt-0.5">-- rpm</div>
+          <div class="text-[10px] text-gray-500">Nocturna</div>
+        </div>
+        <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
+          <div class="text-[10px] text-gray-400">SpO2 Media</div>
+          <div id="metric-spo2" class="text-sm font-bold text-white mt-0.5">--%</div>
+          <div class="text-[10px] text-gray-500">Alostasis</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TARJETA 3: SUEÑO, DEUDA EXPONENCIAL Y VENTANA CIRCADIANA -->
+    <section class="glass-card rounded-2xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400">Regulación Homeostática & Circadiana (Borbély)</h2>
+        <span class="text-[10px] text-purple-400 font-semibold" id="sleep-window-badge">Ventana: --:-- a --:--</span>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 mb-3">
+        <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
+          <div class="text-[10px] text-gray-400">Sueño Total (TST)</div>
+          <div id="sleep-tst" class="text-sm font-bold text-white">--h --m</div>
+          <div id="sleep-sws-rem" class="text-[10px] text-purple-300">SWS/REM: --%</div>
+        </div>
+        <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
+          <div class="text-[10px] text-gray-400">Deuda Acum. (7d)</div>
+          <div id="sleep-debt" class="text-sm font-bold text-amber-400">-- h</div>
+          <div class="text-[10px] text-gray-500">Decaimiento τ=0.35</div>
+        </div>
+        <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
+          <div class="text-[10px] text-gray-400">Necesidad Hoy</div>
+          <div id="sleep-need" class="text-sm font-bold text-cyan-400">-- h</div>
+          <div class="text-[10px] text-gray-500">Base + Strain + Deuda</div>
+        </div>
+      </div>
+
+      <!-- Barra de Fases del Sueño -->
+      <div class="space-y-1">
+        <div class="flex justify-between text-[10px] text-gray-400">
+          <span id="label-deep">Profundo (SWS): --m</span>
+          <span id="label-rem">REM: --m</span>
+          <span id="label-light">Ligero: --m</span>
+        </div>
+        <div class="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden flex">
+          <div id="bar-deep" class="bg-indigo-600 h-full" style="width: 20%"></div>
+          <div id="bar-rem" class="bg-purple-500 h-full" style="width: 22%"></div>
+          <div id="bar-light" class="bg-violet-300/50 h-full" style="width: 58%"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TARJETA 4: DESGLOSE DE STRAIN (CARDIO + PICKLEBALL/FUERZA + GUARDIA) -->
+    <section class="glass-card rounded-2xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400">Compartimentos de Carga Interna (Strain)</h2>
+        <span id="shift-badge" class="text-[10px] px-2 py-0.5 rounded bg-gray-800 text-gray-400">Sin Guardia</span>
+      </div>
+      <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
+          <div class="text-[10px] text-gray-400">TRIMP Cardio</div>
+          <div id="load-cardio" class="text-sm font-bold text-cyan-400">-- AU</div>
+          <div id="load-steps" class="text-[10px] text-gray-500">-- pasos</div>
+        </div>
+        <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
+          <div class="text-[10px] text-gray-400">Neuromuscular</div>
+          <div id="load-neuro" class="text-sm font-bold text-emerald-400">-- AU</div>
+          <div class="text-[10px] text-gray-500">Pickleball / Pesas</div>
+        </div>
+        <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-2.5">
+          <div class="text-[10px] text-gray-400">Carga Guardia</div>
+          <div id="load-shift" class="text-sm font-bold text-amber-400">-- AU</div>
+          <div class="text-[10px] text-gray-500">Ortostática / Noct.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TARJETA 5: RECOMPOSICIÓN CORPORAL Y CICLADO DE MACROS (FEELFIT + ZEPP) -->
+    <section class="glass-card rounded-2xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400">Recomposición Corporal & Ciclado Nutricional</h2>
+          <p class="text-[10px] text-gray-500">Filtro EWMA (Feelfit) + Prescripción acoplada al Strain</p>
+        </div>
+        <div class="text-right">
+          <span id="weight-trend" class="text-sm font-black text-white">-- kg</span>
+          <span id="bf-trend" class="block text-[10px] text-emerald-400 font-mono">--% BF (EWMA)</span>
+        </div>
+      </div>
+
+      <!-- Kcal Resumen -->
+      <div class="flex justify-between items-center bg-gray-900/80 border border-gray-800 rounded-xl px-3 py-2 mb-3">
+        <div>
+          <div class="text-[10px] text-gray-400">Gasto Dinámico (TDEE)</div>
+          <div id="nutri-tdee" class="text-xs font-bold text-gray-200">-- kcal</div>
+        </div>
+        <div class="text-center">
+          <div class="text-[10px] text-gray-400">Meta Hoy (Déficit Adaptativo)</div>
+          <div id="nutri-target-kcal" class="text-sm font-black text-cyan-400">-- kcal</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[10px] text-gray-400">Ingesta Zepp</div>
+          <div id="nutri-intake-kcal" class="text-xs font-bold text-white">-- kcal</div>
+        </div>
+      </div>
+
+      <!-- Barras de Macronutrientes -->
+      <div class="space-y-2.5 text-xs">
+        <div>
+          <div class="flex justify-between mb-1">
+            <span class="text-gray-300 font-medium">Proteína <span class="text-[10px] text-gray-500">(2.2 g/kg obj)</span></span>
+            <span id="macro-prot-text" class="font-mono text-emerald-400">-- / -- g</span>
+          </div>
+          <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div id="bar-prot" class="bg-emerald-500 h-full transition-all duration-500" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex justify-between mb-1">
+            <span class="text-gray-300 font-medium">Carbohidratos <span class="text-[10px] text-gray-500">(Ciclado por Strain)</span></span>
+            <span id="macro-carb-text" class="font-mono text-cyan-400">-- / -- g</span>
+          </div>
+          <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div id="bar-carb" class="bg-cyan-500 h-full transition-all duration-500" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex justify-between mb-1">
+            <span class="text-gray-300 font-medium">Grasas Esenciales <span class="text-[10px] text-gray-500">(0.85 g/kg)</span></span>
+            <span id="macro-fat-text" class="font-mono text-amber-400">-- / -- g</span>
+          </div>
+          <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div id="bar-fat" class="bg-amber-500 h-full transition-all duration-500" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TARJETA 6: GRÁFICA LONGITUDINAL DE 14 DÍAS (lnRMSSD & STRAIN/RECOVERY) -->
+    <section class="glass-card rounded-2xl p-4">
+      <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3">Tendencia de 14 Días: Recovery (%) vs Strain (Escala x5)</h2>
+      <div class="h-48 w-full">
+        <canvas id="trendChart"></canvas>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL 1: REGISTRO CLÍNICO RÁPIDO (GUARDIA / PICKLEBALL / BIOMETRÍA) -->
+  <div id="log-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl max-w-md w-full p-5 max-h-[90vh] overflow-y-auto space-y-4">
+      <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Registro Clínico & Recálculo</h3>
+        <button onclick="closeModal('log-modal')" class="text-gray-400 hover:text-white text-sm">✕</button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 text-xs">
+        <div>
+          <label class="text-gray-400 block mb-1">RMSSD Nocturno (ms)</label>
+          <input id="in-rmssd" type="number" step="0.1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="52.0" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">FC Reposo (lpm)</label>
+          <input id="in-rhr" type="number" step="0.5" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="55.0" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">Sueño Total (min)</label>
+          <input id="in-tst" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="435" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">Tiempo en Cama (min)</label>
+          <input id="in-tib" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="480" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">Sueño Profundo SWS (min)</label>
+          <input id="in-deep" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="85" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">Sueño REM (min)</label>
+          <input id="in-rem" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="95" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">Pickleball / Pesas (min)</label>
+          <input id="in-workout-min" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="90" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">RPE Sesión (Borg 1-10)</label>
+          <input id="in-rpe" type="number" step="0.5" max="10" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="7.5" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">Minutos Zona 4 + 5 (Alta FC)</label>
+          <input id="in-z45" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="28" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">Pasos Totales</label>
+          <input id="in-steps" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="11500" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">Peso Feelfit (kg)</label>
+          <input id="in-weight" type="number" step="0.1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="74.2" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">% Grasa Feelfit</label>
+          <input id="in-bf" type="number" step="0.1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="14.8" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">Horas Vigilia Guardia (00-06h)</label>
+          <input id="in-shift-hours" type="number" step="0.5" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="0" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">Kcal Ingeridas (Zepp)</label>
+          <input id="in-kcal" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="2150" />
+        </div>
+      </div>
+
+      <button onclick="saveAndComputeManualEntry()" class="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs uppercase tracking-wider">
+        Ejecutar Motor MBE & Guardar en Supabase
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL 2: CONFIGURACIÓN DE CREDENCIALES SUPABASE Y PERFIL -->
+  <div id="settings-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl max-w-md w-full p-5 space-y-4">
+      <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Conexión Serverless (Supabase)</h3>
+        <button onclick="closeModal('settings-modal')" class="text-gray-400 hover:text-white text-sm">✕</button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="text-gray-400 block mb-1">Supabase Project URL</label>
+          <input id="cfg-url" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono" placeholder="https://xyzcompany.supabase.co" />
+        </div>
+        <div>
+          <label class="text-gray-400 block mb-1">Supabase Anon / Service Key</label>
+          <input id="cfg-key" type="password" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..." />
+        </div>
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <div>
+            <label class="text-gray-400 block mb-1">Peso Objetivo (kg)</label>
+            <input id="cfg-target-weight" type="number" step="0.1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="72.0" />
+          </div>
+          <div>
+            <label class="text-gray-400 block mb-1">Hora Despertar Guardia</label>
+            <input id="cfg-wake-time" type="time" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white" value="06:00" />
+          </div>
+        </div>
+      </div>
+
+      <button onclick="saveSettings()" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs uppercase tracking-wider">
+        Guardar y Conectar Base de Datos
+      </button>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MOTOR MATEMÁTICO CLÍNICO PORTADO A JAVASCRIPT + CONTROLADOR SUPABASE
+       ======================================================================== -->
+  <script>
+    let supabaseClient = null;
+    let trendChartInstance = null;
+    const STORAGE_KEY_RECORDS = 'argon_biometric_records_v1';
+
+    // 1. Inicialización al cargar la PWA
+    window.addEventListener('DOMContentLoaded', () => {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      }
+      updateCountdown();
+      setInterval(updateCountdown, 60000);
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      document.getElementById('selected-date').value = todayStr;
+
+      initSupabaseFromStorage();
+      const localData = getLocalStore();
+      if (Object.keys(localData).length === 0) {
+        seedDemoData(false); // Genera línea base inicial para no mostrar pantalla vacía
+      } else {
+        loadDayData(todayStr);
+      }
+    });
+
+    // 2. Cuenta regresiva al 7 de diciembre de 2026
+    function updateCountdown() {
+      const deadline = new Date('2026-12-07T00:00:00-04:00').getTime();
+      const now = Date.now();
+      const diff = Math.max(0, deadline - now);
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      document.getElementById('countdown-timer').textContent = `${days}d ${hours}h`;
+    }
+
+    // 3. Gestión de Credenciales Supabase
+    function initSupabaseFromStorage() {
+      const url = localStorage.getItem('argon_sb_url') || '';
+      const key = localStorage.getItem('argon_sb_key') || '';
+      document.getElementById('cfg-url').value = url;
+      document.getElementById('cfg-key').value = key;
+      document.getElementById('cfg-target-weight').value = localStorage.getItem('argon_target_w') || '72.0';
+      document.getElementById('cfg-wake-time').value = localStorage.getItem('argon_wake_time') || '06:00';
+
+      if (url && key && window.supabase) {
+        supabaseClient = window.supabase.createClient(url, key);
+        document.getElementById('sync-status-text').textContent = 'Supabase Conectado (Cloud)';
+        document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-emerald-400 animate-pulse';
+        syncFromSupabase();
+      } else {
+        document.getElementById('sync-status-text').textContent = 'Caché Offline Activo (Local)';
+        document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-amber-400';
+      }
+    }
+
+    function saveSettings() {
+      localStorage.setItem('argon_sb_url', document.getElementById('cfg-url').value.trim());
+      localStorage.setItem('argon_sb_key', document.getElementById('cfg-key').value.trim());
+      localStorage.setItem('argon_target_w', document.getElementById('cfg-target-weight').value);
+      localStorage.setItem('argon_wake_time', document.getElementById('cfg-wake-time').value);
+      closeModal('settings-modal');
+      initSupabaseFromStorage();
+    }
+
+    // 4. Motor Matemático Clínico MBE en JavaScript (Espejo exacto de argon_engine.py)
+    function computeArgonDayScore(todayRaw, historyRawList, prevComputed) {
+      const targetWeight = parseFloat(localStorage.getItem('argon_target_w') || '72.0');
+      const wakeTimeStr = localStorage.getItem('argon_wake_time') || '06:00';
+      const basalNeedH = 7.75;
+      const age = 25;
+
+      // A. STRAIN SCORE (TRIMP Banister + Neuromuscular Pickleball/Gym + Guardia)
+      const hrMax = 208 - (0.7 * age);
+      const zones = todayRaw.hr_zones_minutes || { z1: 20, z2: 15, z3: 10, z4: 12, z5: 6 };
+      const mids = { z1: 0.55, z2: 0.65, z3: 0.75, z4: 0.85, z5: 0.95 };
+      let cardioTrimp = 0;
+      for (const z in mids) {
+        const minZ = parseFloat(zones[z] || 0);
+        cardioTrimp += minZ * mids[z] * 0.64 * Math.exp(1.92 * mids[z]);
+      }
+      const steps = parseInt(todayRaw.steps_count || 8000);
+      cardioTrimp += (steps / 1000.0) * 6.5;
+
+      const z4 = parseFloat(zones.z4 || 0);
+      const z5 = parseFloat(zones.z5 || 0);
+      const workoutMin = parseFloat(todayRaw.pickleball_or_gym_minutes || 0);
+      const sRpe = parseFloat(todayRaw.session_rpe || 0) * workoutMin;
+      const neuroLoad = 1.35 * ((4.0 * z4) + (8.0 * z5)) + (0.45 * sRpe);
+
+      const nightAwakeH = parseFloat(todayRaw.night_awake_shift_hours || 0);
+      const shiftLoad = nightAwakeH > 0 ? (1.40 * nightAwakeH * 35.0) : 0.0;
+
+      const totalLoad = cardioTrimp + neuroLoad + shiftLoad;
+      const strainScore = Math.min(20.8, Math.max(0.0, 21.0 * (1.0 - Math.exp(-0.00165 * totalLoad))));
+
+      // B. SUEÑO, DEUDA EXPONENCIAL Y VENTANA CIRCADIANA
+      const tibMin = Math.max(1, parseInt(todayRaw.time_in_bed_min || 460));
+      const tstMin = parseInt(todayRaw.total_sleep_min || 415);
+      const deepMin = parseInt(todayRaw.deep_sleep_min || 82);
+      const remMin = parseInt(todayRaw.rem_sleep_min || 90);
+      const lightMin = Math.max(0, tstMin - deepMin - remMin);
+      const napMin = parseInt(todayRaw.nap_sleep_min || 0);
+
+      const sePct = Math.min(100, (tstMin / tibMin) * 100);
+      const swsPct = (deepMin / Math.max(1, tstMin)) * 100;
+      const remPct = (remMin / Math.max(1, tstMin)) * 100;
+
+      let weightedDebtH = 0;
+      historyRawList.slice(0, 7).forEach((r, idx) => {
+        const pastTstH = ((r.total_sleep_min || 420) + (r.nap_sleep_min || 0)) / 60.0;
+        const deficit = Math.max(0, basalNeedH - pastTstH);
+        weightedDebtH += deficit * Math.exp(-0.35 * idx);
+      });
+
+      const dynamicNeedH = Math.min(10.2, Math.max(6.5, basalNeedH + (0.042 * strainScore) + (0.35 * weightedDebtH) - Math.min(1.5, napMin / 60.0)));
+      const sleepArchScore = 100 * (
+        0.50 * Math.min(1, ((tstMin + napMin) / 60.0) / basalNeedH) +
+        0.20 * Math.min(1, sePct / 88.0) +
+        0.15 * Math.min(1, swsPct / 20.0) +
+        0.15 * Math.min(1, remPct / 22.0)
+      );
+
+      // Cálculo de ventana óptima para dormir
+      const [wakeH, wakeM] = wakeTimeStr.split(':').map(Number);
+      const reqTibHours = dynamicNeedH / (sePct / 100.0);
+      const wakeMinutesTotal = (wakeH * 60) + wakeM + (24 * 60);
+      const startMin = Math.round(wakeMinutesTotal - (reqTibHours * 60) - 15) % (24 * 60);
+      const endMin = Math.round(wakeMinutesTotal - (reqTibHours * 60) + 15) % (24 * 60);
+      const fmtTime = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+      // C. RECOVERY SCORE (lnRMSSD Z-Score 14d + RHR + Alostasis)
+      const rmssdToday = parseFloat(todayRaw.rmssd_ms || 50.0);
+      const rhrToday = parseFloat(todayRaw.rhr_bpm || 56.0);
+      const lnRmssdToday = Math.log(Math.max(5.0, rmssdToday));
+
+      const histLn = historyRawList.slice(0, 14).map(r => Math.log(Math.max(5.0, parseFloat(r.rmssd_ms || 50))));
+      const histRhr = historyRawList.slice(0, 14).map(r => parseFloat(r.rhr_bpm || 56));
+
+      const meanArr = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+      const sdArr = (arr, m) => arr.length > 1 ? Math.sqrt(arr.reduce((s, v) => s + Math.pow(v - m, 2), 0) / arr.length) : 0.12;
+
+      const meanLn = histLn.length >= 3 ? meanArr(histLn) : lnRmssdToday;
+      const sdLn = Math.max(0.08, histLn.length >= 3 ? sdArr(histLn, meanLn) : 0.12);
+      const meanRhr = histRhr.length >= 3 ? meanArr(histRhr) : rhrToday;
+      const sdRhr = Math.max(1.5, histRhr.length >= 3 ? sdArr(histRhr, meanRhr) : 2.2);
+
+      const hrvZ = (lnRmssdToday - meanLn) / sdLn;
+      const rhrZ = (rhrToday - meanRhr) / sdRhr;
+
+      const spo2 = parseFloat(todayRaw.spo2_pct || 97.5);
+      const resp = parseFloat(todayRaw.resp_rate_brpm || 14.2);
+      let penalty = (spo2 < 94.0 ? 1.0 : 0.0) + (resp > 16.8 ? 0.85 : 0.0);
+
+      const sleepZ = (sleepArchScore - 75.0) / 15.0;
+      const psi = (0.55 * hrvZ) - (0.20 * rhrZ) + (0.25 * sleepZ) - penalty;
+      const recoveryScore = Math.min(99, Math.max(1, Math.round(100.0 / (1.0 + Math.exp(-1.15 * (psi + 0.35))))));
+
+      let recStatus = 'MODERATE';
+      let recMaxStrain = 12.0;
+      if (recoveryScore >= 67) {
+        recStatus = 'OPTIMAL';
+        recMaxStrain = +(14.5 + (recoveryScore - 67) * 0.14).toFixed(1);
+      } else if (recoveryScore < 34) {
+        recStatus = 'COMPROMISED';
+        recMaxStrain = +(6.0 + recoveryScore * 0.10).toFixed(1);
+      } else {
+        recMaxStrain = +(10.0 + (recoveryScore - 34) * 0.13).toFixed(1);
+      }
+
+      // D. RECOMPOSICIÓN CORPORAL Y MACROS DINÁMICOS
+      const rawW = parseFloat(todayRaw.weight_kg || 74.2);
+      const rawBf = parseFloat(todayRaw.body_fat_pct || 14.8);
+      const prevW = prevComputed ? parseFloat(prevComputed.trend_weight_kg || rawW) : rawW;
+      const prevBf = prevComputed ? parseFloat(prevComputed.trend_body_fat_pct || rawBf) : rawBf;
+
+      const trendW = +((0.15 * rawW) + (0.85 * prevW)).toFixed(2);
+      const trendBf = +((0.15 * rawBf) + (0.85 * prevBf)).toFixed(2);
+
+      const ffmKg = trendW * (1.0 - (trendBf / 100.0));
+      const rmr = 500 + (22 * ffmKg);
+      const strainBurn = Math.pow(strainScore, 1.65) * 9.5;
+      const dynamicTdee = Math.round((rmr * 1.30) + strainBurn);
+
+      const deficit = strainScore >= 14.0 ? 200 : (strainScore >= 10.0 ? 350 : 450);
+      const targetKcal = Math.max(1650, dynamicTdee - deficit);
+      const targetProt = Math.round(2.2 * targetWeight);
+      const targetFat = Math.round(0.85 * trendW);
+      const targetCarbs = Math.round(Math.max(400, targetKcal - (targetProt * 4) - (targetFat * 9)) / 4);
+
+      const coachNote = `Recovery ${recoveryScore}% (${recStatus}) | Strain ${strainScore.toFixed(1)}/21 (Máx sugerido: ${recMaxStrain}). ` +
+        `Deuda de sueño: ${weightedDebtH.toFixed(1)}h → Acuéstate entre ${fmtTime(startMin)} y ${fmtTime(endMin)}. ` +
+        `Meta nutricional hoy: ${targetKcal} kcal (${targetProt}g P / ${targetCarbs}g CHO / ${targetFat}g G).`;
+
+      return {
+        log_date: todayRaw.log_date,
+        rmssd_ms: rmssdToday,
+        rhr_bpm: rhrToday,
+        resp_rate_brpm: resp,
+        spo2_pct: spo2,
+        total_sleep_min: tstMin,
+        deep_sleep_min: deepMin,
+        rem_sleep_min: remMin,
+        light_sleep_min: lightMin,
+        steps_count: steps,
+        is_hospital_shift: nightAwakeH > 0,
+        intake_kcal: todayRaw.intake_kcal || targetKcal - 80,
+        intake_protein_g: todayRaw.intake_protein_g || targetProt - 5,
+        intake_carbs_g: todayRaw.intake_carbs_g || targetCarbs - 12,
+        intake_fat_g: todayRaw.intake_fat_g || targetFat - 3,
+        ln_rmssd: +lnRmssdToday.toFixed(3),
+        ln_rmssd_14d_mean: +meanLn.toFixed(3),
+        ln_rmssd_14d_sd: +sdLn.toFixed(3),
+        hrv_z_score: +hrvZ.toFixed(2),
+        rhr_z_score: +rhrZ.toFixed(2),
+        recovery_score: recoveryScore,
+        recovery_status: recStatus,
+        recommended_max_strain: recMaxStrain,
+        cardio_trimp_load: +cardioTrimp.toFixed(1),
+        neuromuscular_load: +neuroLoad.toFixed(1),
+        shift_orthostatic_load: +shiftLoad.toFixed(1),
+        strain_score: +strainScore.toFixed(1),
+        sleep_efficiency_pct: +sePct.toFixed(1),
+        sleep_architecture_score: +sleepArchScore.toFixed(1),
+        cumulative_sleep_debt_hours: +weightedDebtH.toFixed(2),
+        dynamic_sleep_need_hours: +dynamicNeedH.toFixed(2),
+        optimal_bedtime_start: fmtTime(startMin),
+        optimal_bedtime_end: fmtTime(endMin),
+        trend_weight_kg: trendW,
+        trend_body_fat_pct: trendBf,
+        dynamic_tdee_kcal: dynamicTdee,
+        target_kcal: targetKcal,
+        target_protein_g: targetProt,
+        target_carbs_g: targetCarbs,
+        target_fat_g: targetFat,
+        clinical_coach_notes: coachNote
+      };
+    }
+
+    // 5. Renderizado de la Interfaz (Anillos SVG, Tarjetas y Chart.js)
+    function renderDashboard(record, allRecordsSorted) {
+      const circumference = 251.2;
+
+      // Anillo Recovery
+      const recPct = record.recovery_score;
+      const recRing = document.getElementById('ring-recovery');
+      recRing.style.strokeDashoffset = circumference - (recPct / 100) * circumference;
+      const recColor = recPct >= 67 ? '#10B981' : (recPct >= 34 ? '#F59E0B' : '#EF4444');
+      recRing.style.stroke = recColor;
+      document.getElementById('val-recovery').textContent = `${recPct}%`;
+      const badgeRec = document.getElementById('badge-recovery');
+      badgeRec.textContent = recPct >= 67 ? 'ÓPTIMO' : (recPct >= 34 ? 'MODERADO' : 'FATIGA SNC');
+      badgeRec.style.color = recColor;
+      document.getElementById('sub-recovery').textContent = `HRV: ${record.rmssd_ms} ms`;
+
+      // Anillo Strain (0 a 21)
+      const strainVal = record.strain_score;
+      const strainRing = document.getElementById('ring-strain');
+      strainRing.style.strokeDashoffset = circumference - (Math.min(21, strainVal) / 21.0) * circumference;
+      document.getElementById('val-strain').textContent = strainVal.toFixed(1);
+      document.getElementById('badge-strain-target').textContent = `Meta: ${record.recommended_max_strain}`;
+
+      // Anillo Sueño
+      const sleepPct = Math.round(record.sleep_architecture_score);
+      const sleepRing = document.getElementById('ring-sleep');
+      sleepRing.style.strokeDashoffset = circumference - (sleepPct / 100) * circumference;
+      document.getElementById('val-sleep').textContent = `${sleepPct}%`;
+      document.getElementById('badge-sleep-eff').textContent = `SE: ${Math.round(record.sleep_efficiency_pct)}%`;
+      document.getElementById('sub-sleep').textContent = `Deuda: ${record.cumulative_sleep_debt_hours}h`;
+
+      // Coach Clínico
+      document.getElementById('clinical-coach-notes').textContent = record.clinical_coach_notes;
+
+      // Marcadores Autonómicos
+      document.getElementById('z-score-pill').textContent = `Z-HRV: ${record.hrv_z_score >= 0 ? '+' : ''}${record.hrv_z_score} SD`;
+      document.getElementById('metric-lnrmssd').textContent = `${record.ln_rmssd} ln`;
+      document.getElementById('metric-rmssd-base').textContent = `μ: ${record.ln_rmssd_14d_mean}`;
+      document.getElementById('metric-rhr').textContent = `${record.rhr_bpm} lpm`;
+      document.getElementById('metric-rhr-z').textContent = `Z: ${record.rhr_z_score >= 0 ? '+' : ''}${record.rhr_z_score}`;
+      document.getElementById('metric-resp').textContent = `${record.resp_rate_brpm} rpm`;
+      document.getElementById('metric-spo2').textContent = `${record.spo2_pct}%`;
+
+      // Sueño y Ventana Circadiana
+      document.getElementById('sleep-window-badge').textContent = `Ventana: ${record.optimal_bedtime_start} - ${record.optimal_bedtime_end}`;
+      const tstH = Math.floor(record.total_sleep_min / 60);
+      const tstM = record.total_sleep_min % 60;
+      document.getElementById('sleep-tst').textContent = `${tstH}h ${tstM}m`;
+      const swsRemPct = Math.round(((record.deep_sleep_min + record.rem_sleep_min) / Math.max(1, record.total_sleep_min)) * 100);
+      document.getElementById('sleep-sws-rem').textContent = `SWS+REM: ${swsRemPct}%`;
+      document.getElementById('sleep-debt').textContent = `${record.cumulative_sleep_debt_hours} h`;
+      document.getElementById('sleep-need').textContent = `${record.dynamic_sleep_need_hours} h`;
+
+      const deepPct = Math.round((record.deep_sleep_min / record.total_sleep_min) * 100);
+      const remPct = Math.round((record.rem_sleep_min / record.total_sleep_min) * 100);
+      const lightPct = Math.max(0, 100 - deepPct - remPct);
+      document.getElementById('label-deep').textContent = `Profundo: ${record.deep_sleep_min}m (${deepPct}%)`;
+      document.getElementById('label-rem').textContent = `REM: ${record.rem_sleep_min}m (${remPct}%)`;
+      document.getElementById('label-light').textContent = `Ligero: ${record.light_sleep_min}m`;
+      document.getElementById('bar-deep').style.width = `${deepPct}%`;
+      document.getElementById('bar-rem').style.width = `${remPct}%`;
+      document.getElementById('bar-light').style.width = `${lightPct}%`;
+
+      // Desglose Strain
+      document.getElementById('load-cardio').textContent = `${record.cardio_trimp_load} AU`;
+      document.getElementById('load-steps').textContent = `${record.steps_count.toLocaleString()} pasos`;
+      document.getElementById('load-neuro').textContent = `${record.neuromuscular_load} AU`;
+      document.getElementById('load-shift').textContent = `${record.shift_orthostatic_load} AU`;
+      const shiftBadge = document.getElementById('shift-badge');
+      if (record.shift_orthostatic_load > 0) {
+        shiftBadge.textContent = 'Guardia Hospitalaria Activa';
+        shiftBadge.className = 'text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40';
+      } else {
+        shiftBadge.textContent = 'Sin Guardia Nocturna';
+        shiftBadge.className = 'text-[10px] px-2 py-0.5 rounded bg-gray-800 text-gray-400';
+      }
+
+      // Nutrición y Recomposición
+      document.getElementById('weight-trend').textContent = `${record.trend_weight_kg} kg`;
+      document.getElementById('bf-trend').textContent = `${record.trend_body_fat_pct}% BF (EWMA)`;
+      document.getElementById('nutri-tdee').textContent = `${record.dynamic_tdee_kcal} kcal`;
+      document.getElementById('nutri-target-kcal').textContent = `${record.target_kcal} kcal`;
+      document.getElementById('nutri-intake-kcal').textContent = `${record.intake_kcal} kcal`;
+
+      document.getElementById('macro-prot-text').textContent = `${record.intake_protein_g} / ${record.target_protein_g} g`;
+      document.getElementById('macro-carb-text').textContent = `${record.intake_carbs_g} / ${record.target_carbs_g} g`;
+      document.getElementById('macro-fat-text').textContent = `${record.intake_fat_g} / ${record.target_fat_g} g`;
+
+      document.getElementById('bar-prot').style.width = `${Math.min(100, (record.intake_protein_g / record.target_protein_g) * 100)}%`;
+      document.getElementById('bar-carb').style.width = `${Math.min(100, (record.intake_carbs_g / record.target_carbs_g) * 100)}%`;
+      document.getElementById('bar-fat').style.width = `${Math.min(100, (record.intake_fat_g / record.target_fat_g) * 100)}%`;
+
+      renderTrendChart(allRecordsSorted.slice(-14));
+    }
+
+    function renderTrendChart(last14) {
+      const ctx = document.getElementById('trendChart').getContext('2d');
+      const labels = last14.map(r => r.log_date.slice(5));
+      const recData = last14.map(r => r.recovery_score);
+      const strainScaled = last14.map(r => +(r.strain_score * 4.76).toFixed(1)); // Escala 0-21 a 0-100 visual
+
+      if (trendChartInstance) trendChartInstance.destroy();
+      trendChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Recovery (%)',
+              data: recData,
+              borderColor: '#10B981',
+              backgroundColor: 'rgba(16, 185, 129, 0.12)',
+              fill: true,
+              tension: 0.35,
+              borderWidth: 2
+            },
+            {
+              label: 'Strain (Escalado %)',
+              data: strainScaled,
+              borderColor: '#06B6D4',
+              borderDash: [4, 4],
+              tension: 0.35,
+              borderWidth: 2
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#9CA3AF', font: { size: 10 } } } },
+          scales: {
+            x: { ticks: { color: '#6B7280', font: { size: 9 } }, grid: { display: false } },
+            y: { min: 0, max: 100, ticks: { color: '#6B7280', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+          }
+        }
+      });
+    }
+
+    // 6. Almacenamiento Local, Semilla de 14 días y Sincronización con Supabase
+    function getLocalStore() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || '{}'); }
+      catch { return {}; }
+    }
+
+    function saveLocalStore(store) {
+      localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(store));
+    }
+
+    function loadDayData(dateStr) {
+      const store = getLocalStore();
+      const sortedDates = Object.keys(store).sort();
+      const allSorted = sortedDates.map(d => store[d]);
+      const record = store[dateStr] || allSorted[allSorted.length - 1];
+      if (record) {
+        document.getElementById('selected-date').value = record.log_date;
+        renderDashboard(record, allSorted);
+      }
+    }
+
+    async function saveAndComputeManualEntry() {
+      const dateStr = document.getElementById('selected-date').value || new Date().toISOString().split('T')[0];
+      const store = getLocalStore();
+      const pastDates = Object.keys(store).filter(d => d < dateStr).sort().reverse();
+      const historyList = pastDates.map(d => store[d]);
+      const prevComp = historyList[0] || null;
+
+      const z45 = parseFloat(document.getElementById('in-z45').value || 26);
+      const rawInput = {
+        log_date: dateStr,
+        rmssd_ms: parseFloat(document.getElementById('in-rmssd').value || 54),
+        rhr_bpm: parseFloat(document.getElementById('in-rhr').value || 55),
+        total_sleep_min: parseInt(document.getElementById('in-tst').value || 435),
+        time_in_bed_min: parseInt(document.getElementById('in-tib').value || 480),
+        deep_sleep_min: parseInt(document.getElementById('in-deep').value || 88),
+        rem_sleep_min: parseInt(document.getElementById('in-rem').value || 95),
+        pickleball_or_gym_minutes: parseInt(document.getElementById('in-workout-min').value || 90),
+        session_rpe: parseFloat(document.getElementById('in-rpe').value || 7.5),
+        hr_zones_minutes: { z1: 25, z2: 20, z3: 18, z4: Math.round(z45 * 0.65), z5: Math.round(z45 * 0.35) },
+        steps_count: parseInt(document.getElementById('in-steps').value || 11200),
+        weight_kg: parseFloat(document.getElementById('in-weight').value || 74.0),
+        body_fat_pct: parseFloat(document.getElementById('in-bf').value || 14.5),
+        night_awake_shift_hours: parseFloat(document.getElementById('in-shift-hours').value || 0),
+        intake_kcal: parseInt(document.getElementById('in-kcal').value || 2150),
+        resp_rate_brpm: 14.2,
+        spo2_pct: 97.5
+      };
+
+      const computed = computeArgonDayScore(rawInput, historyList, prevComp);
+      store[dateStr] = computed;
+      saveLocalStore(store);
+      closeModal('log-modal');
+      loadDayData(dateStr);
+
+      if (supabaseClient) {
+        await pushDayToSupabase(rawInput, computed);
+      }
+    }
+
+    async function seedDemoData(pushCloud = true) {
+      const store = {};
+      const today = new Date();
+      let prevComp = null;
+      const historyRaw = [];
+
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const isShift = (i === 4 || i === 9); // Simula 2 guardias hospitalarias en 14 días
+        const isPickleball = (i % 2 === 0);
+
+        const raw = {
+          log_date: dateStr,
+          rmssd_ms: isShift ? 38.5 : +(49 + Math.sin(i) * 7).toFixed(1),
+          rhr_bpm: isShift ? 62.0 : +(55 - Math.sin(i) * 2.5).toFixed(1),
+          total_sleep_min: isShift ? 310 : Math.round(430 + Math.cos(i) * 25),
+          time_in_bed_min: isShift ? 360 : 485,
+          deep_sleep_min: isShift ? 55 : 86,
+          rem_sleep_min: isShift ? 60 : 94,
+          pickleball_or_gym_minutes: isPickleball ? 95 : 40,
+          session_rpe: isPickleball ? 8.0 : 5.5,
+          hr_zones_minutes: isPickleball
+            ? { z1: 20, z2: 25, z3: 22, z4: 18, z5: 10 }
+            : { z1: 30, z2: 15, z3: 8, z4: 3, z5: 0 },
+          steps_count: isShift ? 14800 : (isPickleball ? 12400 : 8500),
+          weight_kg: +(74.8 - ((13 - i) * 0.06)).toFixed(2),
+          body_fat_pct: +(15.2 - ((13 - i) * 0.04)).toFixed(2),
+          night_awake_shift_hours: isShift ? 5.0 : 0.0,
+          resp_rate_brpm: isShift ? 16.4 : 14.1,
+          spo2_pct: 97.6
+        };
+
+        const comp = computeArgonDayScore(raw, [...historyRaw].reverse(), prevComp);
+        store[dateStr] = comp;
+        historyRaw.push(raw);
+        prevComp = comp;
+
+        if (pushCloud && supabaseClient && i === 0) {
+          await pushDayToSupabase(raw, comp);
+        }
+      }
+
+      saveLocalStore(store);
+      const todayStr = today.toISOString().split('T')[0];
+      loadDayData(todayStr);
+    }
+
+    async function pushDayToSupabase(rawInput, computed) {
+      try {
+        await supabaseClient.from('daily_raw_biometrics').upsert({
+          log_date: rawInput.log_date,
+          rhr_bpm: rawInput.rhr_bpm,
+          rmssd_ms: rawInput.rmssd_ms,
+          resp_rate_brpm: rawInput.resp_rate_brpm,
+          spo2_pct: rawInput.spo2_pct,
+          time_in_bed_min: rawInput.time_in_bed_min,
+          total_sleep_min: rawInput.total_sleep_min,
+          deep_sleep_min: rawInput.deep_sleep_min,
+          rem_sleep_min: rawInput.rem_sleep_min,
+          light_sleep_min: computed.light_sleep_min,
+          steps_count: rawInput.steps_count,
+          hr_zones_minutes: rawInput.hr_zones_minutes,
+          pickleball_or_gym_minutes: rawInput.pickleball_or_gym_minutes,
+          session_rpe: rawInput.session_rpe,
+          is_hospital_shift: rawInput.night_awake_shift_hours > 0,
+          night_awake_shift_hours: rawInput.night_awake_shift_hours,
+          weight_kg: rawInput.weight_kg,
+          body_fat_pct: rawInput.body_fat_pct,
+          intake_kcal: computed.intake_kcal,
+          intake_protein_g: computed.intake_protein_g,
+          intake_carbs_g: computed.intake_carbs_g,
+          intake_fat_g: computed.intake_fat_g
+        });
+
+        await supabaseClient.from('computed_daily_scores').upsert({
+          log_date: computed.log_date,
+          ln_rmssd: computed.ln_rmssd,
+          ln_rmssd_14d_mean: computed.ln_rmssd_14d_mean,
+          ln_rmssd_14d_sd: computed.ln_rmssd_14d_sd,
+          hrv_z_score: computed.hrv_z_score,
+          rhr_z_score: computed.rhr_z_score,
+          recovery_score: computed.recovery_score,
+          recovery_status: computed.recovery_status,
+          cardio_trimp_load: computed.cardio_trimp_load,
+          neuromuscular_load: computed.neuromuscular_load,
+          shift_orthostatic_load: computed.shift_orthostatic_load,
+          strain_score: computed.strain_score,
+          recommended_max_strain: computed.recommended_max_strain,
+          sleep_efficiency_pct: computed.sleep_efficiency_pct,
+          sleep_architecture_score: computed.sleep_architecture_score,
+          cumulative_sleep_debt_hours: computed.cumulative_sleep_debt_hours,
+          dynamic_sleep_need_hours: computed.dynamic_sleep_need_hours,
+          optimal_bedtime_start: computed.optimal_bedtime_start,
+          optimal_bedtime_end: computed.optimal_bedtime_end,
+          trend_weight_kg: computed.trend_weight_kg,
+          trend_body_fat_pct: computed.trend_body_fat_pct,
+          dynamic_tdee_kcal: computed.dynamic_tdee_kcal,
+          target_kcal: computed.target_kcal,
+          target_protein_g: computed.target_protein_g,
+          target_carbs_g: computed.target_carbs_g,
+          target_fat_g: computed.target_fat_g,
+          clinical_coach_notes: computed.clinical_coach_notes
+        });
+        document.getElementById('sync-status-text').textContent = 'Sincronizado con Supabase ✓';
+      } catch (err) {
+        console.error('Error sincronizando con Supabase:', err);
+      }
+    }
+
+    async function syncFromSupabase() {
+      if (!supabaseClient) {
+        openModal('settings-modal');
+        return;
+      }
+      try {
+        document.getElementById('sync-status-text').textContent = 'Descargando de Supabase...';
+        const { data: compRows, error } = await supabaseClient
+          .from('computed_daily_scores')
+          .select('*, daily_raw_biometrics(*)')
+          .order('log_date', { ascending: true })
+          .limit(30);
+
+        if (error) throw error;
+        if (compRows && compRows.length > 0) {
+          const store = getLocalStore();
+          compRows.forEach(row => {
+            const raw = row.daily_raw_biometrics || {};
+            store[row.log_date] = { ...raw, ...row };
+          });
+          saveLocalStore(store);
+          const latestDate = compRows[compRows.length - 1].log_date;
+          loadDayData(latestDate);
+          document.getElementById('sync-status-text').textContent = `Cloud Activo (${compRows.length}d)`;
+        } else {
+          document.getElementById('sync-status-text').textContent = 'Supabase vacío → Usa Semilla 14d';
+        }
+      } catch (e) {
+        console.error(e);
+        document.getElementById('sync-status-text').textContent = 'Error API / Modo Offline';
+      }
+    }
+
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+  </script>
+</body>
+</html>
