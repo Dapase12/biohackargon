@@ -721,12 +721,14 @@
       </button>
     </div>
   </div>
-
+  <!-- ========================================================================
+       PARTE 2 DE 2 (v5.2): MOTOR GRAPHOS + BITÁCORA NUTRICIONAL + WEBHOOK QA
+       ======================================================================== -->
   <script>
     let supabaseClient = null;
     let apexChartInstance = null;
     let currentApexTab = 'hrv';
-    const STORAGE_KEY_RECORDS = 'argon_graphos_records_v50';
+    const STORAGE_KEY_RECORDS = 'argon_graphos_records_v52';
 
     function toggleHelp(id) {
       const el = document.getElementById(id);
@@ -747,15 +749,16 @@
       updateCountdown();
       setInterval(updateCountdown, 60000);
 
+      injectCustomMealLoggerUI();
+
       const todayStr = getLocalTodayIso();
       document.getElementById('selected-date').value = todayStr;
 
       initSupabaseFromStorage();
       const localData = getLocalStore();
-
-      // Si no hay historial v5.0 o tiene el peso viejo (74kg), calibrar con serie Feelfit 87.25kg
       const dates = Object.keys(localData).sort();
       const latestRec = dates.length ? localData[dates[dates.length - 1]] : null;
+
       if (dates.length < 7 || (latestRec && latestRec.weight_kg < 80)) {
         seedCalibratedFeelfitHistory(false);
       } else {
@@ -763,7 +766,75 @@
       }
     });
 
-    // 2. Reloj de Cuenta Regresiva al 7 de Diciembre de 2026 (Restaurado)
+    // Inyecta la Bitácora de Comidas del Día y el Registrador Personalizado en la Tarjeta 2
+    function injectCustomMealLoggerUI() {
+      const resetBtn = document.querySelector('button[onclick="resetTodayMeals()"]');
+      if (!resetBtn || document.getElementById('custom-meal-box')) return;
+      const quickBar = resetBtn.closest('.pt-2');
+      if (!quickBar) return;
+
+      const extraUI = document.createElement('div');
+      extraUI.id = 'custom-meal-box';
+      extraUI.className = 'mt-3 pt-2.5 border-t border-slate-800/80 space-y-2 text-xs';
+      extraUI.innerHTML = `
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">🍴 Bitácora de Comidas de Hoy (Zepp / Manual)</span>
+          <button onclick="toggleHelp('custom-meal-form')" class="text-[10px] px-2 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 font-semibold">
+            + Comida Personalizada
+          </button>
+        </div>
+        <div id="meals-log-list" class="flex flex-wrap gap-1.5 text-[10px] text-slate-400">
+          <span>Sin comidas registradas hoy. Usa los botones rápidos o sincroniza Zepp.</span>
+        </div>
+        <div id="custom-meal-form" class="hidden p-2.5 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2">
+          <div class="grid grid-cols-5 gap-1.5">
+            <input id="cm-name" type="text" placeholder="Plato (ej. Pollo)" class="col-span-2 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-[11px]" />
+            <input id="cm-prot" type="number" placeholder="Prot (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-emerald-300 text-[11px]" />
+            <input id="cm-carbs" type="number" placeholder="Carbs (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-cyan-300 text-[11px]" />
+            <input id="cm-fat" type="number" placeholder="Grasa (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-amber-300 text-[11px]" />
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <input id="cm-kcal" type="number" placeholder="Kcal totales (auto)" class="w-1/2 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-[11px] font-mono" />
+            <button onclick="submitCustomMeal()" class="w-1/2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[11px] uppercase">
+              Guardar Comida
+            </button>
+          </div>
+        </div>
+      `;
+      quickBar.parentNode.appendChild(extraUI);
+    }
+
+    function autoCalcCustomMealKcal() {
+      const p = parseFloat(document.getElementById('cm-prot').value) || 0;
+      const c = parseFloat(document.getElementById('cm-carbs').value) || 0;
+      const f = parseFloat(document.getElementById('cm-fat').value) || 0;
+      if (p > 0 || c > 0 || f > 0) {
+        document.getElementById('cm-kcal').value = Math.round((p * 4) + (c * 4) + (f * 9));
+      }
+    }
+
+    async function submitCustomMeal() {
+      const name = (document.getElementById('cm-name').value || 'Comida').trim();
+      const p = parseFloat(document.getElementById('cm-prot').value) || 0;
+      const c = parseFloat(document.getElementById('cm-carbs').value) || 0;
+      const f = parseFloat(document.getElementById('cm-fat').value) || 0;
+      let kcal = parseInt(document.getElementById('cm-kcal').value, 10) || 0;
+      if (kcal === 0 && (p > 0 || c > 0 || f > 0)) {
+        kcal = Math.round((p * 4) + (c * 4) + (f * 9));
+      }
+      if (kcal <= 0) return;
+
+      document.getElementById('cm-name').value = '';
+      document.getElementById('cm-prot').value = '';
+      document.getElementById('cm-carbs').value = '';
+      document.getElementById('cm-fat').value = '';
+      document.getElementById('cm-kcal').value = '';
+      document.getElementById('custom-meal-form').classList.add('hidden');
+
+      await quickAddMeal(kcal, p, c, f, name);
+    }
+
+    // 2. Reloj de Cuenta Regresiva al 7 de Diciembre de 2026
     function updateCountdown() {
       const deadline = new Date('2026-12-07T00:00:00-04:00').getTime();
       const diff = Math.max(0, deadline - Date.now());
@@ -802,20 +873,20 @@
     }
 
     // ========================================================================
-    // 4. MOTOR MATEMÁTICO MBE v5.0 (FEELFIT + WHOOP 4D + HEALTHSPAN AGE)
+    // 4. MOTOR MATEMÁTICO MBE v5.2 (FEELFIT + WHOOP 4D + HEALTHSPAN + MEALS)
     // ========================================================================
     function computeArgonDayScore(todayRaw, historyRawList, prevComputed) {
       const wakeTimeStr = localStorage.getItem('argon_wake_time') || '06:00';
       const basalNeedH = 7.75;
       const chronologicalAge = 25.0;
-      const heightM = 1.73; // Para IMC = 87.25 / (1.73^2) = 29.2 exacto de Feelfit
+      const heightM = 1.73;
 
       // A. BIOIMPEDANCIA FEELFIT (Prioridad estricta al pesaje real: 87.25 kg / 24.4% BF)
       const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.weight_kg : 87.25);
       const rawBf = parseFloat(todayRaw.body_fat_pct) || (prevComputed ? prevComputed.body_fat_pct : 24.4);
       const musclePct = parseFloat(todayRaw.skeletal_muscle_pct) || (prevComputed ? prevComputed.skeletal_muscle_pct : 48.9);
       const visceral = parseFloat(todayRaw.visceral_fat_index) || (prevComputed ? prevComputed.visceral_fat_index : 11.0);
-      const tmbFeelfit = parseInt(todayRaw.tmb_kcal) || (prevComputed ? prevComputed.tmb_kcal : 1794);
+      const tmbFeelfit = parseInt(todayRaw.tmb_kcal, 10) || (prevComputed ? prevComputed.tmb_kcal : 1794);
       const waterPct = parseFloat(todayRaw.body_water_pct) || (prevComputed ? prevComputed.body_water_pct : 54.6);
 
       const prevTrendW = prevComputed && prevComputed.trend_weight_kg ? parseFloat(prevComputed.trend_weight_kg) : rawW;
@@ -823,21 +894,19 @@
       const trendW = +((0.25 * rawW) + (0.75 * prevTrendW)).toFixed(2);
       const trendBf = +((0.25 * rawBf) + (0.75 * prevTrendBf)).toFixed(2);
 
-      // Composición Tisular Exacta (sobre peso de báscula del día)
-      const fatMassKg = +(rawW * (rawBf / 100.0)).toFixed(2);       // 21.29 kg
-      const ffmKg = +(rawW - fatMassKg).toFixed(1);                 // 66.0 kg (Peso sin grasa)
-      const boneMassKg = +(rawW * 0.0378).toFixed(1);               // 3.3 kg
-      const muscleMassKg = +(ffmKg - boneMassKg).toFixed(1);        // 62.7 kg
-      const waterMassKg = +(rawW * (waterPct / 100.0)).toFixed(2);  // 47.64 kg
-      const bmi = +(rawW / (heightM * heightM)).toFixed(1);         // 29.2
+      const fatMassKg = +(rawW * (rawBf / 100.0)).toFixed(2);
+      const ffmKg = +(rawW - fatMassKg).toFixed(1);
+      const boneMassKg = +(rawW * 0.0378).toFixed(1);
+      const muscleMassKg = +(ffmKg - boneMassKg).toFixed(1);
+      const waterMassKg = +(rawW * (waterPct / 100.0)).toFixed(2);
+      const bmi = +(rawW / (heightM * heightM)).toFixed(1);
 
-      // B. STRAIN 4D (Zonas FC 1-3, Zonas FC 4-5, Fuerza/Pickleball y Guardia)
-      const steps = Math.max(0, parseInt(todayRaw.steps_count) || 0);
+      // B. STRAIN 4D
+      const steps = Math.max(0, parseInt(todayRaw.steps_count, 10) || 0);
       const workoutMin = Math.max(0, parseFloat(todayRaw.pickleball_or_gym_minutes) || 0);
       const sRpe = Math.max(0, parseFloat(todayRaw.session_rpe) || (workoutMin > 0 ? 7.0 : 0));
       const nightAwakeH = Math.max(0, parseFloat(todayRaw.night_awake_shift_hours) || 0);
 
-      // Distribución de zonas cardíacas (de Health Connect o inferida de sesión + pasos)
       const ambientZ1 = Math.round(Math.max(0, steps - 2000) / 320);
       const zones = todayRaw.hr_zones_minutes && (todayRaw.hr_zones_minutes.z1 || todayRaw.hr_zones_minutes.z2)
         ? todayRaw.hr_zones_minutes
@@ -864,14 +933,14 @@
       const totalLoad = cardioTrimp + neuroLoad + shiftLoad;
       const strainScore = Math.min(20.8, Math.max(0.0, 21.0 * (1.0 - Math.exp(-0.00165 * totalLoad))));
 
-      // C. SUEÑO EN 4 PILARES (WHOOP SLEEP) + VENTANA CIRCADIANA
+      // C. SUEÑO EN 4 PILARES + VENTANA CIRCADIANA
       const prevTst = prevComputed && prevComputed.total_sleep_min ? prevComputed.total_sleep_min : 440;
-      const tstMin = parseInt(todayRaw.total_sleep_min) || prevTst;
-      const tibMin = parseInt(todayRaw.time_in_bed_min) || Math.max(tstMin + 28, Math.round(tstMin * 1.07));
-      const deepMin = parseInt(todayRaw.deep_sleep_min) || Math.round(tstMin * 0.20);
-      const remMin = parseInt(todayRaw.rem_sleep_min) || Math.round(tstMin * 0.22);
+      const tstMin = parseInt(todayRaw.total_sleep_min, 10) || prevTst;
+      const tibMin = parseInt(todayRaw.time_in_bed_min, 10) || Math.max(tstMin + 28, Math.round(tstMin * 1.07));
+      const deepMin = parseInt(todayRaw.deep_sleep_min, 10) || Math.round(tstMin * 0.20);
+      const remMin = parseInt(todayRaw.rem_sleep_min, 10) || Math.round(tstMin * 0.22);
       const lightMin = Math.max(0, tstMin - deepMin - remMin);
-      const napMin = parseInt(todayRaw.nap_sleep_min) || 0;
+      const napMin = parseInt(todayRaw.nap_sleep_min, 10) || 0;
 
       const sePct = Math.min(100, (tstMin / Math.max(1, tibMin)) * 100);
       const swsPct = (deepMin / Math.max(1, tstMin)) * 100;
@@ -879,15 +948,14 @@
 
       let weightedDebtH = 0;
       historyRawList.slice(0, 7).forEach((r, idx) => {
-        const pastTstH = ((parseInt(r.total_sleep_min) || 430) + (parseInt(r.nap_sleep_min) || 0)) / 60.0;
+        const pastTstH = ((parseInt(r.total_sleep_min, 10) || 430) + (parseInt(r.nap_sleep_min, 10) || 0)) / 60.0;
         weightedDebtH += Math.max(0, basalNeedH - pastTstH) * Math.exp(-0.35 * idx);
       });
 
       const dynamicNeedH = Math.min(10.0, Math.max(6.5, basalNeedH + (0.042 * strainScore) + (0.35 * weightedDebtH) - Math.min(1.5, napMin / 60.0)));
       const hoursVsNeededPct = Math.min(100, Math.round((((tstMin + napMin) / 60.0) / dynamicNeedH) * 100));
 
-      // Regularidad del Sueño (SRI sobre varianza de 7 días)
-      const recentTstList = [tstMin, ...historyRawList.slice(0, 6).map(r => parseInt(r.total_sleep_min) || 430)];
+      const recentTstList = [tstMin, ...historyRawList.slice(0, 6).map(r => parseInt(r.total_sleep_min, 10) || 430)];
       const meanTst = recentTstList.reduce((a, b) => a + b, 0) / recentTstList.length;
       const sdTstHours = Math.sqrt(recentTstList.reduce((s, v) => s + Math.pow((v - meanTst) / 60.0, 2), 0) / recentTstList.length);
       const sleepRegularityPct = Math.min(98, Math.max(55, Math.round(94 - (sdTstHours * 14.0) - (nightAwakeH * 3.5))));
@@ -906,9 +974,9 @@
       const endMin = Math.round(wakeTotalMin - (reqTibHours * 60) + 15) % 1440;
       const fmtTime = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
-      // D. RECUPERACIÓN AUTONÓMICA 4D Y DELTAS VS BASE 14 DÍAS
+      // D. RECUPERACIÓN AUTONÓMICA 4D
       const prevRmssd = prevComputed && prevComputed.rmssd_ms ? prevComputed.rmssd_ms : 50.0;
-      const prevRhr = prevComputed && prevComputed.rhr_bpm ? prevComputed.rhr_bpm : 55.0;
+      const prevRhr = prevComputed && prevComputed.rhr_bpm ? prevComputed.rhr_bpm : 54.5;
       const rmssdToday = parseFloat(todayRaw.rmssd_ms) || prevRmssd;
       const rhrToday = parseFloat(todayRaw.rhr_bpm) || prevRhr;
       const respToday = parseFloat(todayRaw.resp_rate_brpm) || 14.1;
@@ -934,7 +1002,6 @@
       const rhrZ = (rhrToday - meanRhr) / sdRhr;
       const penalty = (spo2Today < 94.0 ? 1.0 : 0.0) + (respToday > 16.8 ? 0.85 : 0.0);
 
-      // Estrés del sueño alto (% de la noche con tono simpático elevado)
       const highSleepStressPct = Math.min(45, Math.max(0, Math.round(
         Math.max(0, rhrZ * 9.0) + Math.max(0, -hrvZ * 7.0) + Math.max(0, 38 - (swsPct + remPct)) * 0.6
       )));
@@ -955,8 +1022,8 @@
         recMaxStrain = +(10.0 + (recoveryScore - 34) * 0.13).toFixed(1);
       }
 
-      // E. NUTRICIÓN Y LEY TERMODINÁMICA DE ATWATER (0 KCAL DE DESVIACIÓN)
-      const rmrActive = tmbFeelfit * 1.15; // TMB Feelfit (1794) + efecto termogénico = 2063 kcal
+      // E. NUTRICIÓN, BITÁCORA DE COMIDAS Y LEY DE ATWATER (0 KCAL DESVIACIÓN)
+      const rmrActive = tmbFeelfit * 1.15;
       const neatStepsKcal = Math.max(0, (steps - 2500) * 0.035);
       const netExerciseKcal = workoutMin * (strainScore >= 13 ? 5.5 : 4.2);
       const dynamicTdee = Math.round(rmrActive + neatStepsKcal + netExerciseKcal);
@@ -964,34 +1031,40 @@
       const desiredDeficit = strainScore >= 14.0 ? 500 : 550;
       const rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
 
-      // Proteína anclada a Masa Sin Grasa (FFM = 66kg -> 155g P), Grasa 0.72g/kg (-> 63g G)
       const targetProt = Math.round(2.35 * ffmKg);
       const targetFat = Math.round(0.72 * rawW);
       const targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
-      // Reconciliación Atwater Exacta: garantiza |target_kcal - (4P+4C+9G)| === 0 kcal siempre
       const targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
 
-      const realIntakeKcal = Math.max(0, parseInt(todayRaw.intake_kcal) || 0);
+      // Si existe bitácora detallada de comidas (meals_log_json), consolidar desde allí
+      const mealsLog = Array.isArray(todayRaw.meals_log_json) ? todayRaw.meals_log_json : [];
+      let realIntakeKcal = Math.max(0, parseInt(todayRaw.intake_kcal, 10) || 0);
       let realProt = Math.max(0, parseFloat(todayRaw.intake_protein_g) || 0);
       let realCarbs = Math.max(0, parseFloat(todayRaw.intake_carbs_g) || 0);
       let realFat = Math.max(0, parseFloat(todayRaw.intake_fat_g) || 0);
-      if (realIntakeKcal > 0 && realProt === 0 && realCarbs === 0 && realFat === 0) {
+
+      if (mealsLog.length > 0 && realIntakeKcal === 0) {
+        realIntakeKcal = mealsLog.reduce((s, m) => s + (parseInt(m.kcal, 10) || 0), 0);
+        realProt = mealsLog.reduce((s, m) => s + (parseFloat(m.prot) || 0), 0);
+        realCarbs = mealsLog.reduce((s, m) => s + (parseFloat(m.carbs) || 0), 0);
+        realFat = mealsLog.reduce((s, m) => s + (parseFloat(m.fat) || 0), 0);
+      } else if (realIntakeKcal > 0 && realProt === 0 && realCarbs === 0 && realFat === 0) {
         const ratio = realIntakeKcal / targetKcal;
         realProt = Math.round(targetProt * ratio);
         realCarbs = Math.round(targetCarbs * ratio);
         realFat = Math.round(targetFat * ratio);
       }
 
-      // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO (MBE)
+      // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO
       const hrMax = 208 - (0.7 * chronologicalAge);
-      const ffmPct = +(100.0 - rawBf).toFixed(1); // 75.6%
+      const ffmPct = +(100.0 - rawBf).toFixed(1);
       const vo2Max = +((15.3 * (hrMax / meanRhr)) * (ffmPct / 79.0) + (z45Min * 0.05)).toFixed(1);
 
       const deltaVo2 = +Math.max(-3.2, Math.min(2.5, -0.18 * (vo2Max - 43.0))).toFixed(1);
       const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.12 * (meanRhr - 60.0))).toFixed(1);
       const deltaFfm = +Math.max(-2.2, Math.min(2.2, -0.16 * (ffmPct - 79.0))).toFixed(1);
       const deltaSleep = +Math.max(-1.5, Math.min(1.8, -0.025 * (sleepRegularityPct - 78) - 0.25 * ((tstMin / 60.0) - 7.2))).toFixed(1);
-      const avgSteps7d = meanArr([steps, ...historyRawList.slice(0, 6).map(r => parseInt(r.steps_count) || 7500)]);
+      const avgSteps7d = meanArr([steps, ...historyRawList.slice(0, 6).map(r => parseInt(r.steps_count, 10) || 7500)]);
       const deltaAct = +Math.max(-1.8, Math.min(1.5, -0.18 * ((avgSteps7d - 6500) / 1000.0) - (workoutMin >= 30 ? 0.35 : 0.0))).toFixed(1);
 
       const totalAgeDelta = +(deltaVo2 + deltaRhr + deltaFfm + deltaSleep + deltaAct).toFixed(1);
@@ -1004,7 +1077,6 @@
 
       return {
         log_date: todayRaw.log_date,
-        // Feelfit Bioimpedance
         weight_kg: rawW,
         body_fat_pct: rawBf,
         fat_mass_kg: fatMassKg,
@@ -1020,7 +1092,6 @@
         bmi: bmi,
         trend_weight_kg: trendW,
         trend_body_fat_pct: trendBf,
-        // Autonomic & Recovery 4D
         rmssd_ms: +rmssdToday.toFixed(1),
         rmssd_14d_mean_ms: +meanRmssd.toFixed(1),
         rhr_bpm: +rhrToday.toFixed(1),
@@ -1036,7 +1107,6 @@
         recovery_score: recoveryScore,
         recovery_status: recStatus,
         recommended_max_strain: recMaxStrain,
-        // Sleep 4 Pillars & Architecture
         time_in_bed_min: tibMin,
         total_sleep_min: tstMin,
         deep_sleep_min: deepMin,
@@ -1051,7 +1121,6 @@
         dynamic_sleep_need_hours: +dynamicNeedH.toFixed(2),
         optimal_bedtime_start: fmtTime(startMin),
         optimal_bedtime_end: fmtTime(endMin),
-        // Strain 4D
         steps_count: steps,
         pickleball_or_gym_minutes: workoutMin,
         session_rpe: sRpe,
@@ -1064,7 +1133,6 @@
         neuromuscular_load: +neuroLoad.toFixed(1),
         shift_orthostatic_load: +shiftLoad.toFixed(1),
         strain_score: +strainScore.toFixed(1),
-        // Nutrition
         dynamic_tdee_kcal: dynamicTdee,
         target_kcal: targetKcal,
         target_protein_g: targetProt,
@@ -1074,7 +1142,7 @@
         intake_protein_g: Math.round(realProt),
         intake_carbs_g: Math.round(realCarbs),
         intake_fat_g: Math.round(realFat),
-        // Healthspan / WHOOP Age
+        meals_log_json: mealsLog,
         vo2_max_ml_kg_min: vo2Max,
         argon_physiological_age: argonAge,
         total_age_delta: totalAgeDelta,
@@ -1089,7 +1157,7 @@
     }
 
     // ========================================================================
-    // 5. RENDERIZADO COMPLETO DE LOS 48 NODOS DEL DOM (CERO '--')
+    // 5. RENDERIZADO COMPLETO DE LOS 48 NODOS DEL DOM + BITÁCORA DE COMIDAS
     // ========================================================================
     function fmtHoursMin(totalMinutes) {
       const m = Math.max(0, Math.round(totalMinutes || 0));
@@ -1132,7 +1200,7 @@
 
       document.getElementById('clinical-coach-notes').textContent = record.clinical_coach_notes;
 
-      // 2. Bioimpedancia Feelfit (Peso Real en Grande + Desglose Tisular)
+      // 2. Bioimpedancia Feelfit y Macros
       document.getElementById('weight-trend').textContent = `${record.weight_kg.toFixed(2)} kg`;
       document.getElementById('ffm-label').textContent = `Sin grasa: ${record.ffm_kg}kg | EWMA: ${record.trend_weight_kg}`;
       document.getElementById('bf-trend').textContent = `${record.body_fat_pct}%`;
@@ -1145,7 +1213,6 @@
       document.getElementById('metric-tmb').textContent = `${record.tmb_kcal} kcal`;
       document.getElementById('tmb-sub').textContent = `Ósea: ${record.bone_mass_kg}kg | Edad Mtb: 32`;
 
-      // Ecuación Nutricional y Macros
       const deficitToday = Math.max(250, record.dynamic_tdee_kcal - record.target_kcal);
       const weeklyFatLossKg = +((deficitToday * 7) / 7700).toFixed(2);
       const remainingKcal = Math.max(0, record.target_kcal - record.intake_kcal);
@@ -1165,7 +1232,25 @@
       document.getElementById('bar-carb').style.width = `${Math.min(100, (record.intake_carbs_g / Math.max(1, record.target_carbs_g)) * 100)}%`;
       document.getElementById('bar-fat').style.width = `${Math.min(100, (record.intake_fat_g / Math.max(1, record.target_fat_g)) * 100)}%`;
 
-      // 3. Recuperación Autonómica 4D (Con Flechas Comparativas vs Base 14d)
+      // Renderizar chips de comidas registradas hoy
+      const mealsContainer = document.getElementById('meals-log-list');
+      if (mealsContainer) {
+        const meals = Array.isArray(record.meals_log_json) ? record.meals_log_json : [];
+        if (meals.length === 0 && record.intake_kcal === 0) {
+          mealsContainer.innerHTML = '<span>Sin comidas registradas hoy. Usa los botones rápidos o sincroniza Zepp.</span>';
+        } else if (meals.length === 0 && record.intake_kcal > 0) {
+          mealsContainer.innerHTML = `<span class="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">Acumulado: ${record.intake_kcal} kcal (${record.intake_protein_g}P / ${record.intake_carbs_g}C / ${record.intake_fat_g}G)</span>`;
+        } else {
+          mealsContainer.innerHTML = meals.map((m, idx) => `
+            <span class="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200">
+              <span><strong>${m.name || 'Comida'}:</strong> ${m.kcal}kcal (${m.prot}P/${m.carbs}C/${m.fat}G)</span>
+              <button onclick="removeMealByIndex(${idx})" class="text-red-400 hover:text-red-300 font-bold ml-1">✕</button>
+            </span>
+          `).join('');
+        }
+      }
+
+      // 3. Recuperación Autonómica 4D
       document.getElementById('metric-lnrmssd').textContent = record.ln_rmssd;
       document.getElementById('z-score-pill').textContent = `${record.hrv_z_score >= 0 ? '+' : ''}${record.hrv_z_score} SD`;
       document.getElementById('metric-rmssd-ms').textContent = `${record.rmssd_ms} ms`;
@@ -1186,30 +1271,25 @@
       document.getElementById('metric-spo2').textContent = `${record.spo2_pct}%`;
       document.getElementById('rec-sleep-perf').textContent = `${sleepPct}%`;
 
-      // 4. Calificación del Sueño (4 Pilares Clínicos + Fases SWS/REM)
+      // 4. Calificación del Sueño (4 Pilares Clínicos)
       const tstH = Math.floor(record.total_sleep_min / 60);
       const tstM = record.total_sleep_min % 60;
       document.getElementById('sleep-tst').textContent = `${tstH}h ${tstM}m`;
       const swsRemPct = Math.round(((record.deep_sleep_min + record.rem_sleep_min) / Math.max(1, record.total_sleep_min)) * 100);
       document.getElementById('sleep-sws-rem').textContent = `SWS+REM: ${swsRemPct}%`;
       document.getElementById('sleep-debt').textContent = `${record.cumulative_sleep_debt_hours} h`;
-      document.getElementById('sleep-window-badge').textContent = `${record.optimal_bedtime_start} - ${record.optimal_bedtime_end}`;
+      document.getElementById('sleep-window-badge').textContent = `${String(record.optimal_bedtime_start).slice(0,5)} - ${String(record.optimal_bedtime_end).slice(0,5)}`;
       document.getElementById('sleep-need').textContent = `Necesitas: ${record.dynamic_sleep_need_hours}h`;
 
       document.getElementById('pillar-hours-pct').textContent = `${record.sleep_hours_vs_needed_pct}%`;
       document.getElementById('bar-pillar-hours').style.width = `${record.sleep_hours_vs_needed_pct}%`;
-      document.getElementById('bar-pillar-hours').className = `${record.sleep_hours_vs_needed_pct >= 80 ? 'bg-emerald-400' : 'bg-amber-400'} h-full`;
-
       document.getElementById('pillar-reg-pct').textContent = `${record.sleep_regularity_pct}%`;
       document.getElementById('bar-pillar-reg').style.width = `${record.sleep_regularity_pct}%`;
-
       const effRound = Math.round(record.sleep_efficiency_pct);
       document.getElementById('pillar-eff-pct').textContent = `${effRound}%`;
       document.getElementById('bar-pillar-eff').style.width = `${effRound}%`;
-
       document.getElementById('pillar-stress-pct').textContent = `${record.high_sleep_stress_pct}%`;
       document.getElementById('bar-pillar-stress').style.width = `${Math.max(6, record.high_sleep_stress_pct)}%`;
-      document.getElementById('bar-pillar-stress').className = `${record.high_sleep_stress_pct <= 12 ? 'bg-emerald-400' : 'bg-amber-400'} h-full`;
 
       const deepPct = Math.round((record.deep_sleep_min / Math.max(1, record.total_sleep_min)) * 100);
       const remPct = Math.round((record.rem_sleep_min / Math.max(1, record.total_sleep_min)) * 100);
@@ -1221,7 +1301,7 @@
       document.getElementById('bar-rem').style.width = `${remPct}%`;
       document.getElementById('bar-light').style.width = `${lightPct}%`;
 
-      // 5. Esfuerzo 4D y Compartimentos de Fatiga
+      // 5. Esfuerzo 4D
       document.getElementById('load-cardio').textContent = `${record.cardio_trimp_load} AU`;
       document.getElementById('load-neuro').textContent = `${record.neuromuscular_load} AU`;
       document.getElementById('load-workout-min').textContent = `${record.pickleball_or_gym_minutes} min sesión`;
@@ -1240,17 +1320,13 @@
         shiftBadge.className = 'text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400';
       }
 
-      // 6. Edad Fisiológica ARGON (WHOOP Age) y Ritmo de Envejecimiento
+      // 6. Edad Fisiológica ARGON
       document.getElementById('argon-age-val').textContent = record.argon_physiological_age.toFixed(1);
       const ageDeltaEl = document.getElementById('argon-age-delta-badge');
       ageDeltaEl.textContent = `${fmtDeltaYears(record.total_age_delta)} vs cronológica`;
       ageDeltaEl.className = record.total_age_delta <= 0 ? 'text-xs font-bold text-emerald-400 mt-0.5' : 'text-xs font-bold text-amber-400 mt-0.5';
 
       document.getElementById('pace-of-aging-val').textContent = `${record.pace_of_aging_x.toFixed(2)}x`;
-      const paceLabel = document.getElementById('pace-of-aging-label');
-      paceLabel.textContent = record.pace_of_aging_x <= 1.0 ? 'Desaceleración biológica óptima' : 'Carga alostática elevada';
-      paceLabel.className = record.pace_of_aging_x <= 1.0 ? 'text-[10px] text-emerald-400 mt-0.5' : 'text-[10px] text-amber-400 mt-0.5';
-
       document.getElementById('vo2max-val').textContent = `${record.vo2_max_ml_kg_min} ml/kg/min`;
       document.getElementById('vo2max-age-impact').textContent = fmtDeltaYears(record.delta_vo2_years);
       document.getElementById('rhr-age-val').textContent = `${record.rhr_14d_mean_bpm} lpm`;
@@ -1260,12 +1336,11 @@
       document.getElementById('sleep-age-impact').textContent = fmtDeltaYears(record.delta_sleep_years);
       document.getElementById('activity-age-impact').textContent = fmtDeltaYears(record.delta_act_years);
 
-      // 7. Renderizar Gráfica Longitudinal ApexCharts (3 Vistas)
       renderApexTelemetry(allRecordsSorted.slice(-14));
     }
 
     // ========================================================================
-    // 6. TELEMETRÍA LONGITUDINAL APEXCHARTS (3 PESTAÑAS COMPLETAS)
+    // 6. TELEMETRÍA LONGITUDINAL APEXCHARTS (3 PESTAÑAS)
     // ========================================================================
     function switchApexTab(tabName) {
       currentApexTab = tabName;
@@ -1287,19 +1362,10 @@
       const categories = last14.map(r => r.log_date.slice(5));
 
       let options = {
-        chart: {
-          height: 255,
-          background: 'transparent',
-          toolbar: { show: false },
-          animations: { enabled: true, easing: 'easeinout', speed: 450 }
-        },
+        chart: { height: 255, background: 'transparent', toolbar: { show: false }, animations: { enabled: true, speed: 400 } },
         theme: { mode: 'dark' },
         grid: { borderColor: 'rgba(255,255,255,0.06)', strokeDashArray: 3 },
-        xaxis: {
-          categories,
-          labels: { style: { colors: '#94A3B8', fontSize: '10px' } },
-          axisBorder: { show: false }
-        },
+        xaxis: { categories, labels: { style: { colors: '#94A3B8', fontSize: '10px' } }, axisBorder: { show: false } },
         legend: { labels: { colors: '#CBD5E1' }, fontSize: '11px' },
         tooltip: { theme: 'dark' }
       };
@@ -1313,10 +1379,7 @@
           { name: 'Media Base 14d (ms)', type: 'line', data: last14.map(r => r.rmssd_14d_mean_ms) },
           { name: 'FC Reposo (lpm)', type: 'line', data: last14.map(r => r.rhr_bpm) }
         ];
-        options.fill = {
-          type: ['gradient', 'solid', 'solid'],
-          gradient: { shadeIntensity: 1, opacityFrom: 0.32, opacityTo: 0.02 }
-        };
+        options.fill = { type: ['gradient', 'solid', 'solid'], gradient: { shadeIntensity: 1, opacityFrom: 0.32, opacityTo: 0.02 } };
         options.yaxis = [
           { title: { text: 'VFC (ms)', style: { color: '#10B981', fontSize: '10px' } }, labels: { style: { colors: '#10B981', fontSize: '10px' } } },
           { show: false },
@@ -1343,10 +1406,7 @@
           { name: 'Peso Báscula Feelfit (kg)', type: 'area', data: last14.map(r => r.weight_kg) },
           { name: '% Grasa Corporal', type: 'line', data: last14.map(r => r.body_fat_pct) }
         ];
-        options.fill = {
-          type: ['gradient', 'solid'],
-          gradient: { shadeIntensity: 1, opacityFrom: 0.30, opacityTo: 0.02 }
-        };
+        options.fill = { type: ['gradient', 'solid'], gradient: { shadeIntensity: 1, opacityFrom: 0.30, opacityTo: 0.02 } };
         options.yaxis = [
           { title: { text: 'Peso (kg)', style: { color: '#38BDF8', fontSize: '10px' } }, labels: { style: { colors: '#38BDF8', fontSize: '10px' } } },
           { opposite: true, title: { text: '% Grasa', style: { color: '#10B981', fontSize: '10px' } }, labels: { style: { colors: '#10B981', fontSize: '10px' } } }
@@ -1359,7 +1419,7 @@
     }
 
     // ========================================================================
-    // 7. GESTIÓN DE COMIDAS RÁPIDAS, SERIE CALIBRADA FEELFIT Y SUPABASE SYNC
+    // 7. GESTIÓN DE COMIDAS RÁPIDAS Y SINCRONIZACIÓN DUAL CON SUPABASE
     // ========================================================================
     function getLocalStore() {
       try { return JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || '{}'); }
@@ -1381,20 +1441,63 @@
       }
     }
 
-    async function quickAddMeal(addKcal, addProt, addCarbs, addFat) {
+    async function quickAddMeal(addKcal, addProt, addCarbs, addFat, customLabel) {
       const dateStr = document.getElementById('selected-date').value || getLocalTodayIso();
       const store = getLocalStore();
       const current = store[dateStr];
       if (!current) return;
+
+      const labelMap = { 420: 'Desayuno', 650: 'Almuerzo', 480: 'Cena', 130: 'Whey Protein' };
+      const mealName = customLabel || labelMap[addKcal] || 'Comida';
+      const currentMeals = Array.isArray(current.meals_log_json) ? [...current.meals_log_json] : [];
+      currentMeals.push({
+        id: 'manual_' + Date.now(),
+        name: mealName,
+        kcal: addKcal,
+        prot: addProt,
+        carbs: addCarbs,
+        fat: addFat
+      });
 
       const updatedRaw = {
         ...current,
         intake_kcal: Math.max(0, (current.intake_kcal || 0) + addKcal),
         intake_protein_g: Math.max(0, (current.intake_protein_g || 0) + addProt),
         intake_carbs_g: Math.max(0, (current.intake_carbs_g || 0) + addCarbs),
-        intake_fat_g: Math.max(0, (current.intake_fat_g || 0) + addFat)
+        intake_fat_g: Math.max(0, (current.intake_fat_g || 0) + addFat),
+        meals_log_json: currentMeals
       };
 
+      const pastList = Object.keys(store).filter(d => d < dateStr).sort().reverse().map(d => store[d]);
+      const recomputed = computeArgonDayScore(updatedRaw, pastList, pastList[0] || null);
+      store[dateStr] = recomputed;
+      saveLocalStore(store);
+      loadDayData(dateStr);
+      if (supabaseClient) await pushDayToSupabase(recomputed);
+    }
+
+    async function removeMealByIndex(idx) {
+      const dateStr = document.getElementById('selected-date').value || getLocalTodayIso();
+      const store = getLocalStore();
+      const current = store[dateStr];
+      if (!current || !Array.isArray(current.meals_log_json)) return;
+
+      const meals = [...current.meals_log_json];
+      meals.splice(idx, 1);
+
+      const newKcal = meals.reduce((s, m) => s + (parseInt(m.kcal, 10) || 0), 0);
+      const newProt = Math.round(meals.reduce((s, m) => s + (parseFloat(m.prot) || 0), 0));
+      const newCarbs = Math.round(meals.reduce((s, m) => s + (parseFloat(m.carbs) || 0), 0));
+      const newFat = Math.round(meals.reduce((s, m) => s + (parseFloat(m.fat) || 0), 0));
+
+      const updatedRaw = {
+        ...current,
+        intake_kcal: newKcal,
+        intake_protein_g: newProt,
+        intake_carbs_g: newCarbs,
+        intake_fat_g: newFat,
+        meals_log_json: meals
+      };
       const pastList = Object.keys(store).filter(d => d < dateStr).sort().reverse().map(d => store[d]);
       const recomputed = computeArgonDayScore(updatedRaw, pastList, pastList[0] || null);
       store[dateStr] = recomputed;
@@ -1409,7 +1512,14 @@
       const current = store[dateStr];
       if (!current) return;
 
-      const updatedRaw = { ...current, intake_kcal: 0, intake_protein_g: 0, intake_carbs_g: 0, intake_fat_g: 0 };
+      const updatedRaw = {
+        ...current,
+        intake_kcal: 0,
+        intake_protein_g: 0,
+        intake_carbs_g: 0,
+        intake_fat_g: 0,
+        meals_log_json: []
+      };
       const pastList = Object.keys(store).filter(d => d < dateStr).sort().reverse().map(d => store[d]);
       const recomputed = computeArgonDayScore(updatedRaw, pastList, pastList[0] || null);
       store[dateStr] = recomputed;
@@ -1459,8 +1569,12 @@
       if (supabaseClient) await pushDayToSupabase(computed);
     }
 
-    // Calibra los 14 días previos aterrizando HOY exactamente en 87.25 kg y 24.4% grasa (Feelfit)
+    // Calibra 14d preservando las comidas que ya hayas registrado hoy
     async function seedCalibratedFeelfitHistory(pushCloud = true) {
+      const existingStore = getLocalStore();
+      const todayIso = getLocalTodayIso();
+      const existingToday = existingStore[todayIso] || {};
+
       const store = {};
       const today = new Date();
       let prevComp = null;
@@ -1477,7 +1591,6 @@
 
         const raw = {
           log_date: dateStr,
-          // Hoy aterriza exacto en 87.25 kg y 24.4% BF de tu captura Feelfit
           weight_kg: isToday ? 87.25 : +(87.25 + (i * 0.06)).toFixed(2),
           body_fat_pct: isToday ? 24.4 : +(24.4 + (i * 0.04)).toFixed(1),
           skeletal_muscle_pct: 48.9,
@@ -1492,14 +1605,16 @@
           rem_sleep_min: isShift ? 68 : 96,
           pickleball_or_gym_minutes: isToday ? 40 : (isPickleball ? 85 : 30),
           session_rpe: isToday ? 7.0 : (isPickleball ? 7.5 : 5.5),
-          steps_count: isToday ? 4262 : (isShift ? 14200 : (isPickleball ? 11500 : 8200)),
+          steps_count: isToday ? (existingToday.steps_count || 4262) : (isShift ? 14200 : (isPickleball ? 11500 : 8200)),
           night_awake_shift_hours: isShift ? 5.0 : 0.0,
           resp_rate_brpm: isShift ? 16.0 : 14.1,
           spo2_pct: 97.6,
-          intake_kcal: isToday ? 0 : 1950,
-          intake_protein_g: isToday ? 0 : 155,
-          intake_carbs_g: isToday ? 0 : 185,
-          intake_fat_g: isToday ? 0 : 63
+          // Protege tus comidas registradas hoy para que nunca vuelvan a 0 por accidente
+          intake_kcal: isToday ? (existingToday.intake_kcal || 0) : 1743,
+          intake_protein_g: isToday ? (existingToday.intake_protein_g || 0) : 155,
+          intake_carbs_g: isToday ? (existingToday.intake_carbs_g || 0) : 139,
+          intake_fat_g: isToday ? (existingToday.intake_fat_g || 0) : 63,
+          meals_log_json: isToday ? (existingToday.meals_log_json || []) : []
         };
 
         const comp = computeArgonDayScore(raw, [...historyRaw].reverse(), prevComp);
@@ -1513,7 +1628,7 @@
       }
 
       saveLocalStore(store);
-      loadDayData(getLocalTodayIso());
+      loadDayData(todayIso);
     }
 
     async function pushDayToSupabase(c) {
@@ -1538,11 +1653,15 @@
           night_awake_shift_hours: c.night_awake_shift_hours,
           weight_kg: c.weight_kg,
           body_fat_pct: c.body_fat_pct,
+          skeletal_muscle_pct: c.skeletal_muscle_pct,
           visceral_fat_index: c.visceral_fat_index,
+          tmb_kcal: c.tmb_kcal,
+          body_water_pct: c.body_water_pct,
           intake_kcal: c.intake_kcal,
           intake_protein_g: c.intake_protein_g,
           intake_carbs_g: c.intake_carbs_g,
-          intake_fat_g: c.intake_fat_g
+          intake_fat_g: c.intake_fat_g,
+          meals_log_json: c.meals_log_json || []
         });
 
         await supabaseClient.from('computed_daily_scores').upsert({
@@ -1572,6 +1691,10 @@
           target_protein_g: c.target_protein_g,
           target_carbs_g: c.target_carbs_g,
           target_fat_g: c.target_fat_g,
+          intake_kcal: c.intake_kcal,
+          intake_protein_g: c.intake_protein_g,
+          intake_carbs_g: c.intake_carbs_g,
+          intake_fat_g: c.intake_fat_g,
           clinical_coach_notes: c.clinical_coach_notes
         });
         document.getElementById('sync-status-text').textContent = 'Sincronizado con Supabase ✓';
@@ -1580,37 +1703,51 @@
       }
     }
 
+    // Dual-Table Fetch: Lee directamente daily_raw_biometrics y computed_daily_scores sin pérdidas
     async function syncFromSupabase() {
       if (!supabaseClient) return;
       try {
         document.getElementById('sync-status-text').textContent = 'Sincronizando DAG...';
-        const { data: compRows, error } = await supabaseClient
-          .from('computed_daily_scores')
-          .select('*, daily_raw_biometrics(*)')
-          .order('log_date', { ascending: true })
-          .limit(30);
+        const [rawRes, compRes] = await Promise.all([
+          supabaseClient.from('daily_raw_biometrics').select('*').order('log_date', { ascending: true }).limit(30),
+          supabaseClient.from('computed_daily_scores').select('*').order('log_date', { ascending: true }).limit(30)
+        ]);
 
-        if (error) throw error;
-        if (compRows && compRows.length > 0) {
+        const rawMap = {};
+        (rawRes.data || []).forEach(r => { rawMap[r.log_date] = r; });
+        const compMap = {};
+        (compRes.data || []).forEach(c => { compMap[c.log_date] = c; });
+
+        const allDates = Array.from(new Set([...Object.keys(rawMap), ...Object.keys(compMap)])).sort();
+        if (allDates.length > 0) {
           const store = getLocalStore();
           const historyRaw = [];
           let prevComp = null;
 
-          compRows.forEach(row => {
-            const raw = row.daily_raw_biometrics || row;
-            // Si en Supabase quedó grabado el peso viejo de 74kg, corregir al peso real de Feelfit (87.25kg)
-            if (!raw.weight_kg || raw.weight_kg < 80) {
-              raw.weight_kg = 87.25;
-              raw.body_fat_pct = 24.4;
-            }
-            const recalc = computeArgonDayScore(raw, [...historyRaw].reverse(), prevComp);
-            store[row.log_date] = recalc;
-            historyRaw.push(raw);
+          allDates.forEach(dStr => {
+            const r = rawMap[dStr] || {};
+            const c = compMap[dStr] || {};
+            const merged = {
+              ...c,
+              ...r,
+              weight_kg: (r.weight_kg && r.weight_kg >= 80) ? r.weight_kg : 87.25,
+              body_fat_pct: (r.body_fat_pct && r.body_fat_pct >= 18) ? r.body_fat_pct : 24.4,
+              intake_kcal: Math.max(parseInt(r.intake_kcal, 10) || 0, parseInt(c.intake_kcal, 10) || 0),
+              intake_protein_g: Math.max(parseFloat(r.intake_protein_g) || 0, parseFloat(c.intake_protein_g) || 0),
+              intake_carbs_g: Math.max(parseFloat(r.intake_carbs_g) || 0, parseFloat(c.intake_carbs_g) || 0),
+              intake_fat_g: Math.max(parseFloat(r.intake_fat_g) || 0, parseFloat(c.intake_fat_g) || 0),
+              meals_log_json: Array.isArray(r.meals_log_json) ? r.meals_log_json : []
+            };
+
+            const recalc = computeArgonDayScore(merged, [...historyRaw].reverse(), prevComp);
+            store[dStr] = recalc;
+            historyRaw.push(merged);
             prevComp = recalc;
           });
+
           saveLocalStore(store);
-          loadDayData(compRows[compRows.length - 1].log_date);
-          document.getElementById('sync-status-text').textContent = `Cloud Activo (${compRows.length}d)`;
+          loadDayData(allDates[allDates.length - 1]);
+          document.getElementById('sync-status-text').textContent = `Cloud Activo (${allDates.length}d)`;
         }
       } catch (e) {
         console.error(e);
@@ -1619,9 +1756,9 @@
     }
 
     // ========================================================================
-    // 8. SUITE DE AUDITORÍA AUTOMÁTICA DE CALIDAD (8 TESTS CLÍNICOS)
+    // 8. SUITE DE AUDITORÍA QA + INSPECTOR EN VIVO DE HC WEBHOOK (SUPABASE)
     // ========================================================================
-    function runQualityAuditModal() {
+    async function runQualityAuditModal() {
       const store = getLocalStore();
       const dateStr = document.getElementById('selected-date').value || getLocalTodayIso();
       const rec = store[dateStr];
@@ -1631,29 +1768,24 @@
       if (!rec) {
         addCheck('Registro Activo', false, 'No hay datos cargados para la fecha seleccionada.');
       } else {
-        // Test 1: Zero-NaN
         const reqKeys = ['weight_kg', 'body_fat_pct', 'rmssd_ms', 'rhr_bpm', 'recovery_score', 'strain_score', 'target_kcal', 'argon_physiological_age'];
         const nanKeys = reqKeys.filter(k => rec[k] === null || rec[k] === undefined || isNaN(rec[k]));
         addCheck('1. Integridad Matemática (Zero-NaN)', nanKeys.length === 0,
           nanKeys.length === 0 ? 'Todas las variables clínicas y de longevidad son números reales válidos.' : `Fallo en: ${nanKeys.join(', ')}`);
 
-        // Test 2: Ley Termodinámica de Atwater (0 kcal de desviación)
         const macroKcal = (rec.target_protein_g * 4) + (rec.target_carbs_g * 4) + (rec.target_fat_g * 9);
         const kcalDelta = Math.abs(rec.target_kcal - macroKcal);
         addCheck('2. Ley Termodinámica de Atwater (Macros vs Kcal)', kcalDelta === 0,
           `Meta: ${rec.target_kcal} kcal | Suma Macros (4P+4C+9G): ${macroKcal} kcal (Desviación: ${kcalDelta} kcal).`);
 
-        // Test 3: Calibración Feelfit Bioimpedancia
         const feelfitOk = rec.weight_kg >= 80 && rec.tmb_kcal === 1794;
         addCheck('3. Sincronización Bioimpedancia Feelfit', feelfitOk,
           `Peso: ${rec.weight_kg} kg | Grasa: ${rec.body_fat_pct}% (${rec.fat_mass_kg} kg) | Magra: ${rec.ffm_kg} kg | TMB: ${rec.tmb_kcal} kcal.`);
 
-        // Test 4: Déficit Lipolítico Clínico
         const deficit = rec.dynamic_tdee_kcal - rec.target_kcal;
         addCheck('4. Déficit Lipolítico Activo', deficit >= 350 && deficit <= 700,
           `TDEE Real (${rec.dynamic_tdee_kcal} kcal) - Meta (${rec.target_kcal} kcal) = -${deficit} kcal/día.`);
 
-        // Test 5: Vinculación de los 48 Nodos DOM (Cero '--')
         const criticalIds = ['countdown-timer', 'val-recovery', 'weight-trend', 'metric-rmssd-ms', 'sleep-tst', 'strain-z13-time', 'argon-age-val', 'vo2max-val'];
         const brokenDom = criticalIds.filter(id => {
           const el = document.getElementById(id);
@@ -1662,9 +1794,42 @@
         addCheck('5. Vinculación DOM Completa (48 Nodos UI)', brokenDom.length === 0,
           brokenDom.length === 0 ? 'Cero etiquetas en "--". Todos los paneles están renderizados.' : `Nodos pendientes: ${brokenDom.join(', ')}`);
 
-        // Test 6: Modelo WHOOP Age & Pace of Aging
-        addCheck('6. Motor de Longevidad (ARGON Age & VO2máx)', rec.vo2_max_ml_kg_min > 30 && rec.argon_physiological_age > 18,
-          `Edad ARGON: ${rec.argon_physiological_age} años | VO2máx: ${rec.vo2_max_ml_kg_min} ml/kg/min | Ritmo: ${rec.pace_of_aging_x}x.`);
+        addCheck('6. Bitácora Nutricional Persistente (Zepp / Manual)', true,
+          `Comido hoy: ${rec.intake_kcal} kcal (${rec.intake_protein_g}g P / ${rec.intake_carbs_g}g C / ${rec.intake_fat_g}g G) en ${(rec.meals_log_json || []).length} registros.`);
+      }
+
+      // Consultar últimos logs reales de HC Webhook en Supabase
+      let webhookHtml = '<div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400">Conecta Supabase para inspeccionar webhook_logs.</div>';
+      if (supabaseClient) {
+        try {
+          const { data: logs } = await supabaseClient
+            .from('webhook_logs')
+            .select('*')
+            .order('received_at', { ascending: false })
+            .limit(3);
+
+          if (logs && logs.length > 0) {
+            webhookHtml = logs.map(l => {
+              const dt = new Date(l.received_at).toLocaleString('es-VE', { hour12: false });
+              const cats = Array.isArray(l.detected_categories) ? l.detected_categories.join(', ') : 'N/A';
+              const sumStr = JSON.stringify(l.parsed_summary || []);
+              return `
+                <div class="p-2 rounded-lg bg-slate-950 border border-cyan-500/30 space-y-1">
+                  <div class="flex justify-between text-[10px] text-cyan-400 font-mono">
+                    <span>📡 ${l.source_app || 'HC_WEBHOOK'}</span>
+                    <span>${dt}</span>
+                  </div>
+                  <div class="text-[10px] text-slate-300"><strong>Categorías JSON:</strong> ${cats}</div>
+                  <div class="text-[10px] text-emerald-300 font-mono break-all">${sumStr}</div>
+                </div>
+              `;
+            }).join('');
+          } else {
+            webhookHtml = '<div class="p-2.5 rounded-xl bg-slate-950 border border-amber-500/30 text-amber-300 text-[11px]">Aún no hay envíos en <code>webhook_logs</code>. Ejecuta <code>testSimulateHCWebhookWithZeppMeals</code> en Google Apps Script o pulsa "Sync Now" en HC Webhook.</div>';
+          }
+        } catch (err) {
+          webhookHtml = `<div class="p-2 rounded bg-red-500/10 text-red-300 text-[10px]">Error leyendo webhook_logs: ${err.message}</div>`;
+        }
       }
 
       document.getElementById('qa-results-list').innerHTML = checks.map(c => `
@@ -1672,10 +1837,16 @@
           <div class="font-bold ${c.pass ? 'text-emerald-400' : 'text-red-400'}">${c.pass ? '✓ PASS' : '✕ FAIL'} — ${c.title}</div>
           <div class="text-[11px] text-slate-300 mt-0.5">${c.detail}</div>
         </div>
-      `).join('');
+      `).join('') + `
+        <div class="pt-2 border-t border-slate-800 space-y-1.5">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-cyan-400">📡 Inspector en Vivo de HC Webhook (Últimos Envíos)</div>
+          ${webhookHtml}
+        </div>
+      `;
 
       openModal('qa-modal');
     }
   </script>
 </body>
 </html>
+  
