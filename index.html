@@ -552,7 +552,7 @@
             <span class="text-[8px] uppercase tracking-widest text-emerald-300 font-bold mt-0.5">ARGON AGE</span>
           </div>
           <div>
-            <div class="text-[10px] text-slate-400">Edad Cronológica: 25.0a</div>
+            <div id="chrono-age-label" class="text-[10px] text-slate-400">Edad Cronológica: 28.9a</div>
             <div id="argon-age-delta-badge" class="text-xs font-bold text-emerald-400 mt-0.5">-- años</div>
             <div class="text-[9px] text-slate-500">Feelfit Mtb: 32a</div>
           </div>
@@ -878,28 +878,42 @@
     function computeArgonDayScore(todayRaw, historyRawList, prevComputed) {
       const wakeTimeStr = localStorage.getItem('argon_wake_time') || '06:00';
       const basalNeedH = 7.75;
-      const chronologicalAge = 25.0;
+      // Cálculo exacto de edad cronológica (Nacido: 12 Nov 1997 -> 28.92 años hoy, 29.0 el 12 Nov)
+      const birthDate = new Date('1997-11-12T00:00:00-04:00');
+      const refDate = todayRaw.log_date ? new Date(todayRaw.log_date + 'T12:00:00-04:00') : new Date();
+      const chronologicalAge = +((refDate.getTime() - birthDate.getTime()) / (365.2425 * 86400000)).toFixed(2);
       const heightM = 1.73;
 
-      // A. BIOIMPEDANCIA FEELFIT (Prioridad estricta al pesaje real: 87.25 kg / 24.4% BF)
+      // Actualizar automáticamente la etiqueta visual "Edad Cronológica: 25.0a" en la tarjeta
+      setTimeout(() => {
+        document.querySelectorAll('div, span').forEach(el => {
+          if (el.children.length === 0 && el.textContent.includes('Edad Cronológica:')) {
+            el.textContent = `Edad Cronológica: ${chronologicalAge.toFixed(1)}a`;
+          }
+        });
+      }, 50);
+
+      // A. BIOIMPEDANCIA FEELFIT (Peso y % Grasa por webhook; Músculo, Agua y Visceral auto-calculados por curva Qingniu/Feelfit)
       const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.weight_kg : 87.25);
       const rawBf = parseFloat(todayRaw.body_fat_pct) || (prevComputed ? prevComputed.body_fat_pct : 24.4);
-      const musclePct = parseFloat(todayRaw.skeletal_muscle_pct) || (prevComputed ? prevComputed.skeletal_muscle_pct : 48.9);
-      const visceral = parseFloat(todayRaw.visceral_fat_index) || (prevComputed ? prevComputed.visceral_fat_index : 11.0);
-      const tmbFeelfit = parseInt(todayRaw.tmb_kcal, 10) || (prevComputed ? prevComputed.tmb_kcal : 1794);
-      const waterPct = parseFloat(todayRaw.body_water_pct) || (prevComputed ? prevComputed.body_water_pct : 54.6);
-
-      const prevTrendW = prevComputed && prevComputed.trend_weight_kg ? parseFloat(prevComputed.trend_weight_kg) : rawW;
-      const prevTrendBf = prevComputed && prevComputed.trend_body_fat_pct ? parseFloat(prevComputed.trend_body_fat_pct) : rawBf;
-      const trendW = +((0.25 * rawW) + (0.75 * prevTrendW)).toFixed(2);
-      const trendBf = +((0.25 * rawBf) + (0.75 * prevTrendBf)).toFixed(2);
+      const ffmPct = +(100.0 - rawBf).toFixed(1);
 
       const fatMassKg = +(rawW * (rawBf / 100.0)).toFixed(2);
       const ffmKg = +(rawW - fatMassKg).toFixed(1);
       const boneMassKg = +(rawW * 0.0378).toFixed(1);
       const muscleMassKg = +(ffmKg - boneMassKg).toFixed(1);
+
+      const musclePct = parseFloat(todayRaw.skeletal_muscle_pct) || +(ffmPct * 0.6468).toFixed(1);
+      const waterPct = parseFloat(todayRaw.body_water_pct) || +(ffmPct * 0.7222).toFixed(1);
+      const visceral = parseFloat(todayRaw.visceral_fat_index) || Math.max(1, Math.round(11 + (rawBf - 24.4) * 0.48));
+      const tmbFeelfit = parseInt(todayRaw.tmb_kcal, 10) || Math.round(370 + (21.6 * ffmKg));
       const waterMassKg = +(rawW * (waterPct / 100.0)).toFixed(2);
       const bmi = +(rawW / (heightM * heightM)).toFixed(1);
+
+      const prevTrendW = prevComputed && prevComputed.trend_weight_kg ? parseFloat(prevComputed.trend_weight_kg) : rawW;
+      const prevTrendBf = prevComputed && prevComputed.trend_body_fat_pct ? parseFloat(prevComputed.trend_body_fat_pct) : rawBf;
+      const trendW = +((0.25 * rawW) + (0.75 * prevTrendW)).toFixed(2);
+      const trendBf = +((0.25 * rawBf) + (0.75 * prevTrendBf)).toFixed(2);
 
       // B. STRAIN 4D
       const steps = Math.max(0, parseInt(todayRaw.steps_count, 10) || 0);
@@ -1057,7 +1071,7 @@
 
       // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO
       const hrMax = 208 - (0.7 * chronologicalAge);
-      const ffmPct = +(100.0 - rawBf).toFixed(1);
+    
       const vo2Max = +((15.3 * (hrMax / meanRhr)) * (ffmPct / 79.0) + (z45Min * 0.05)).toFixed(1);
 
       const deltaVo2 = +Math.max(-3.2, Math.min(2.5, -0.18 * (vo2Max - 43.0))).toFixed(1);
