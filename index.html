@@ -1862,6 +1862,174 @@
 
       openModal('qa-modal');
     }
+    // ========================================================================
+    // 9. MÓDULO AUTÓNOMO: CHAT CLÍNICO IA (GEMINI MBE) INTEGRADO EN ARGON
+    // ========================================================================
+    let argonCoachHistory = [];
+
+    window.addEventListener('DOMContentLoaded', () => {
+      injectArgonCoachUI();
+    });
+
+    function injectArgonCoachUI() {
+      if (document.getElementById('argon-coach-fab')) return;
+
+      // 1. Agregar campo de Webhook URL en el modal de Configuración (⚙️)
+      const settingsContainer = document.querySelector('#settings-modal .space-y-3');
+      if (settingsContainer && !document.getElementById('cfg-gas-url')) {
+        const gasDiv = document.createElement('div');
+        gasDiv.innerHTML = `
+          <label class="text-cyan-400 font-semibold block mb-1">Google Apps Script Webhook URL (Para Coach IA)</label>
+          <input id="cfg-gas-url" type="text" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono text-[11px]" />
+        `;
+        settingsContainer.appendChild(gasDiv);
+        document.getElementById('cfg-gas-url').value = localStorage.getItem('argon_gas_url') || '';
+
+        // Interceptar guardado de ajustes para persistir también la URL de Apps Script
+        const origSave = window.saveSettings;
+        window.saveSettings = function() {
+          const gasInput = document.getElementById('cfg-gas-url');
+          if (gasInput) localStorage.setItem('argon_gas_url', gasInput.value.trim());
+          origSave();
+        };
+      }
+
+      // 2. Crear Botón Flotante (FAB) y Modal del Coach Clínico MBE
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = `
+        <button id="argon-coach-fab" onclick="openArgonCoachModal()"
+          class="fixed bottom-5 right-5 z-40 flex items-center space-x-2 px-4 py-3 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase tracking-wider shadow-lg shadow-cyan-500/30 hover:scale-105 transition">
+          <span>🧠 Coach MBE</span>
+        </button>
+
+        <div id="coach-modal" class="fixed inset-0 z-50 hidden bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-2 sm:p-4">
+          <div class="bg-slate-900 border border-cyan-500/40 rounded-2xl max-w-lg w-full h-[85vh] flex flex-col overflow-hidden shadow-2xl">
+            <!-- Header -->
+            <div class="px-4 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <div>
+                  <h3 class="text-xs font-black uppercase tracking-wider text-white">Coach Clínico ARGON <span class="text-cyan-400">Gemini MBE</span></h3>
+                  <p class="text-[10px] text-slate-400">Conectado a tu biometría en vivo de Supabase</p>
+                </div>
+              </div>
+              <button onclick="closeModal('coach-modal')" class="text-slate-400 hover:text-white text-sm px-2">✕</button>
+            </div>
+
+            <!-- Botones de Consulta Rápida (1 Clic) -->
+            <div class="px-3 py-2 bg-slate-950/60 border-b border-slate-800 flex gap-1.5 overflow-x-auto text-[10px]">
+              <button onclick="askQuickCoach('Analiza mi recuperación, VFC y sueño de hoy y dime cómo debo entrenar hoy en pesas o pickleball.')"
+                class="shrink-0 px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25 font-semibold">
+                🏋️ Plan Entreno Hoy
+              </button>
+              <button onclick="askQuickCoach('Según las calorías y macros que llevo hoy y mi peso actual en Feelfit, ¿qué me recomiendas comer en mi próxima comida o cena para cuadrar la Ley de Atwater?')"
+                class="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 font-semibold">
+                🥩 Qué Comer / Macros
+              </button>
+              <button onclick="askQuickCoach('Evalúa mi deuda de sueño, tendencia de 14 días de VFC y ritmo de envejecimiento. ¿Qué ajustes de biohacking o descanso necesito esta noche?')"
+                class="shrink-0 px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-300 hover:bg-purple-500/25 font-semibold">
+                🌙 Sueño & Biohacking
+              </button>
+            </div>
+
+            <!-- Área de Mensajes -->
+            <div id="coach-chat-messages" class="flex-1 p-4 overflow-y-auto space-y-3 text-xs">
+              <div class="p-3 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-200 leading-relaxed">
+                👨‍⚕️ <strong>¡Hola, colega!</strong> Tengo cargados tus biomarcadores de hoy (Peso Feelfit, VFC, RHR, Sueño, Strain y tus macros restantes por Atwater). Toca uno de los botones de arriba o escríbeme tu consulta.
+              </div>
+            </div>
+
+            <!-- Input -->
+            <div class="p-3 bg-slate-950 border-t border-slate-800 flex items-center gap-2">
+              <input id="coach-user-input" type="text" placeholder="Pregúntale sobre tu entreno, macros, guardia o sueño..."
+                onkeydown="if(event.key==='Enter') sendCoachMessage()"
+                class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400" />
+              <button onclick="sendCoachMessage()" class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs uppercase">
+                Enviar
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(wrapper);
+    }
+
+    function openArgonCoachModal() {
+      openModal('coach-modal');
+      const gasUrl = (localStorage.getItem('argon_gas_url') || '').trim();
+      if (!gasUrl) {
+        appendCoachBubble('model', 'ℹ️ Para activar el chat directo aquí, toca primero el botón ⚙️ (arriba a la derecha en la barra principal) y pega tu URL de Google Apps Script (`https://script.google.com/macros/s/.../exec`) en el nuevo campo inferior.');
+      }
+    }
+
+    function askQuickCoach(promptText) {
+      document.getElementById('coach-user-input').value = promptText;
+      sendCoachMessage();
+    }
+
+    function formatCoachMarkdown(text) {
+      return String(text || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="text-cyan-300">$1</strong>')
+        .replace(/\n/g, '<br/>');
+    }
+
+    function appendCoachBubble(role, text, isLoading = false) {
+      const box = document.getElementById('coach-chat-messages');
+      const div = document.createElement('div');
+      const id = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      div.id = id;
+      if (role === 'user') {
+        div.className = 'ml-8 p-3 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-100 text-right';
+        div.textContent = text;
+      } else {
+        div.className = 'mr-4 p-3 rounded-xl bg-slate-800/90 border border-slate-700 text-slate-200 leading-relaxed';
+        div.innerHTML = isLoading ? '<span class="text-cyan-400 animate-pulse">🧬 Analizando tus últimos 14 días en Supabase...</span>' : formatCoachMarkdown(text);
+      }
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+      return id;
+    }
+
+    async function sendCoachMessage() {
+      const inputEl = document.getElementById('coach-user-input');
+      const question = (inputEl.value || '').trim();
+      if (!question) return;
+
+      const gasUrl = (localStorage.getItem('argon_gas_url') || '').trim();
+      if (!gasUrl) {
+        openModal('settings-modal');
+        return;
+      }
+
+      inputEl.value = '';
+      appendCoachBubble('user', question);
+      const loadingId = appendCoachBubble('model', '', true);
+
+      try {
+        const res = await fetch(gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'ask_coach',
+            question: question,
+            history: argonCoachHistory
+          })
+        });
+        const data = await res.json();
+        const reply = data.reply || 'Sin respuesta del motor.';
+
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) loadingEl.innerHTML = formatCoachMarkdown(reply);
+
+        argonCoachHistory.push({ role: 'user', text: question });
+        argonCoachHistory.push({ role: 'model', text: reply });
+      } catch (err) {
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) {
+          loadingEl.innerHTML = `<span class="text-red-400">⚠️ Error de conexión con Google Apps Script: verifica que la URL en ⚙️ termine en <code>/exec</code> y que hayas publicado la "Nueva versión" con acceso para "Cualquier persona".</span>`;
+        }
+      }
   </script>
 </body>
 </html>
