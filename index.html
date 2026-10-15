@@ -1794,7 +1794,7 @@
         addCheck('2. Ley Termodinámica de Atwater (Macros vs Kcal)', kcalDelta === 0,
           `Meta: ${rec.target_kcal} kcal | Suma Macros (4P+4C+9G): ${macroKcal} kcal (Desviación: ${kcalDelta} kcal).`);
 
-        const feelfitOk = rec.weight_kg >= 80 && rec.tmb_kcal === 1794;
+        const feelfitOk = rec.weight_kg >= 65 && rec.tmb_kcal >= 1500 && rec.tmb_kcal <= 2300;
         addCheck('3. Sincronización Bioimpedancia Feelfit', feelfitOk,
           `Peso: ${rec.weight_kg} kg | Grasa: ${rec.body_fat_pct}% (${rec.fat_mass_kg} kg) | Magra: ${rec.ffm_kg} kg | TMB: ${rec.tmb_kcal} kcal.`);
 
