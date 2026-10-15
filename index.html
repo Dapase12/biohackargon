@@ -1868,8 +1868,44 @@
     let argonCoachHistory = [];
 
     window.addEventListener('DOMContentLoaded', () => {
-      injectArgonCoachUI();
-    });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  updateCountdown();
+  setInterval(updateCountdown, 60000);
+
+  injectArgonCoachUI();
+
+  const todayStr = getLocalTodayIso();
+  document.getElementById('selected-date').value = todayStr;
+
+  initSupabaseFromStorage();
+  const localData = getLocalStore();
+  const dates = Object.keys(localData).sort();
+  const latestRec = dates.length ? localData[dates[dates.length - 1]] : null;
+
+  if (dates.length < 7 || (latestRec && latestRec.weight_kg < 80)) {
+    seedCalibratedFeelfitHistory(false);
+  } else {
+    loadDayData(todayStr);
+  }
+});
+
+function initSupabaseFromStorage() {
+  const url = (localStorage.getItem('argon_sb_url') || 'https://eqbvzgqumwvksiovboth.supabase.co').trim();
+  const key = (localStorage.getItem('argon_sb_key') || '').trim();
+  const cfgUrlEl = document.getElementById('cfg-url');
+  const cfgKeyEl = document.getElementById('cfg-key');
+  if (cfgUrlEl) cfgUrlEl.value = url;
+  if (cfgKeyEl) cfgKeyEl.value = key;
+
+  if (url && key && window.supabase) {
+    supabaseClient = window.supabase.createClient(url, key);
+    document.getElementById('sync-status-text').textContent = 'Supabase Conectado ✓';
+    document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-emerald-400 animate-pulse';
+    syncFromSupabase();
+  } else {
+    document.getElementById('sync-status-text').textContent = 'Modo Local Activo';
+  }
+}
 
     function injectArgonCoachUI() {
       if (document.getElementById('argon-coach-fab')) return;
