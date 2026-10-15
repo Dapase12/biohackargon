@@ -739,8 +739,10 @@
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
     function getLocalTodayIso() {
-      const d = new Date();
-      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+     return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Caracas',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+     }).format(new Date());
     }
 
     // 1. Inicialización del Grafo al Cargar la PWA
@@ -1605,7 +1607,7 @@
 
         const raw = {
           log_date: dateStr,
-          weight_kg: isToday ? 87.25 : +(87.25 + (i * 0.06)).toFixed(2),
+          weight_kg: isToday ? 86.80 : +(87.25 + (i * 0.06)).toFixed(2),
           body_fat_pct: isToday ? 24.4 : +(24.4 + (i * 0.04)).toFixed(1),
           skeletal_muscle_pct: 48.9,
           visceral_fat_index: 11.0,
@@ -1617,9 +1619,9 @@
           time_in_bed_min: isShift ? 365 : 485,
           deep_sleep_min: isShift ? 60 : 88,
           rem_sleep_min: isShift ? 68 : 96,
-          pickleball_or_gym_minutes: isToday ? 40 : (isPickleball ? 85 : 30),
-          session_rpe: isToday ? 7.0 : (isPickleball ? 7.5 : 5.5),
-          steps_count: isToday ? (existingToday.steps_count || 4262) : (isShift ? 14200 : (isPickleball ? 11500 : 8200)),
+          pickleball_or_gym_minutes: isToday ? 0 : (isPickleball ? 85 : 30),
+          session_rpe: isToday ? 0 : (isPickleball ? 7.5 : 5.5),
+          steps_count: isToday ? (existingToday.steps_count || 0) : (isShift ? 14200 : (isPickleball ? 11500 : 8200)),
           night_awake_shift_hours: isShift ? 5.0 : 0.0,
           resp_rate_brpm: isShift ? 16.0 : 14.1,
           spo2_pct: 97.6,
@@ -1744,8 +1746,8 @@
             const merged = {
               ...c,
               ...r,
-              weight_kg: (r.weight_kg && r.weight_kg >= 80) ? r.weight_kg : 87.25,
-              body_fat_pct: (r.body_fat_pct && r.body_fat_pct >= 18) ? r.body_fat_pct : 24.4,
+              weight_kg: parseFloat(r.weight_kg) || parseFloat(c.trend_weight_kg) || 86.80,
+              body_fat_pct: parseFloat(r.body_fat_pct) || parseFloat(c.trend_body_fat_pct) || 24.2,
               intake_kcal: Math.max(parseInt(r.intake_kcal, 10) || 0, parseInt(c.intake_kcal, 10) || 0),
               intake_protein_g: Math.max(parseFloat(r.intake_protein_g) || 0, parseFloat(c.intake_protein_g) || 0),
               intake_carbs_g: Math.max(parseFloat(r.intake_carbs_g) || 0, parseFloat(c.intake_carbs_g) || 0),
