@@ -2,759 +2,933 @@
 <html lang="es" class="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#070B12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#05080F" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>ARGON v5.0 | Bioimpedancia Feelfit, WHOOP 4D & Healthspan MBE</title>
+  <title>ARGON v6.0 | Biometría Clínica MBE</title>
   <link rel="manifest" href="manifest.json" />
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Supabase SDK -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- ApexCharts Engine -->
+  <!-- Swiper.js (Física táctil deslizable tipo Whoop) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+  <!-- Lucide Vector Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- ApexCharts & Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
-    body {
-      background-color: #070B12;
-      color: #F9FAFB;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      -webkit-tap-highlight-color: transparent;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap');
+
+    :root {
+      --bg-oled: #05080F;
+      --card-glass: rgba(15, 23, 42, 0.72);
+      --border-subtle: rgba(255, 255, 255, 0.07);
     }
-    .ring-progress {
-      transition: stroke-dashoffset 0.9s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.4s ease;
+
+    * {
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-oled);
+      background-image:
+        radial-gradient(circle at 50% -10%, rgba(6, 182, 212, 0.14), transparent 45%),
+        radial-gradient(circle at 85% 90%, rgba(16, 185, 129, 0.08), transparent 40%);
+      color: #F8FAFC;
+      overflow-x: hidden;
+      padding-bottom: 92px;
+    }
+
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* Tarjetas estilo Apple Health / Whoop 4.0 */
+    .native-card {
+      background: var(--card-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 22px;
+      box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+    }
+
+    /* Acordeones desplegables nativos */
+    details.native-accordion > summary {
+      list-style: none;
+      cursor: pointer;
+    }
+    details.native-accordion > summary::-webkit-details-marker {
+      display: none;
+    }
+    details.native-accordion[open] > summary .acc-chevron {
+      transform: rotate(180deg);
+    }
+    details.native-accordion .acc-content {
+      animation: slideDown 0.22s ease-out;
+    }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Anillos SVG */
+    .ring-bg { fill: none; stroke: rgba(255, 255, 255, 0.06); stroke-width: 8; }
+    .ring-fg {
+      fill: none;
+      stroke-width: 8;
+      stroke-linecap: round;
+      stroke-dasharray: 251.2;
+      stroke-dashoffset: 251.2;
       transform: rotate(-90deg);
       transform-origin: 50% 50%;
+      transition: stroke-dashoffset 0.8s cubic-bezier(0.16, 1, 0.3, 1), stroke 0.4s ease;
     }
-    .glass-card {
-      background: rgba(15, 23, 42, 0.88);
-      backdrop-filter: blur(14px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
+
+    /* Segmented Control (Pestañas de gráficas) */
     .tab-btn-active {
-      background-color: rgba(6, 182, 212, 0.2);
+      background: rgba(6, 182, 212, 0.18);
       color: #22D3EE;
-      border-color: rgba(6, 182, 212, 0.5);
+      border-color: rgba(6, 182, 212, 0.45);
+      box-shadow: 0 2px 10px rgba(6, 182, 212, 0.15);
     }
-    .orb-glow {
-      background: radial-gradient(circle at 35% 35%, rgba(16, 185, 129, 0.45), rgba(6, 95, 70, 0.25) 60%, rgba(15, 23, 42, 0.9) 100%);
-      box-shadow: 0 0 28px rgba(16, 185, 129, 0.28), inset 0 0 18px rgba(52, 211, 153, 0.25);
+
+    /* Bottom Sheet Nativo */
+    .bottom-sheet-panel {
+      animation: sheetUp 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes sheetUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+
+    /* Ocultar botón flotante viejo porque ahora vive integrado en el Dock inferior */
+    #argon-coach-fab { display: none !important; }
+
+    /* Ajuste de altura automática por pestaña en Swiper */
+    .swiper-slide {
+      height: auto;
+      padding-bottom: 16px;
     }
   </style>
 </head>
-<body class="min-h-screen pb-24 selection:bg-cyan-500 selection:text-black">
+
+<body class="min-h-screen antialiased">
 
   <!-- ========================================================================
-       BARRA SUPERIOR: ESTADO CLOUD, CUENTA REGRESIVA 7 DIC 2026, QA Y AJUSTES
+       1. TOP APP BAR FIJA (ESTILO WHOOP 4.0 + SELECTOR DE FECHA)
        ======================================================================== -->
-  <header class="sticky top-0 z-30 glass-card px-4 py-3 border-b border-slate-800">
-    <div class="max-w-xl mx-auto flex items-center justify-between">
+  <header class="sticky top-0 z-30 bg-[#05080F]/85 backdrop-blur-xl border-b border-white/[0.06] px-3.5 py-2.5">
+    <div class="max-w-lg mx-auto flex items-center justify-between">
+      <!-- Identidad + Estado Cloud -->
       <div class="flex items-center space-x-2.5">
-        <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" id="status-dot"></div>
+        <div class="relative flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-cyan-500/30">
+          <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+        </div>
         <div>
-          <h1 class="text-sm font-black tracking-widest uppercase text-white">ARGON <span class="text-xs font-normal text-cyan-400">v5.0 MBE</span></h1>
-          <p class="text-[11px] text-slate-400" id="sync-status-text">Inicializando DAG...</p>
+          <div class="flex items-center space-x-1.5">
+            <span class="text-sm font-black tracking-tight text-white">ARGON</span>
+            <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">v6.0 PRO</span>
+          </div>
+          <p id="sync-status-text" class="text-[10px] text-slate-400 font-medium leading-none mt-0.5">Inicializando DAG...</p>
         </div>
       </div>
 
-      <!-- Reloj Cuenta Regresiva (Restaurado) -->
-      <div class="text-right bg-slate-900/90 border border-slate-700/70 rounded-lg px-2.5 py-1">
-        <div class="text-[9px] uppercase tracking-wider text-slate-400">Meta 7 Dic 2026</div>
-        <div class="text-xs font-bold text-cyan-400 font-mono" id="countdown-timer">--d --h</div>
+      <!-- Meta 7 Dic Countdown Pill -->
+      <div class="hidden xs:flex flex-col items-center px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-800">
+        <span class="text-[8px] uppercase tracking-widest text-slate-400 font-semibold">Meta 7 Dic</span>
+        <span id="countdown-timer" class="text-[11px] font-mono font-bold text-cyan-400">--d --h</span>
       </div>
 
+      <!-- Acciones Rápidas (QA, +Día, Ajustes) -->
       <div class="flex items-center space-x-1.5">
-        <button onclick="runQualityAuditModal()" title="Ejecutar Auditoría QA" class="px-2 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 text-[11px] font-bold">
-          ✓ QA
+        <button onclick="runQualityAuditModal()" title="Auditoría QA"
+          class="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 text-[11px] font-bold transition">
+          <span>✓ QA</span>
         </button>
-        <button onclick="openModal('log-modal')" title="Registrar Día / Biometría" class="px-2.5 py-1.5 rounded-lg bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 text-xs font-semibold">
-          + Día
+        <button onclick="openModal('log-modal')" title="Cargar Biomarcadores"
+          class="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25 text-[11px] font-bold transition">
+          <span>+ Día</span>
         </button>
-        <button onclick="openModal('settings-modal')" title="Configuración Supabase" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">
+        <button onclick="openModal('settings-modal')" title="Configuración"
+          class="p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition">
           ⚙️
+        </button>
+      </div>
+    </div>
+
+    <!-- Barra Sub-Header: Selector Deslizable de Fecha + Sincronización -->
+    <div class="max-w-lg mx-auto mt-2 pt-2 border-t border-white/[0.04] flex items-center justify-between gap-2">
+      <div class="flex items-center bg-slate-900/90 border border-slate-800 rounded-xl px-2 py-1">
+        <button onclick="stepArgonDate(-1)" class="px-1.5 text-slate-400 hover:text-white text-xs font-bold">◀</button>
+        <input id="selected-date" type="date" onchange="loadDayData(this.value)"
+          class="bg-transparent text-white text-xs font-semibold focus:outline-none text-center w-[112px]" />
+        <button onclick="stepArgonDate(1)" class="px-1.5 text-slate-400 hover:text-white text-xs font-bold">▶</button>
+      </div>
+
+      <div class="flex items-center gap-1.5">
+        <button onclick="seedCalibratedFeelfitHistory(true)"
+          class="px-2.5 py-1 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] font-semibold">
+          Base 14d
+        </button>
+        <button onclick="syncFromSupabase()"
+          class="flex items-center space-x-1 px-3 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold active:scale-95 transition">
+          <span>↻ Sincronizar</span>
         </button>
       </div>
     </div>
   </header>
 
-  <main class="max-w-xl mx-auto px-4 pt-4 space-y-4">
+  <!-- ========================================================================
+       2. CONTENEDOR DESLIZABLE SWIPER (4 PANTALLAS NATIVAS)
+       ======================================================================== -->
+  <main class="max-w-lg mx-auto px-3 pt-3">
+    <div class="swiper argon-main-swiper">
+      <div class="swiper-wrapper">
 
-    <!-- SELECTOR DE FECHA Y CALIBRACIÓN BASE REAL (87.25 KG) -->
-    <div class="flex items-center justify-between bg-slate-900/70 border border-slate-800 rounded-xl px-3 py-2">
-      <div class="flex items-center space-x-2">
-        <span class="text-xs text-slate-400">Fecha clínica:</span>
-        <input type="date" id="selected-date" onchange="loadDayData(this.value)" class="bg-transparent text-xs font-bold text-white focus:outline-none" />
-      </div>
-      <div class="flex space-x-1.5">
-        <button onclick="seedCalibratedFeelfitHistory(true)" class="text-[11px] px-2.5 py-1 rounded bg-purple-500/15 border border-purple-500/40 text-purple-300 hover:bg-purple-500/25">
-          Base 14d (87.25kg)
-        </button>
-        <button onclick="syncFromSupabase()" class="text-[11px] px-2.5 py-1 rounded bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25">
-          ↻ Sincronizar
-        </button>
+        <!-- ==================================================================
+             PESTAÑA 1: HOY (RESUMEN WHOOP + MONITOR VITAL + ARGON AGE)
+             ================================================================== -->
+        <div class="swiper-slide space-y-3.5">
+
+          <!-- Tarjeta Héroe: 3 Anillos Whoop + Prescripción Clínica -->
+          <section class="native-card p-4 space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-300">Estado Fisiológico Integrado</span>
+              </div>
+              <button onclick="toggleHelp('help-overview')" class="text-[10px] text-cyan-400 font-semibold">ⓘ ¿Cómo interpretar?</button>
+            </div>
+
+            <div id="help-overview" class="hidden p-3 rounded-xl bg-slate-950/90 border border-slate-800 text-[11px] text-slate-300 space-y-1">
+              <p>• <strong>Recuperación (0-99%):</strong> Calculada vía Z-Score móvil de 14 días de tu <code>lnRMSSD</code>, FC en reposo y arquitectura de sueño.</p>
+              <p>• <strong>Esfuerzo (Strain 0-21):</strong> Escala logarítmica de carga cardiovascular (TRIMP), pesas/pickleball y estrés ortostático de guardia.</p>
+            </div>
+
+            <!-- 3 Anillos Principales -->
+            <div class="grid grid-cols-3 gap-2 pt-1">
+              <!-- Recuperación -->
+              <div onclick="goToArgonTab(1)" class="flex flex-col items-center cursor-pointer active:scale-95 transition">
+                <div class="relative w-24 h-24">
+                  <svg class="w-full h-full" viewBox="0 0 100 100">
+                    <circle class="ring-bg" cx="50" cy="50" r="40"></circle>
+                    <circle id="ring-recovery" class="ring-fg" cx="50" cy="50" r="40" stroke="#10B981"></circle>
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span id="val-recovery" class="text-xl font-black text-white leading-none">--%</span>
+                    <span id="badge-recovery" class="text-[8px] font-extrabold uppercase tracking-wider text-emerald-400 mt-1">--</span>
+                  </div>
+                </div>
+                <span class="text-[11px] font-bold text-slate-200 mt-1.5">Recuperación</span>
+                <span id="sub-recovery" class="text-[10px] text-slate-400 font-mono">VFC: -- ms</span>
+              </div>
+
+              <!-- Strain -->
+              <div onclick="goToArgonTab(2)" class="flex flex-col items-center cursor-pointer active:scale-95 transition">
+                <div class="relative w-24 h-24">
+                  <svg class="w-full h-full" viewBox="0 0 100 100">
+                    <circle class="ring-bg" cx="50" cy="50" r="40"></circle>
+                    <circle id="ring-strain" class="ring-fg" cx="50" cy="50" r="40" stroke="#06B6D4"></circle>
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span id="val-strain" class="text-xl font-black text-white leading-none">--</span>
+                    <span id="badge-strain-target" class="text-[8px] font-extrabold uppercase tracking-wider text-cyan-400 mt-1">Meta: --</span>
+                  </div>
+                </div>
+                <span class="text-[11px] font-bold text-slate-200 mt-1.5">Esfuerzo Hoy</span>
+                <span id="sub-strain" class="text-[10px] text-slate-400 font-mono">-- pasos</span>
+              </div>
+
+              <!-- Sueño -->
+              <div onclick="goToArgonTab(1)" class="flex flex-col items-center cursor-pointer active:scale-95 transition">
+                <div class="relative w-24 h-24">
+                  <svg class="w-full h-full" viewBox="0 0 100 100">
+                    <circle class="ring-bg" cx="50" cy="50" r="40"></circle>
+                    <circle id="ring-sleep" class="ring-fg" cx="50" cy="50" r="40" stroke="#8B5CF6"></circle>
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span id="val-sleep" class="text-xl font-black text-white leading-none">--%</span>
+                    <span id="badge-sleep-eff" class="text-[8px] font-extrabold uppercase tracking-wider text-purple-400 mt-1">Efic: --%</span>
+                  </div>
+                </div>
+                <span class="text-[11px] font-bold text-slate-200 mt-1.5">Calidad Sueño</span>
+                <span id="sub-sleep" class="text-[10px] text-slate-400 font-mono">Deuda: --h</span>
+              </div>
+            </div>
+
+            <!-- Prescripción Clínica Diaria MBE -->
+            <div class="p-3.5 rounded-2xl bg-slate-950/85 border border-cyan-500/20 space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-extrabold uppercase tracking-wider text-cyan-400">🩺 Prescripción Clínica Diaria (MBE)</span>
+                <button onclick="openArgonCoachModal()" class="text-[10px] font-bold text-emerald-400 hover:underline">Preguntar a IA →</button>
+              </div>
+              <p id="clinical-coach-notes" class="text-xs text-slate-200 leading-relaxed">--</p>
+            </div>
+          </section>
+
+          <!-- Acordeón Desplegable 1: Monitor de Signos Vitales 4D (Estilo Whoop Health Monitor) -->
+          <details class="native-card native-accordion group overflow-hidden" open>
+            <summary class="p-4 flex items-center justify-between">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-sm">
+                  ♥
+                </div>
+                <div>
+                  <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">Monitor Autonómico 4D (SNC)</h2>
+                  <p class="text-[10px] text-emerald-400 font-medium">VFC lnRMSSD • Pulso Basal • SpO2 • FR</p>
+                </div>
+              </div>
+              <div class="flex items-center space-x-2">
+                <span id="z-score-pill" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">-- SD</span>
+                <span class="acc-chevron text-slate-400 transition-transform duration-200">▼</span>
+              </div>
+            </summary>
+
+            <div class="acc-content px-4 pb-4 pt-1 border-t border-white/[0.05] space-y-3">
+              <div class="grid grid-cols-2 gap-2.5">
+                <!-- VFC RMSSD -->
+                <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/80">
+                  <div class="flex justify-between items-center text-[10px] text-slate-400">
+                    <span>VFC Nocturna (RMSSD)</span>
+                    <span id="delta-hrv" class="text-[10px] text-emerald-400">▲</span>
+                  </div>
+                  <div class="flex items-baseline space-x-2 mt-1">
+                    <span id="metric-rmssd-ms" class="text-lg font-black text-white font-mono">-- ms</span>
+                    <span id="base-hrv" class="text-[10px] text-slate-400 font-mono">-- ms base</span>
+                  </div>
+                  <div class="text-[10px] text-cyan-400 font-mono mt-1">lnRMSSD: <span id="metric-lnrmssd">--</span></div>
+                </div>
+
+                <!-- FC Reposo -->
+                <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/80">
+                  <div class="flex justify-between items-center text-[10px] text-slate-400">
+                    <span>FC en Reposo (RHR)</span>
+                    <span id="delta-rhr" class="text-[10px] text-emerald-400">▼</span>
+                  </div>
+                  <div class="flex items-baseline space-x-2 mt-1">
+                    <span id="metric-rhr" class="text-lg font-black text-white font-mono">-- lpm</span>
+                    <span id="base-rhr" class="text-[10px] text-slate-400 font-mono">-- lpm base</span>
+                  </div>
+                  <div class="text-[10px] text-cyan-400 font-mono mt-1">Z-Score: <span id="metric-rhr-z">-- SD</span></div>
+                </div>
+
+                <!-- Frecuencia Respiratoria -->
+                <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/80">
+                  <div class="text-[10px] text-slate-400">Frec. Respiratoria</div>
+                  <div class="flex items-baseline space-x-2 mt-1">
+                    <span id="metric-resp" class="text-base font-black text-white font-mono">-- rpm</span>
+                    <span id="base-resp" class="text-[10px] text-slate-400 font-mono">-- rpm base</span>
+                  </div>
+                </div>
+
+                <!-- SpO2 + Sueño Rec -->
+                <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/80">
+                  <div class="text-[10px] text-slate-400">SpO2 Arterial / Sueño</div>
+                  <div class="flex items-baseline justify-between mt-1">
+                    <span id="metric-spo2" class="text-base font-black text-emerald-400 font-mono">--%</span>
+                    <span class="text-[10px] text-purple-300 font-mono">Sueño: <strong id="rec-sleep-perf">--%</strong></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <!-- Acordeón Desplegable 2: Edad Fisiológica ARGON & Velocidad de Envejecimiento -->
+          <details class="native-card native-accordion group overflow-hidden">
+            <summary class="p-4 flex items-center justify-between">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold text-sm">
+                  🧬
+                </div>
+                <div>
+                  <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">Edad Fisiológica ARGON</h2>
+                  <div id="chrono-age-label" class="text-[10px] text-slate-400">Edad Cronológica: 28.9a</div>
+                </div>
+              </div>
+              <div class="flex items-center space-x-2.5">
+                <div class="text-right">
+                  <span id="argon-age-val" class="text-lg font-black text-emerald-400 font-mono">--</span>
+                  <span class="text-[10px] text-slate-400 block leading-none">años bio</span>
+                </div>
+                <span class="acc-chevron text-slate-400 transition-transform duration-200">▼</span>
+              </div>
+            </summary>
+
+            <div class="acc-content px-4 pb-4 pt-2 border-t border-white/[0.05] space-y-3">
+              <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div>
+                  <div id="argon-age-delta-badge" class="text-xs font-bold text-emerald-400">-- vs cronológica</div>
+                  <div class="text-[10px] text-slate-400">Ritmo de Envejecimiento (Pace of Aging)</div>
+                </div>
+                <span id="pace-of-aging-val" class="text-xl font-black font-mono text-cyan-400">--x</span>
+              </div>
+
+              <div class="space-y-2 text-xs">
+                <div class="flex justify-between items-center p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/70">
+                  <span class="text-slate-300">🫁 VO2máx (<strong id="vo2max-val" class="text-white font-mono">--</strong>)</span>
+                  <span id="vo2max-age-impact" class="font-mono font-bold text-emerald-400">--</span>
+                </div>
+                <div class="flex justify-between items-center p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/70">
+                  <span class="text-slate-300">❤️ Pulso Basal 14d (<strong id="rhr-age-val" class="text-white font-mono">--</strong>)</span>
+                  <span id="rhr-age-impact" class="font-mono font-bold text-emerald-400">--</span>
+                </div>
+                <div class="flex justify-between items-center p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/70">
+                  <span class="text-slate-300">💪 Masa Magra (<strong id="ffm-pct-val" class="text-white font-mono">--</strong>)</span>
+                  <span id="ffm-age-impact" class="font-mono font-bold text-amber-400">--</span>
+                </div>
+                <div class="flex justify-between items-center p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/70">
+                  <span class="text-slate-300">🌙 Regularidad Circadiana</span>
+                  <span id="sleep-age-impact" class="font-mono font-bold text-emerald-400">--</span>
+                </div>
+                <div class="flex justify-between items-center p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/70">
+                  <span class="text-slate-300">⚡ Volumen Fuerza / Pasos</span>
+                  <span id="activity-age-impact" class="font-mono font-bold text-emerald-400">--</span>
+                </div>
+              </div>
+            </div>
+          </details>
+
+        </div>
+
+        <!-- ==================================================================
+             PESTAÑA 2: SUEÑO & TELEMETRÍA (4 PILARES + HIPNOGRAMA + GRÁFICAS)
+             ================================================================== -->
+        <div class="swiper-slide space-y-3.5">
+
+          <!-- Tarjeta Principal de Sueño y Ventana Circadiana -->
+          <section class="native-card p-4 space-y-3.5">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-xs font-extrabold uppercase tracking-wider text-purple-300">🌙 Arquitectura del Sueño (Borbély)</h2>
+                <p class="text-[10px] text-slate-400">Proceso S (Deuda Homeostática) + Proceso C (Circadiano)</p>
+              </div>
+              <span id="sleep-window-badge" class="text-[11px] font-mono font-bold px-2.5 py-1 rounded-xl bg-purple-500/15 text-purple-300 border border-purple-500/30">21:30 - 22:00</span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2.5">
+              <div class="p-3 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <span class="text-[10px] text-slate-400">Tiempo Total Dormido (TST)</span>
+                <div id="sleep-tst" class="text-xl font-black text-white font-mono mt-0.5">--h --m</div>
+                <span id="sleep-sws-rem" class="text-[10px] text-purple-400 font-semibold">SWS+REM: --%</span>
+              </div>
+              <div class="p-3 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <span class="text-[10px] text-slate-400">Deuda Acumulada (7d)</span>
+                <div id="sleep-debt" class="text-xl font-black text-amber-400 font-mono mt-0.5">-- h</div>
+                <span id="sleep-need" class="text-[10px] text-cyan-400 font-semibold">Necesitas: --h</span>
+              </div>
+            </div>
+
+            <!-- Barra de Fases del Sueño (SWS / REM / Ligero) -->
+            <div class="space-y-1.5 pt-1">
+              <div class="w-full h-3.5 rounded-full bg-slate-900 overflow-hidden flex border border-slate-800">
+                <div id="bar-deep" class="bg-blue-500 h-full transition-all duration-500" style="width: 20%"></div>
+                <div id="bar-rem" class="bg-purple-500 h-full transition-all duration-500" style="width: 22%"></div>
+                <div id="bar-light" class="bg-slate-600 h-full transition-all duration-500" style="width: 58%"></div>
+              </div>
+              <div class="flex justify-between text-[10px] text-slate-300 font-medium">
+                <span id="label-deep">🟦 Profundo (SWS): --m</span>
+                <span id="label-rem">🟪 REM: --m</span>
+                <span id="label-light">⬜ Ligero: --m</span>
+              </div>
+            </div>
+
+            <!-- Desplegable de los 4 Pilares Clínicos del Sueño -->
+            <details class="native-accordion pt-2 border-t border-white/[0.06]" open>
+              <summary class="flex items-center justify-between text-[11px] font-bold text-slate-300 py-1">
+                <span>Desglose de los 4 Pilares del Sueño</span>
+                <span class="acc-chevron text-slate-400 transition-transform">▼</span>
+              </summary>
+              <div class="acc-content space-y-2.5 pt-2.5 text-[11px]">
+                <div>
+                  <div class="flex justify-between mb-1"><span class="text-slate-300">1. Horas vs. Necesidad Dinámica</span><span id="pillar-hours-pct" class="font-mono font-bold text-emerald-400">--%</span></div>
+                  <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden"><div id="bar-pillar-hours" class="h-full bg-emerald-400 rounded-full" style="width:0%"></div></div>
+                </div>
+                <div>
+                  <div class="flex justify-between mb-1"><span class="text-slate-300">2. Regularidad Circadiana (SRI)</span><span id="pillar-reg-pct" class="font-mono font-bold text-cyan-400">--%</span></div>
+                  <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden"><div id="bar-pillar-reg" class="h-full bg-cyan-400 rounded-full" style="width:0%"></div></div>
+                </div>
+                <div>
+                  <div class="flex justify-between mb-1"><span class="text-slate-300">3. Eficiencia en Cama (TST/TIB)</span><span id="pillar-eff-pct" class="font-mono font-bold text-purple-400">--%</span></div>
+                  <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden"><div id="bar-pillar-eff" class="h-full bg-purple-400 rounded-full" style="width:0%"></div></div>
+                </div>
+                <div>
+                  <div class="flex justify-between mb-1"><span class="text-slate-300">4. Estrés Autonómico Nocturno Alto</span><span id="pillar-stress-pct" class="font-mono font-bold text-amber-400">--%</span></div>
+                  <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden"><div id="bar-pillar-stress" class="h-full bg-amber-400 rounded-full" style="width:0%"></div></div>
+                </div>
+              </div>
+            </details>
+          </section>
+
+          <!-- Tarjeta de Telemetría Longitudinal (ApexCharts) -->
+          <section class="native-card p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">📈 Telemetría 14 Días</h2>
+              <div class="flex bg-slate-950 p-0.5 rounded-xl border border-slate-800">
+                <button id="tab-hrv" onclick="switchApexTab('hrv')" class="tab-btn-active text-[10px] font-semibold px-2.5 py-1 rounded-lg border transition">VFC</button>
+                <button id="tab-strain" onclick="switchApexTab('strain')" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg text-slate-400 border border-transparent transition">Strain</button>
+                <button id="tab-weight" onclick="switchApexTab('weight')" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg text-slate-400 border border-transparent transition">Peso</button>
+              </div>
+            </div>
+            <div id="apex-telemetry-chart" class="w-full min-h-[255px]"></div>
+          </section>
+
+        </div>
+
+        <!-- ==================================================================
+             PESTAÑA 3: CUERPO & STRAIN (FEELFIT + CARGA NEUROMUSCULAR 4D)
+             ================================================================== -->
+        <div class="swiper-slide space-y-3.5">
+
+          <!-- Bioimpedancia Feelfit Card -->
+          <section class="native-card p-4 space-y-3.5">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">⚖️ Bioimpedancia Feelfit</h2>
+                <p class="text-[10px] text-slate-400">Sincronización Health Connect + Regresión Qingniu</p>
+              </div>
+              <button onclick="toggleHelp('help-feelfit')" class="text-[10px] text-cyan-400 font-semibold">ⓘ ¿Cómo se calcula?</button>
+            </div>
+
+            <div id="help-feelfit" class="hidden p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-300 space-y-1">
+              <p>El Peso y % Grasa llegan automáticamente desde Feelfit/Fitbit. La Masa Magra (FFM), Músculo Esquelético, Agua y TMB se recalculan dinámicamente sobre tu composición real.</p>
+            </div>
+
+            <!-- 3 Métricas Primarias de Composición Corporal -->
+            <div class="grid grid-cols-3 gap-2">
+              <div class="p-3 rounded-2xl bg-slate-950/85 border border-slate-800 text-center">
+                <span class="text-[10px] text-slate-400 block">Peso Actual</span>
+                <span id="weight-trend" class="text-lg font-black text-white font-mono mt-0.5 block">-- kg</span>
+                <span id="ffm-label" class="text-[9px] text-cyan-400 font-medium block mt-0.5">Sin grasa: --kg</span>
+              </div>
+              <div class="p-3 rounded-2xl bg-slate-950/85 border border-slate-800 text-center">
+                <span class="text-[10px] text-slate-400 block">Grasa Corporal</span>
+                <span id="bf-trend" class="text-lg font-black text-emerald-400 font-mono mt-0.5 block">--%</span>
+                <span id="fat-kg-label" class="text-[9px] text-slate-400 font-medium block mt-0.5">Grasa: -- kg</span>
+              </div>
+              <div class="p-3 rounded-2xl bg-slate-950/85 border border-slate-800 text-center">
+                <span class="text-[10px] text-slate-400 block">Músculo Esq.</span>
+                <span id="metric-muscle" class="text-lg font-black text-cyan-400 font-mono mt-0.5 block">--%</span>
+                <span id="muscle-mass-sub" class="text-[9px] text-slate-400 font-medium block mt-0.5">Muscular: -- kg</span>
+              </div>
+            </div>
+
+            <!-- Acordeón de Biomarcadores Secundarios de Feelfit -->
+            <details class="native-accordion pt-2 border-t border-white/[0.06]" open>
+              <summary class="flex items-center justify-between text-[11px] font-bold text-slate-300 py-1">
+                <span>Ver Grasa Visceral, Agua Corporal y TMB</span>
+                <span class="acc-chevron text-slate-400 transition-transform">▼</span>
+              </summary>
+              <div class="acc-content grid grid-cols-3 gap-2 pt-2.5">
+                <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 text-center">
+                  <span class="text-[9px] text-slate-400 block">Grasa Visceral</span>
+                  <span id="metric-visceral" class="text-base font-black text-amber-400 font-mono">--</span>
+                  <span class="text-[9px] text-amber-300/80 block">Meta: ≤ 9</span>
+                </div>
+                <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 text-center">
+                  <span class="text-[9px] text-slate-400 block">Agua & Proteína</span>
+                  <span id="metric-water" class="text-base font-black text-sky-400 font-mono">--%</span>
+                  <span id="water-prot-sub" class="text-[9px] text-slate-400 block">-- kg</span>
+                </div>
+                <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 text-center">
+                  <span class="text-[9px] text-slate-400 block">TMB Impedancia</span>
+                  <span id="metric-tmb" class="text-base font-black text-purple-400 font-mono">-- kcal</span>
+                  <span id="tmb-sub" class="text-[9px] text-slate-400 block">Ósea: 3.3kg</span>
+                </div>
+              </div>
+            </details>
+          </section>
+
+          <!-- Esfuerzo 4D (Cardio TRIMP + Neuromuscular + Guardia) -->
+          <section class="native-card p-4 space-y-3.5">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-xs font-extrabold uppercase tracking-wider text-cyan-400">⚡ Carga de Esfuerzo 4D (Strain)</h2>
+                <p class="text-[10px] text-slate-400">Pesas • Pickleball • NEAT • Guardia Médica</p>
+              </div>
+              <span id="shift-badge" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">Sin Guardia Nocturna</span>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+              <div class="p-3 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <span class="text-[10px] text-slate-400 block">Cardio TRIMP</span>
+                <span id="load-cardio" class="text-base font-black text-cyan-400 font-mono mt-0.5 block">-- AU</span>
+              </div>
+              <div class="p-3 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <span class="text-[10px] text-slate-400 block">Neuromuscular</span>
+                <span id="load-neuro" class="text-base font-black text-emerald-400 font-mono mt-0.5 block">-- AU</span>
+                <span id="load-workout-min" class="text-[9px] text-slate-400 block">-- min sesión</span>
+              </div>
+              <div class="p-3 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <span class="text-[10px] text-slate-400 block">Carga Guardia</span>
+                <span id="load-shift" class="text-base font-black text-amber-400 font-mono mt-0.5 block">-- AU</span>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-4 gap-2 pt-1 text-center">
+              <div class="p-2 rounded-xl bg-slate-950/60 border border-slate-800/70">
+                <span class="text-[9px] text-slate-400 block">Zonas 1-3</span>
+                <span id="strain-z13-time" class="text-xs font-bold text-white font-mono">0:00</span>
+              </div>
+              <div class="p-2 rounded-xl bg-slate-950/60 border border-slate-800/70">
+                <span class="text-[9px] text-slate-400 block">Zonas 4-5</span>
+                <span id="strain-z45-time" class="text-xs font-bold text-rose-400 font-mono">0:00</span>
+              </div>
+              <div class="p-2 rounded-xl bg-slate-950/60 border border-slate-800/70">
+                <span class="text-[9px] text-slate-400 block">Fuerza/Pick.</span>
+                <span id="strain-strength-time" class="text-xs font-bold text-emerald-400 font-mono">0:00</span>
+              </div>
+              <div class="p-2 rounded-xl bg-slate-950/60 border border-slate-800/70">
+                <span class="text-[9px] text-slate-400 block">Pasos Hoy</span>
+                <span id="load-steps" class="text-xs font-bold text-cyan-300 font-mono">--</span>
+              </div>
+            </div>
+          </section>
+
+        </div>
+
+        <!-- ==================================================================
+             PESTAÑA 4: NUTRICIÓN ATWATER & BITÁCORA DE COMIDAS
+             ================================================================== -->
+        <div class="swiper-slide space-y-3.5">
+
+          <section class="native-card p-4 space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">🥩 Termodinámica de Atwater</h2>
+                <p class="text-[10px] text-slate-400">Cierre Calórico Exacto (4P + 4C + 9G)</p>
+              </div>
+              <span id="remaining-kcal-pill" class="text-xs font-mono font-bold px-2.5 py-1 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Restan: -- kcal</span>
+            </div>
+
+            <!-- Ecuación Termodinámica Visual -->
+            <div class="p-3.5 rounded-2xl bg-slate-950/90 border border-slate-800 flex items-center justify-between text-center">
+              <div>
+                <span class="text-[10px] text-slate-400 block">Quemas Hoy</span>
+                <span id="nutri-tdee" class="text-base font-black text-white font-mono">-- kcal</span>
+                <span class="text-[9px] text-slate-500 block">TMB+Pasos+Ej</span>
+              </div>
+              <span class="text-slate-500 font-bold">−</span>
+              <div>
+                <span class="text-[10px] text-amber-400 block">Déficit Grasa</span>
+                <span id="nutri-deficit" class="text-base font-black text-amber-400 font-mono">-550 kcal</span>
+                <span id="fat-loss-rate" class="text-[9px] text-emerald-400 block">-0.5 kg/sem</span>
+              </div>
+              <span class="text-slate-500 font-bold">=</span>
+              <div class="px-3 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30">
+                <span class="text-[10px] text-cyan-300 block">Meta Diaria</span>
+                <span id="nutri-target-kcal" class="text-base font-black text-cyan-300 font-mono">-- kcal</span>
+                <span id="nutri-intake-kcal" class="text-[10px] text-white font-semibold block">Comido: 0</span>
+              </div>
+            </div>
+
+            <!-- Barras de Macronutrientes -->
+            <div class="space-y-3">
+              <div>
+                <div class="flex justify-between text-xs mb-1">
+                  <span class="font-semibold text-slate-200">Proteína Anticatabólica <span class="text-[10px] text-slate-400">(2.35 g/kg FFM)</span></span>
+                  <span id="macro-prot-text" class="font-mono font-bold text-emerald-400">0 / -- g</span>
+                </div>
+                <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden">
+                  <div id="bar-prot" class="h-full bg-emerald-400 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+              </div>
+
+              <div>
+                <div class="flex justify-between text-xs mb-1">
+                  <span class="font-semibold text-slate-200">Carbohidratos <span class="text-[10px] text-cyan-400">(Glucógeno Pesas/Pickleball)</span></span>
+                  <span id="macro-carb-text" class="font-mono font-bold text-cyan-400">0 / -- g</span>
+                </div>
+                <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden">
+                  <div id="bar-carb" class="h-full bg-cyan-400 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+              </div>
+
+              <div>
+                <div class="flex justify-between text-xs mb-1">
+                  <span class="font-semibold text-slate-200">Grasas Esenciales <span class="text-[10px] text-amber-400">(Soporte Endocrino)</span></span>
+                  <span id="macro-fat-text" class="font-mono font-bold text-amber-400">0 / -- g</span>
+                </div>
+                <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden">
+                  <div id="bar-fat" class="h-full bg-amber-400 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Botones Rápidos de Comida -->
+            <div class="pt-2 border-t border-slate-800/80">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="text-[10px] text-slate-400 mr-1">Sumar rápido:</span>
+                <button onclick="quickAddMeal(420, 38, 35, 14)" class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-slate-200 font-medium">+Desayuno (420)</button>
+                <button onclick="quickAddMeal(650, 55, 58, 22)" class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-slate-200 font-medium">+Almuerzo (650)</button>
+                <button onclick="quickAddMeal(480, 45, 32, 19)" class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-slate-200 font-medium">+Cena (480)</button>
+                <button onclick="quickAddMeal(130, 25, 3, 2)" class="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-300 font-semibold">+Whey</button>
+                <button onclick="resetTodayMeals()" class="px-2.5 py-1 rounded-xl bg-rose-500/15 border border-rose-500/30 text-[11px] text-rose-300 font-semibold">Reset 0</button>
+              </div>
+            </div>
+          </section>
+
+        </div>
+
       </div>
     </div>
-
-    <!-- ======================================================================
-         TARJETA 1: TRIPLE ANILLO EJECUTIVO + PRESCRIPCIÓN CLÍNICA DIARIA
-         ====================================================================== -->
-    <section class="glass-card rounded-2xl p-4 shadow-xl">
-      <div class="flex justify-between items-center mb-2">
-        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Estado Fisiológico Integrado</span>
-        <button onclick="toggleHelp('help-rings')" class="text-[11px] text-cyan-400 hover:underline">ⓘ ¿Cómo interpretar?</button>
-      </div>
-
-      <div id="help-rings" class="hidden mb-3 p-3 rounded-xl bg-slate-950/90 border border-cyan-500/30 text-xs text-slate-300 space-y-1.5">
-        <p><strong class="text-emerald-400">1. Recuperación (0-99%):</strong> Evalúa la disponibilidad de tu Sistema Nervioso Autónomo combinando $\ln(RMSSD)$, FC en Reposo, Frecuencia Respiratoria y Sueño frente a tu línea base móvil de 14 días.</p>
-        <p><strong class="text-cyan-400">2. Esfuerzo / Strain (0-21):</strong> Carga cardiovascular (TRIMP exponencial) + carga neuromuscular (Pickleball/Fuerza) + carga ortostática de guardia hospitalaria.</p>
-        <p><strong class="text-purple-400">3. Calificación del Sueño (0-100%):</strong> Promedio ponderado de Horas vs. Necesidad, Regularidad Circadiana ($SRI$), Eficiencia ($SE$) y Fases Restauradoras ($SWS + REM$).</p>
-      </div>
-
-      <div class="grid grid-cols-3 gap-2 text-center items-center pt-1">
-        <!-- ANILLO 1: RECOVERY -->
-        <div class="flex flex-col items-center">
-          <div class="relative w-24 h-24">
-            <svg class="w-full h-full" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="40" stroke="#1E293B" stroke-width="8" fill="transparent" />
-              <circle id="ring-recovery" class="ring-progress" cx="50" cy="50" r="40" stroke="#10B981" stroke-width="8" stroke-linecap="round" fill="transparent" stroke-dasharray="251.2" stroke-dashoffset="251.2" />
-            </svg>
-            <div class="absolute inset-0 flex flex-col items-center justify-center">
-              <span id="val-recovery" class="text-xl font-black text-white">--%</span>
-              <span id="badge-recovery" class="text-[9px] font-bold uppercase tracking-wider text-emerald-400">--</span>
-            </div>
-          </div>
-          <span class="mt-1 text-xs font-semibold text-slate-200">Recuperación</span>
-          <span id="sub-recovery" class="text-[10px] text-slate-400">VFC: -- ms</span>
-        </div>
-
-        <!-- ANILLO 2: STRAIN -->
-        <div class="flex flex-col items-center">
-          <div class="relative w-24 h-24">
-            <svg class="w-full h-full" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="40" stroke="#1E293B" stroke-width="8" fill="transparent" />
-              <circle id="ring-strain" class="ring-progress" cx="50" cy="50" r="40" stroke="#06B6D4" stroke-width="8" stroke-linecap="round" fill="transparent" stroke-dasharray="251.2" stroke-dashoffset="251.2" />
-            </svg>
-            <div class="absolute inset-0 flex flex-col items-center justify-center">
-              <span id="val-strain" class="text-xl font-black text-white">--</span>
-              <span id="badge-strain-target" class="text-[9px] font-bold uppercase tracking-wider text-cyan-400">Meta: --</span>
-            </div>
-          </div>
-          <span class="mt-1 text-xs font-semibold text-slate-200">Esfuerzo Hoy</span>
-          <span id="sub-strain" class="text-[10px] text-slate-400">-- pasos</span>
-        </div>
-
-        <!-- ANILLO 3: SUEÑO -->
-        <div class="flex flex-col items-center">
-          <div class="relative w-24 h-24">
-            <svg class="w-full h-full" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="40" stroke="#1E293B" stroke-width="8" fill="transparent" />
-              <circle id="ring-sleep" class="ring-progress" cx="50" cy="50" r="40" stroke="#8B5CF6" stroke-width="8" stroke-linecap="round" fill="transparent" stroke-dasharray="251.2" stroke-dashoffset="251.2" />
-            </svg>
-            <div class="absolute inset-0 flex flex-col items-center justify-center">
-              <span id="val-sleep" class="text-xl font-black text-white">--%</span>
-              <span id="badge-sleep-eff" class="text-[9px] font-bold uppercase tracking-wider text-purple-400">Efic: --%</span>
-            </div>
-          </div>
-          <span class="mt-1 text-xs font-semibold text-slate-200">Calidad Sueño</span>
-          <span id="sub-sleep" class="text-[10px] text-slate-400">Deuda: --h</span>
-        </div>
-      </div>
-
-      <div class="mt-4 pt-3 border-t border-slate-800/80 bg-slate-900/60 rounded-xl p-3">
-        <div class="text-[10px] font-bold uppercase tracking-wider text-cyan-400 mb-1">🩺 Prescripción Clínica Diaria (MBE)</div>
-        <p id="clinical-coach-notes" class="text-xs text-slate-200 leading-relaxed">--</p>
-      </div>
-    </section>
-
-    <!-- ======================================================================
-         TARJETA 2: BIOIMPEDANCIA FEELFIT (12 VARIABLES) & CONTROL LIPOLÍTICO
-         ====================================================================== -->
-    <section class="glass-card rounded-2xl p-4 border border-emerald-500/25">
-      <div class="flex items-center justify-between mb-2">
-        <div>
-          <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-400">Bioimpedancia Feelfit & Motor Lipolítico</h2>
-          <p class="text-[10px] text-slate-400">Sincronizado con lectura real (87.25 kg / TMB 1794 kcal) + Ley de Atwater</p>
-        </div>
-        <button onclick="toggleHelp('help-nutrition')" class="text-[11px] text-cyan-400 hover:underline">ⓘ ¿Cómo se calcula?</button>
-      </div>
-
-      <div id="help-nutrition" class="hidden mb-3 p-3 rounded-xl bg-slate-950/90 border border-emerald-500/30 text-xs text-slate-300 space-y-1.5">
-        <p><strong>• Bioimpedancia Real (Feelfit):</strong> Con 87.25 kg y 24.4% de grasa corporal (21.29 kg de tejido adiposo), tu Peso Sin Grasa ($FFM$) es exactamente de <strong>66.0 kg</strong> (con 62.7 kg de masa muscular y 3.3 kg de masa ósea).</p>
-        <p><strong>• Gasto Total Real (TDEE):</strong> Parte de tu Tasa Metabólica Basal medida por impedancia ($1,794\text{ kcal}$) + efecto termogénico + pasos hospitalarios + calorías netas de ejercicio.</p>
-        <p><strong>• Ajuste Termodinámico Exacto (Atwater):</strong> La proteína se fija en $2.35\text{ g por kg de Masa Magra}$ ($\approx 155\text{ g}$), las grasas en $0.75\text{ g/kg}$ ($\approx 65\text{ g}$) y los carbohidratos cierran la ecuación exacta $(4P + 4C + 9G = \text{Meta Kcal})$ con desviación de $0\text{ kcal}$.</p>
-      </div>
-
-      <!-- Fila 1 Feelfit: Peso, Grasa, Músculo Esquelético -->
-      <div class="grid grid-cols-3 gap-2 mb-2 text-center">
-        <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-2">
-          <div class="text-[10px] text-slate-400">Peso (Báscula/EWMA)</div>
-          <div id="weight-trend" class="text-base font-black text-white">-- kg</div>
-          <div id="ffm-label" class="text-[9px] text-cyan-300">Sin grasa: -- kg | IMC --</div>
-        </div>
-        <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-2">
-          <div class="text-[10px] text-slate-400">Grasa Corporal</div>
-          <div id="bf-trend" class="text-base font-black text-emerald-400">--%</div>
-          <div id="fat-kg-label" class="text-[9px] text-slate-400">Masa: -- kg | Subc: 21%</div>
-        </div>
-        <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-2">
-          <div class="text-[10px] text-slate-400">Músculo Esquelético</div>
-          <div id="metric-muscle" class="text-base font-black text-cyan-400">--%</div>
-          <div id="muscle-mass-sub" class="text-[9px] text-slate-400">Muscular: 62.7 kg</div>
-        </div>
-      </div>
-
-      <!-- Fila 2 Feelfit: Grasa Visceral, Agua/Proteína, TMB/Edad Metabólica -->
-      <div class="grid grid-cols-3 gap-2 mb-3 text-center">
-        <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-2">
-          <div class="text-[10px] text-slate-400">Grasa Visceral</div>
-          <div id="metric-visceral" class="text-sm font-black text-amber-400">--</div>
-          <div id="visceral-sub" class="text-[9px] text-amber-300/80">Meta grasa: -9.21 kg</div>
-        </div>
-        <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-2">
-          <div class="text-[10px] text-slate-400">Agua & Proteína</div>
-          <div id="metric-water" class="text-sm font-black text-blue-400">--%</div>
-          <div id="water-prot-sub" class="text-[9px] text-slate-400">47.6 kg | Prot: 17.2%</div>
-        </div>
-        <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-2">
-          <div class="text-[10px] text-slate-400">TMB Impedancia</div>
-          <div id="metric-tmb" class="text-sm font-black text-purple-400">-- kcal</div>
-          <div id="tmb-sub" class="text-[9px] text-slate-400">Ósea: 3.3kg | Edad: 32</div>
-        </div>
-      </div>
-
-      <!-- Ecuación Termodinámica Explícita -->
-      <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 mb-3">
-        <div class="flex justify-between items-center text-[10px] text-slate-400 mb-1.5 px-1">
-          <span>Balance Energético Diario</span>
-          <span id="remaining-kcal-pill" class="text-emerald-400 font-bold">Restan: -- kcal</span>
-        </div>
-        <div class="grid grid-cols-5 items-center text-center">
-          <div>
-            <div class="text-[10px] text-slate-400">Quemas Hoy</div>
-            <div id="nutri-tdee" class="text-xs font-bold text-white">-- kcal</div>
-            <div class="text-[9px] text-slate-500">TMB+Pasos+Ej</div>
-          </div>
-          <div class="text-sm font-bold text-slate-500">−</div>
-          <div>
-            <div class="text-[10px] text-amber-400">Déficit Grasa</div>
-            <div id="nutri-deficit" class="text-xs font-bold text-amber-400">-550 kcal</div>
-            <div id="fat-loss-rate" class="text-[9px] text-emerald-400">-0.50 kg/sem</div>
-          </div>
-          <div class="text-sm font-bold text-slate-500">=</div>
-          <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg py-1">
-            <div class="text-[10px] text-cyan-300 font-semibold">Meta Diaria</div>
-            <div id="nutri-target-kcal" class="text-sm font-black text-cyan-400">-- kcal</div>
-            <div id="nutri-intake-kcal" class="text-[10px] text-emerald-300 font-bold">Comido: 0</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Barras de Macronutrientes (Ley de Atwater Exacta) -->
-      <div class="space-y-2.5 text-xs mb-3">
-        <div>
-          <div class="flex justify-between mb-1">
-            <span class="text-slate-200 font-medium">Proteína Anticatabólica <span class="text-[10px] text-slate-400">(2.35 g/kg masa magra)</span></span>
-            <span id="macro-prot-text" class="font-mono font-bold text-emerald-400">0 / -- g</span>
-          </div>
-          <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div id="bar-prot" class="bg-emerald-500 h-full transition-all duration-500" style="width: 0%"></div>
-          </div>
-        </div>
-        <div>
-          <div class="flex justify-between mb-1">
-            <span class="text-slate-200 font-medium">Carbohidratos <span id="carb-mode-label" class="text-[10px] text-cyan-400">(Cierre termodinámico exacto)</span></span>
-            <span id="macro-carb-text" class="font-mono font-bold text-cyan-400">0 / -- g</span>
-          </div>
-          <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div id="bar-carb" class="bg-cyan-500 h-full transition-all duration-500" style="width: 0%"></div>
-          </div>
-        </div>
-        <div>
-          <div class="flex justify-between mb-1">
-            <span class="text-slate-200 font-medium">Grasas Esenciales <span class="text-[10px] text-slate-400">(Soporte endocrino)</span></span>
-            <span id="macro-fat-text" class="font-mono font-bold text-amber-400">0 / -- g</span>
-          </div>
-          <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div id="bar-fat" class="bg-amber-500 h-full transition-all duration-500" style="width: 0%"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Botones Rápidos de Comidas -->
-      <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-1.5">
-        <span class="text-[10px] text-slate-400">Sumar comida:</span>
-        <div class="flex flex-wrap gap-1">
-          <button onclick="quickAddMeal(420, 38, 35, 14)" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-200 border border-slate-700">+Desayuno (420)</button>
-          <button onclick="quickAddMeal(650, 55, 60, 20)" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-200 border border-slate-700">+Almuerzo (650)</button>
-          <button onclick="quickAddMeal(480, 45, 35, 16)" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-200 border border-slate-700">+Cena (480)</button>
-          <button onclick="quickAddMeal(130, 28, 2, 1)" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-[10px] text-emerald-300 border border-emerald-500/30">+Whey</button>
-          <button onclick="resetTodayMeals()" class="px-2 py-1 rounded bg-red-500/15 hover:bg-red-500/25 text-[10px] text-red-300 border border-red-500/30">Reset 0</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ======================================================================
-         TARJETA 3: RECUPERACIÓN AUTONÓMICA 4D (ESTILO WHOOP CON DELTAS VS BASE)
-         ====================================================================== -->
-    <section class="glass-card rounded-2xl p-4">
-      <div class="flex items-center justify-between mb-2">
-        <div>
-          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">Marcadores de Recuperación (Hoy vs Base 14d)</h2>
-          <p class="text-[10px] text-slate-400">Comparación direccional frente a tu línea base autonómica</p>
-        </div>
-        <button onclick="toggleHelp('help-ans')" class="text-[11px] text-cyan-400 hover:underline">ⓘ ¿Qué significa?</button>
-      </div>
-
-      <div id="help-ans" class="hidden mb-3 p-3 rounded-xl bg-slate-950/90 border border-slate-700 text-xs text-slate-300 space-y-1.5">
-        <p><strong>• Flechas Verdes ($\blacktriangle / \blacktriangledown$):</strong> En VFC un valor mayor a tu base es óptimo ($\blacktriangle$ verde). En FC en Reposo y Frecuencia Respiratoria, un valor menor o igual a tu base es óptimo ($\blacktriangledown$ verde).</p>
-      </div>
-
-      <div class="divide-y divide-slate-800/80 text-xs bg-slate-900/50 rounded-xl border border-slate-800 px-3">
-        <!-- Fila 1: VFC -->
-        <div class="py-2.5 flex items-center justify-between">
-          <div>
-            <span class="font-semibold text-slate-200 uppercase text-[11px] tracking-wide">⚡ Variabilidad de la Frecuencia Cardíaca</span>
-            <div id="metric-rmssd-interp" class="text-[10px] text-emerald-400 mt-0.5">ln(RMSSD): <span id="metric-lnrmssd">--</span> | Z: <span id="z-score-pill">--</span></div>
-          </div>
-          <div class="text-right font-mono">
-            <div class="text-sm font-black text-white"><span id="metric-rmssd-ms">--</span> <span id="delta-hrv" class="text-[10px] text-emerald-400">▲</span></div>
-            <div id="base-hrv" class="text-[10px] text-slate-400">-- ms base</div>
-          </div>
-        </div>
-
-        <!-- Fila 2: RHR -->
-        <div class="py-2.5 flex items-center justify-between">
-          <div>
-            <span class="font-semibold text-slate-200 uppercase text-[11px] tracking-wide">❤️ Frecuencia Cardíaca en Reposo</span>
-            <div id="metric-rhr-interp" class="text-[10px] text-cyan-400 mt-0.5">Z-Score RHR: <span id="metric-rhr-z">--</span></div>
-          </div>
-          <div class="text-right font-mono">
-            <div class="text-sm font-black text-white"><span id="metric-rhr">--</span> <span id="delta-rhr" class="text-[10px] text-emerald-400">▼</span></div>
-            <div id="base-rhr" class="text-[10px] text-slate-400">-- lpm base</div>
-          </div>
-        </div>
-
-        <!-- Fila 3: Frecuencia Respiratoria -->
-        <div class="py-2.5 flex items-center justify-between">
-          <div>
-            <span class="font-semibold text-slate-200 uppercase text-[11px] tracking-wide">🫁 Frecuencia Respiratoria Nocturna</span>
-            <div class="text-[10px] text-slate-400 mt-0.5">Ventilación alveolar en ondas lentas</div>
-          </div>
-          <div class="text-right font-mono">
-            <div class="text-sm font-black text-white"><span id="metric-resp">--</span> <span id="delta-resp" class="text-[10px] text-emerald-400">●</span></div>
-            <div id="base-resp" class="text-[10px] text-slate-400">14.2 rpm base</div>
-          </div>
-        </div>
-
-        <!-- Fila 4: SpO2 y Desempeño de Sueño -->
-        <div class="py-2.5 flex items-center justify-between">
-          <div>
-            <span class="font-semibold text-slate-200 uppercase text-[11px] tracking-wide">🌙 Calificación del Sueño & SpO2</span>
-            <div class="text-[10px] text-slate-400 mt-0.5">Saturación media: <span id="metric-spo2" class="text-emerald-400 font-bold">--%</span></div>
-          </div>
-          <div class="text-right font-mono">
-            <div class="text-sm font-black text-white"><span id="rec-sleep-perf">--%</span> <span id="delta-sleep" class="text-[10px] text-emerald-400">▲</span></div>
-            <div id="base-sleep-perf" class="text-[10px] text-slate-400">85% base</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ======================================================================
-         TARJETA 4: CALIFICACIÓN DEL SUEÑO EN 4 PILARES (WHOOP SLEEP) + ARQUITECTURA
-         ====================================================================== -->
-    <section class="glass-card rounded-2xl p-4">
-      <div class="flex items-center justify-between mb-2">
-        <div>
-          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">Calificación del Sueño (4 Pilares Clínicos)</h2>
-          <p class="text-[10px] text-slate-400">Modelo Homeostático de Borbély + Sleep Regularity Index (SRI)</p>
-        </div>
-        <button onclick="toggleHelp('help-sleep')" class="text-[11px] text-cyan-400 hover:underline">ⓘ ¿Qué evalúa?</button>
-      </div>
-
-      <div id="help-sleep" class="hidden mb-3 p-3 rounded-xl bg-slate-950/90 border border-purple-500/30 text-xs text-slate-300 space-y-1.5">
-        <p><strong>1. Horas vs. lo Necesario:</strong> Compara tus horas dormidas contra tu Necesidad Dinámica (Base $7.75\text{h} + \text{Strain} + \text{Deuda}$).</p>
-        <p><strong>2. Regularidad del Sueño (SRI):</strong> Mide la consistencia de tu hora de acostarte y despertar en los últimos 7 días (predictor independiente de longevidad cardiometabólica).</p>
-        <p><strong>3. Estrés del Sueño Alto:</strong> Porcentaje de la noche con hiperactividad simpática (óptimo $\le 10\%$).</p>
-      </div>
-
-      <!-- Cajas Superiores de Sueño -->
-      <div class="grid grid-cols-3 gap-2 mb-3 text-center">
-        <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-2.5">
-          <div class="text-[10px] text-slate-400">Dormiste Hoy</div>
-          <div id="sleep-tst" class="text-sm font-bold text-white">--h --m</div>
-          <div id="sleep-sws-rem" class="text-[10px] text-purple-300">SWS+REM: --%</div>
-        </div>
-        <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-2.5">
-          <div class="text-[10px] text-slate-400">Deuda Acumulada</div>
-          <div id="sleep-debt" class="text-sm font-bold text-amber-400">-- h</div>
-          <div class="text-[10px] text-slate-400">Decaimiento 7d</div>
-        </div>
-        <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-2.5">
-          <div class="text-[10px] text-slate-400">Acuéstate Hoy</div>
-          <div id="sleep-window-badge" class="text-xs font-black text-purple-400 mt-0.5">--:-- a --:--</div>
-          <div id="sleep-need" class="text-[10px] text-slate-400">Necesitas: --h</div>
-        </div>
-      </div>
-
-      <!-- Los 4 Pilares de la Captura WHOOP Sleep -->
-      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-2.5 mb-3 text-xs">
-        <div class="flex items-center justify-between">
-          <span class="text-[11px] uppercase tracking-wide text-slate-300 font-semibold">🌙 Horas vs. lo Necesario</span>
-          <div class="flex items-center space-x-2">
-            <div class="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div id="bar-pillar-hours" class="bg-emerald-400 h-full" style="width: 85%"></div>
-            </div>
-            <span id="pillar-hours-pct" class="font-mono font-bold text-white w-10 text-right">--%</span>
-          </div>
-        </div>
-
-        <div class="flex items-center justify-between">
-          <span class="text-[11px] uppercase tracking-wide text-slate-300 font-semibold">🔄 Regularidad del Sueño (SRI)</span>
-          <div class="flex items-center space-x-2">
-            <div class="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div id="bar-pillar-reg" class="bg-emerald-400 h-full" style="width: 86%"></div>
-            </div>
-            <span id="pillar-reg-pct" class="font-mono font-bold text-white w-10 text-right">--%</span>
-          </div>
-        </div>
-
-        <div class="flex items-center justify-between">
-          <span class="text-[11px] uppercase tracking-wide text-slate-300 font-semibold">🛌 Eficiencia del Sueño (SE)</span>
-          <div class="flex items-center space-x-2">
-            <div class="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div id="bar-pillar-eff" class="bg-emerald-400 h-full" style="width: 92%"></div>
-            </div>
-            <span id="pillar-eff-pct" class="font-mono font-bold text-white w-10 text-right">--%</span>
-          </div>
-        </div>
-
-        <div class="flex items-center justify-between">
-          <span class="text-[11px] uppercase tracking-wide text-slate-300 font-semibold">📉 Estrés del Sueño Alto (Nocturno)</span>
-          <div class="flex items-center space-x-2">
-            <div class="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div id="bar-pillar-stress" class="bg-emerald-400 h-full" style="width: 15%"></div>
-            </div>
-            <span id="pillar-stress-pct" class="font-mono font-bold text-white w-10 text-right">--%</span>
-          </div>
-        </div>
-
-        <div class="pt-1 border-t border-slate-800/80 flex justify-center space-x-4 text-[10px] text-slate-400">
-          <span><span class="text-amber-400 font-bold">▬</span> Deficiente</span>
-          <span><span class="text-slate-300 font-bold">▬</span> Suficiente</span>
-          <span><span class="text-emerald-400 font-bold">▬</span> Óptimo</span>
-        </div>
-      </div>
-
-      <!-- Barra de Fases SWS / REM / Ligero (Restaurada) -->
-      <div class="space-y-1">
-        <div class="flex justify-between text-[10px] text-slate-300">
-          <span id="label-deep">🟦 Profundo (SWS): --m</span>
-          <span id="label-rem">🟪 REM: --m</span>
-          <span id="label-light">⬜ Ligero: --m</span>
-        </div>
-        <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden flex">
-          <div id="bar-deep" class="bg-indigo-500 h-full transition-all duration-500" style="width: 20%"></div>
-          <div id="bar-rem" class="bg-purple-500 h-full transition-all duration-500" style="width: 22%"></div>
-          <div id="bar-light" class="bg-slate-400/40 h-full transition-all duration-500" style="width: 58%"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ======================================================================
-         TARJETA 5: ESFUERZO HOY (STRAIN 4D ESTILO WHOOP + COMPARTIMENTOS)
-         ====================================================================== -->
-    <section class="glass-card rounded-2xl p-4">
-      <div class="flex items-center justify-between mb-2">
-        <div>
-          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">Desglose de Esfuerzo (Strain 4D & Carga Interna)</h2>
-          <p class="text-[10px] text-slate-400">Zonas de Reserva Cardíaca (%HRR), Fuerza/Pickleball y Guardia</p>
-        </div>
-        <span id="shift-badge" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">Sin Guardia</span>
-      </div>
-
-      <!-- 3 Compartimentos Fisiológicos (Restaurados) -->
-      <div class="grid grid-cols-3 gap-2 text-center mb-3">
-        <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-2.5">
-          <div class="text-[10px] text-slate-400">TRIMP Cardio</div>
-          <div id="load-cardio" class="text-sm font-bold text-cyan-400">-- AU</div>
-          <div class="text-[9px] text-slate-500">Banister Exp</div>
-        </div>
-        <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-2.5">
-          <div class="text-[10px] text-slate-400">Neuromuscular</div>
-          <div id="load-neuro" class="text-sm font-bold text-emerald-400">-- AU</div>
-          <div id="load-workout-min" class="text-[9px] text-slate-400">-- min sesión</div>
-        </div>
-        <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-2.5">
-          <div class="text-[10px] text-slate-400">Carga Guardia</div>
-          <div id="load-shift" class="text-sm font-bold text-amber-400">-- AU</div>
-          <div class="text-[9px] text-slate-500">Ortostática</div>
-        </div>
-      </div>
-
-      <!-- Las 4 Filas de la Captura WHOOP Strain -->
-      <div class="divide-y divide-slate-800/80 text-xs bg-slate-900/50 rounded-xl border border-slate-800 px-3">
-        <div class="py-2 flex items-center justify-between">
-          <span class="font-semibold text-slate-300 uppercase text-[11px]">💓 Zonas de Frecuencia Cardíaca 1–3 (Aeróbica)</span>
-          <div class="text-right font-mono">
-            <div id="strain-z13-time" class="text-sm font-black text-white">--:--</div>
-            <div class="text-[9px] text-slate-400">Base oxidativa</div>
-          </div>
-        </div>
-        <div class="py-2 flex items-center justify-between">
-          <span class="font-semibold text-slate-300 uppercase text-[11px]">🔥 Zonas de Frecuencia Cardíaca 4–5 (VO2máx / Pico)</span>
-          <div class="text-right font-mono">
-            <div id="strain-z45-time" class="text-sm font-black text-cyan-400">--:--</div>
-            <div class="text-[9px] text-slate-400">Umbral anaeróbico</div>
-          </div>
-        </div>
-        <div class="py-2 flex items-center justify-between">
-          <span class="font-semibold text-slate-300 uppercase text-[11px]">🏋️ Tiempo de Actividad de Fuerza / Pickleball</span>
-          <div class="text-right font-mono">
-            <div id="strain-strength-time" class="text-sm font-black text-emerald-400">--:--</div>
-            <div class="text-[9px] text-slate-400">Tensión mecánica</div>
-          </div>
-        </div>
-        <div class="py-2 flex items-center justify-between">
-          <span class="font-semibold text-slate-300 uppercase text-[11px]">👟 Pasos Acumulados Hoy</span>
-          <div class="text-right font-mono">
-            <div id="load-steps" class="text-sm font-black text-white">--</div>
-            <div class="text-[9px] text-slate-400">Meta clínica: 10.000</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ======================================================================
-         TARJETA 6: EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO
-         ====================================================================== -->
-    <section class="glass-card rounded-2xl p-4 border border-cyan-500/25">
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <h2 class="text-xs font-bold uppercase tracking-wider text-cyan-400">Edad Fisiológica ARGON & Longevidad (Healthspan)</h2>
-          <p class="text-[10px] text-slate-400">Modelo MBE de 9 Biomarcadores (VO2máx, FCR, %Magra, SRI, Fuerza y Pasos)</p>
-        </div>
-        <button onclick="toggleHelp('help-age')" class="text-[11px] text-cyan-400 hover:underline">ⓘ Fórmula MBE</button>
-      </div>
-
-      <div id="help-age" class="hidden mb-3 p-3 rounded-xl bg-slate-950/90 border border-cyan-500/30 text-xs text-slate-300 space-y-1.5">
-        <p><strong>• Edad ARGON vs Edad Metabólica Feelfit (32a):</strong> Mientras la báscula penaliza el IMC bruto ($29.2$), el algoritmo clínico de longevidad pondera tu capacidad cardiorrespiratoria ($\text{VO}_2\text{máx}$), tu pulso basal ($55\text{ lpm}$), tu masa muscular ($62.7\text{ kg}$) y tu regularidad de sueño.</p>
-        <p><strong>• Ritmo de Envejecimiento (Pace of Aging):</strong> Debajo de $1.0\text{x}$ significa que tus hábitos actuales están reduciendo tu edad biológica cada semana.</p>
-      </div>
-
-      <!-- Orbe Central WHOOP Age + Ritmo de Envejecimiento -->
-      <div class="grid grid-cols-2 gap-3 items-center bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5 mb-3">
-        <div class="flex items-center space-x-3">
-          <div class="w-16 h-16 rounded-full orb-glow flex flex-col items-center justify-center border border-emerald-400/40 shrink-0">
-            <span id="argon-age-val" class="text-lg font-black text-white leading-none">--</span>
-            <span class="text-[8px] uppercase tracking-widest text-emerald-300 font-bold mt-0.5">ARGON AGE</span>
-          </div>
-          <div>
-            <div id="chrono-age-label" class="text-[10px] text-slate-400">Edad Cronológica: 28.9a</div>
-            <div id="argon-age-delta-badge" class="text-xs font-bold text-emerald-400 mt-0.5">-- años</div>
-            <div class="text-[9px] text-slate-500">Feelfit Mtb: 32a</div>
-          </div>
-        </div>
-
-        <div class="text-right border-l border-slate-800 pl-3">
-          <div id="pace-of-aging-val" class="text-xl font-black text-cyan-400 font-mono">--x</div>
-          <div class="text-[9px] uppercase tracking-wider text-slate-300 font-bold">Ritmo de Envejecimiento</div>
-          <div id="pace-of-aging-label" class="text-[10px] text-emerald-400 mt-0.5">Rejuvenecimiento activo</div>
-        </div>
-      </div>
-
-      <!-- Desglose de Impacto en Años por Biomarcador (Sliders Estilo WHOOP Fitness) -->
-      <div class="space-y-3 bg-slate-900/60 border border-slate-800 rounded-xl p-3 text-xs">
-        <!-- 1. VO2 MAX -->
-        <div>
-          <div class="flex justify-between items-center mb-1">
-            <div>
-              <span class="font-bold text-slate-200 uppercase text-[11px]">VO₂ MÁX Estimado</span>
-              <span id="vo2max-val" class="ml-2 text-xs font-black text-cyan-400 font-mono">-- ml/kg/min</span>
-            </div>
-            <span id="vo2max-age-impact" class="font-mono font-bold text-emerald-400 text-xs">-- años</span>
-          </div>
-          <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-            <div id="bar-vo2max" class="bg-gradient-to-r from-amber-500 via-emerald-400 to-cyan-400 h-full" style="width: 72%"></div>
-          </div>
-        </div>
-
-        <!-- 2. FCR -->
-        <div>
-          <div class="flex justify-between items-center mb-1">
-            <div>
-              <span class="font-bold text-slate-200 uppercase text-[11px]">Frecuencia Cardíaca Reposo (FCR)</span>
-              <span id="rhr-age-val" class="ml-2 text-xs font-black text-cyan-400 font-mono">-- lpm</span>
-            </div>
-            <span id="rhr-age-impact" class="font-mono font-bold text-emerald-400 text-xs">-- años</span>
-          </div>
-          <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-            <div id="bar-rhr-age" class="bg-gradient-to-r from-cyan-400 via-emerald-400 to-amber-500 h-full" style="width: 68%"></div>
-          </div>
-        </div>
-
-        <!-- 3. MASA CORPORAL MAGRA -->
-        <div>
-          <div class="flex justify-between items-center mb-1">
-            <div>
-              <span class="font-bold text-slate-200 uppercase text-[11px]">Masa Corporal Magra (%FFM)</span>
-              <span id="ffm-pct-val" class="ml-2 text-xs font-black text-white font-mono">--% (66.0 kg)</span>
-            </div>
-            <span id="ffm-age-impact" class="font-mono font-bold text-amber-400 text-xs">-- años</span>
-          </div>
-          <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-            <div id="bar-ffm-age" class="bg-gradient-to-r from-amber-500 to-emerald-400 h-full" style="width: 62%"></div>
-          </div>
-        </div>
-
-        <!-- 4. SUEÑO, FUERZA Y PASOS RESUMEN -->
-        <div class="pt-2 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-[11px]">
-          <div class="flex justify-between bg-slate-950/60 px-2.5 py-1.5 rounded-lg">
-            <span class="text-slate-400">Sueño & SRI:</span>
-            <span id="sleep-age-impact" class="font-mono font-bold text-emerald-400">-- años</span>
-          </div>
-          <div class="flex justify-between bg-slate-950/60 px-2.5 py-1.5 rounded-lg">
-            <span class="text-slate-400">Fuerza, Zonas & Pasos:</span>
-            <span id="activity-age-impact" class="font-mono font-bold text-emerald-400">-- años</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ======================================================================
-         TARJETA 7: TELEMETRÍA LONGITUDINAL APEXCHARTS (3 VISTAS COMPLETAS)
-         ====================================================================== -->
-    <section class="glass-card rounded-2xl p-4">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-        <div>
-          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">Telemetría Longitudinal (14 Días)</h2>
-          <p class="text-[10px] text-slate-400">Toca las pestañas para alternar entre VFC, Strain y Curva de Peso Feelfit</p>
-        </div>
-        <div class="flex space-x-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
-          <button id="tab-hrv" onclick="switchApexTab('hrv')" class="tab-btn-active text-[10px] font-semibold px-2.5 py-1 rounded-lg border transition">
-            VFC & Base
-          </button>
-          <button id="tab-strain" onclick="switchApexTab('strain')" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg text-slate-400 border border-transparent transition">
-            Recovery vs Strain
-          </button>
-          <button id="tab-weight" onclick="switchApexTab('weight')" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg text-slate-400 border border-transparent transition">
-            Peso (87.25kg)
-          </button>
-        </div>
-      </div>
-      <div id="apex-telemetry-chart" class="w-full min-h-[260px]"></div>
-    </section>
-
   </main>
 
   <!-- ========================================================================
-       MODAL 1: REGISTRO CLÍNICO MANUAL (TODOS LOS CAMPOS FEELFIT + WHOOP)
+       3. BARRA DE NAVEGACIÓN INFERIOR NATIVA (GLASSMORPHISM DOCK + COACH IA)
        ======================================================================== -->
-  <div id="log-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 max-h-[90vh] overflow-y-auto space-y-4">
-      <div class="flex justify-between items-center border-b border-slate-800 pb-2">
-        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Actualizar Biometría / Feelfit / Actividad</h3>
-        <button onclick="closeModal('log-modal')" class="text-slate-400 hover:text-white text-sm">✕</button>
-      </div>
-      <p class="text-[11px] text-slate-400">Deja en blanco los campos que no desees cambiar hoy.</p>
+  <nav class="fixed bottom-0 inset-x-0 z-40 bg-[#05080F]/90 backdrop-blur-2xl border-t border-white/[0.08] px-2 py-1.5">
+    <div class="max-w-lg mx-auto grid grid-cols-5 items-center text-center">
+      <button onclick="goToArgonTab(0)" id="nav-btn-0" class="flex flex-col items-center py-1 text-cyan-400 transition">
+        <span class="text-base leading-none">🏠</span>
+        <span class="text-[10px] font-bold mt-1">Hoy</span>
+      </button>
 
+      <button onclick="goToArgonTab(1)" id="nav-btn-1" class="flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 transition">
+        <span class="text-base leading-none">🌙</span>
+        <span class="text-[10px] font-semibold mt-1">Sueño</span>
+      </button>
+
+      <!-- Botón Central Elevado: Coach Clínico MBE -->
+      <div class="flex justify-center">
+        <button onclick="openArgonCoachModal()"
+          class="-mt-5 flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/30 active:scale-95 transition border-2 border-[#05080F]">
+          <span class="text-lg leading-none">🧠</span>
+          <span class="text-[9px] font-black uppercase tracking-tighter mt-0.5">Coach</span>
+        </button>
+      </div>
+
+      <button onclick="goToArgonTab(2)" id="nav-btn-2" class="flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 transition">
+        <span class="text-base leading-none">⚖️</span>
+        <span class="text-[10px] font-semibold mt-1">Cuerpo</span>
+      </button>
+
+      <button onclick="goToArgonTab(3)" id="nav-btn-3" class="flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 transition">
+        <span class="text-base leading-none">🥩</span>
+        <span class="text-[10px] font-semibold mt-1">Macros</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ========================================================================
+       4. MODALES TIPO BOTTOM SHEET NATIVO (+ DÍA, AUDITORÍA QA, AJUSTES ⚙️)
+       ======================================================================== -->
+
+  <!-- Bottom Sheet 1: Registro Manual (+ Día) -->
+  <div id="log-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center">
+    <div class="bottom-sheet-panel bg-slate-900 border-t sm:border border-slate-700/80 rounded-t-3xl sm:rounded-3xl max-w-lg w-full max-h-[88vh] overflow-y-auto p-5 space-y-4">
+      <div class="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-1 sm:hidden"></div>
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-black uppercase tracking-wider text-cyan-400">📋 Cargar Biomarcadores del Día</h3>
+        <button onclick="closeModal('log-modal')" class="text-slate-400 hover:text-white text-sm px-2">✕</button>
+      </div>
       <div class="grid grid-cols-2 gap-2.5 text-xs">
-        <div><label class="text-emerald-400 block mb-1">Peso Feelfit (kg)</label><input id="in-weight" type="number" step="0.01" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="87.25" /></div>
-        <div><label class="text-emerald-400 block mb-1">% Grasa Feelfit</label><input id="in-bf" type="number" step="0.1" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="24.4" /></div>
-        <div><label class="text-emerald-400 block mb-1">Músculo Esquelético (%)</label><input id="in-muscle" type="number" step="0.1" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="48.9" /></div>
-        <div><label class="text-emerald-400 block mb-1">Grasa Visceral</label><input id="in-visceral" type="number" step="0.5" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="11" /></div>
-        <div><label class="text-emerald-400 block mb-1">TMB Feelfit (kcal)</label><input id="in-tmb" type="number" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="1794" /></div>
-        <div><label class="text-emerald-400 block mb-1">Agua Corporal (%)</label><input id="in-water" type="number" step="0.1" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="54.6" /></div>
-
-        <div><label class="text-cyan-400 block mb-1">VFC RMSSD (ms)</label><input id="in-rmssd" type="number" step="0.1" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="50.0" /></div>
-        <div><label class="text-cyan-400 block mb-1">FC Reposo (lpm)</label><input id="in-rhr" type="number" step="0.5" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="54.5" /></div>
-        <div><label class="text-purple-400 block mb-1">Sueño Total (min)</label><input id="in-tst" type="number" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="440" /></div>
-        <div><label class="text-purple-400 block mb-1">Profundo SWS (min)</label><input id="in-deep" type="number" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="88" /></div>
-        <div><label class="text-purple-400 block mb-1">Sueño REM (min)</label><input id="in-rem" type="number" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="96" /></div>
-        <div><label class="text-slate-300 block mb-1">Pasos de Hoy</label><input id="in-steps" type="number" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="4262" /></div>
-
-        <div><label class="text-slate-300 block mb-1">Fuerza / Pickleball (min)</label><input id="in-workout-min" type="number" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="40" /></div>
-        <div><label class="text-slate-300 block mb-1">RPE Sesión (1-10)</label><input id="in-rpe" type="number" step="0.5" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="7.0" /></div>
-        <div><label class="text-slate-300 block mb-1">Kcal Comidas Hoy</label><input id="in-kcal" type="number" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="0" /></div>
-        <div><label class="text-slate-300 block mb-1">Horas Guardia (00-06h)</label><input id="in-shift-hours" type="number" step="0.5" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" placeholder="0" /></div>
+        <div><label class="text-slate-400 block mb-1">Peso Feelfit (kg)</label><input id="in-weight" type="number" step="0.05" placeholder="86.80" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">% Grasa Corporal</label><input id="in-bf" type="number" step="0.1" placeholder="24.1" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">% Músculo Esquelético</label><input id="in-muscle" type="number" step="0.1" placeholder="48.9" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">Grasa Visceral</label><input id="in-visceral" type="number" step="1" placeholder="11" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">TMB Feelfit (kcal)</label><input id="in-tmb" type="number" placeholder="1793" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">% Agua Corporal</label><input id="in-water" type="number" step="0.1" placeholder="54.6" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">VFC RMSSD (ms)</label><input id="in-rmssd" type="number" step="0.1" placeholder="50.0" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">FC Reposo (lpm)</label><input id="in-rhr" type="number" step="0.5" placeholder="54.5" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">Sueño Total (min)</label><input id="in-tst" type="number" placeholder="450" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">Sueño Profundo SWS (min)</label><input id="in-deep" type="number" placeholder="85" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">Sueño REM (min)</label><input id="in-rem" type="number" placeholder="105" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">Pasos del Día</label><input id="in-steps" type="number" placeholder="8500" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">Ejercicio / Pickleball (min)</label><input id="in-workout-min" type="number" placeholder="60" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">RPE Sesión (1-10)</label><input id="in-rpe" type="number" step="0.5" placeholder="7.5" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">Kcal Ingeridas Hoy</label><input id="in-kcal" type="number" placeholder="1650" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">Horas Guardia Nocturna</label><input id="in-shift-hours" type="number" step="0.5" placeholder="0" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
       </div>
-
-      <button onclick="saveAndComputeManualEntry()" class="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs uppercase tracking-wider">
-        Recalcular Grafo & Guardar en Supabase
+      <button onclick="saveAndComputeManualEntry()" class="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase tracking-wider">
+        Guardar y Recalcular Grafo MBE
       </button>
     </div>
   </div>
 
-  <!-- MODAL 2: AUDITORÍA CLÍNICA DE CALIDAD (QA 8 TESTS) -->
-  <div id="qa-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-4">
-      <div class="flex justify-between items-center border-b border-slate-800 pb-2">
-        <h3 class="text-sm font-bold text-emerald-400 uppercase tracking-wider">✓ Reporte de Auditoría Clínica (GraphOS v5.0)</h3>
-        <button onclick="closeModal('qa-modal')" class="text-slate-400 hover:text-white text-sm">✕</button>
+  <!-- Bottom Sheet 2: Reporte de Auditoría QA -->
+  <div id="qa-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center">
+    <div class="bottom-sheet-panel bg-slate-900 border-t sm:border border-slate-700/80 rounded-t-3xl sm:rounded-3xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-5 space-y-3">
+      <div class="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-1 sm:hidden"></div>
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-black uppercase tracking-wider text-emerald-400">✓ Reporte de Auditoría Clínica (ARGON v6.0)</h3>
+        <button onclick="closeModal('qa-modal')" class="text-slate-400 hover:text-white text-sm px-2">✕</button>
       </div>
-      <div id="qa-results-list" class="space-y-2 text-xs max-h-[65vh] overflow-y-auto"></div>
-      <button onclick="closeModal('qa-modal')" class="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs">
-        Cerrar Auditoría
-      </button>
+      <div id="qa-results-list" class="space-y-2 text-xs"></div>
+      <button onclick="closeModal('qa-modal')" class="w-full py-2.5 rounded-2xl bg-slate-800 text-slate-200 font-bold text-xs">Cerrar Auditoría</button>
     </div>
   </div>
 
-  <!-- MODAL 3: CONFIGURACIÓN SUPABASE -->
-  <div id="settings-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-4">
-      <div class="flex justify-between items-center border-b border-slate-800 pb-2">
-        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Conexión Serverless (Supabase)</h3>
-        <button onclick="closeModal('settings-modal')" class="text-slate-400 hover:text-white text-sm">✕</button>
+  <!-- Bottom Sheet 3: Configuración Cloud (⚙️) -->
+  <div id="settings-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center">
+    <div class="bottom-sheet-panel bg-slate-900 border-t sm:border border-slate-700/80 rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 space-y-4">
+      <div class="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-1 sm:hidden"></div>
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-black uppercase tracking-wider text-cyan-400">⚙️ Credenciales Cloud & Webhook</h3>
+        <button onclick="closeModal('settings-modal')" class="text-slate-400 hover:text-white text-sm px-2">✕</button>
       </div>
       <div class="space-y-3 text-xs">
-        <div><label class="text-slate-400 block mb-1">Supabase Project URL</label><input id="cfg-url" type="text" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono" /></div>
-        <div><label class="text-slate-400 block mb-1">Supabase Anon Key (eyJ...)</label><input id="cfg-key" type="password" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono" /></div>
-        <div class="grid grid-cols-2 gap-2 pt-1">
-          <div><label class="text-slate-400 block mb-1">Peso Meta 7 Dic (kg)</label><input id="cfg-target-weight" type="number" step="0.1" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" value="80.0" /></div>
-          <div><label class="text-slate-400 block mb-1">Hora Despertar</label><input id="cfg-wake-time" type="time" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white" value="06:00" /></div>
+        <div>
+          <label class="text-slate-400 block mb-1">Supabase Project URL</label>
+          <input id="cfg-url" type="text" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-[11px]" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Supabase Anon Key (eyJ...)</label>
+          <input id="cfg-key" type="password" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-[11px]" />
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-slate-400 block mb-1">Peso Meta (kg)</label>
+            <input id="cfg-target-weight" type="number" step="0.5" value="80.0" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" />
+          </div>
+          <div>
+            <label class="text-slate-400 block mb-1">Hora Despertar</label>
+            <input id="cfg-wake-time" type="time" value="06:00" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" />
+          </div>
         </div>
       </div>
-      <button onclick="saveSettings()" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs uppercase tracking-wider">
+      <button onclick="saveSettings()" class="w-full py-3 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs uppercase tracking-wider">
         Guardar y Reconectar
       </button>
     </div>
   </div>
+
+  <!-- Controlador Nativo de Pestañas Deslizables (Swiper + Selector de Días) -->
+  <script>
+    let argonSwiper = null;
+
+    window.addEventListener('DOMContentLoaded', () => {
+      argonSwiper = new Swiper('.argon-main-swiper', {
+        spaceBetween: 16,
+        autoHeight: true,
+        resistanceRatio: 0.65,
+        on: {
+          slideChange: function () {
+            updateBottomNavActiveState(this.activeIndex);
+            if (this.activeIndex === 1 && typeof switchApexTab === 'function') {
+              setTimeout(() => switchApexTab(currentApexTab || 'hrv'), 80);
+            }
+          }
+        }
+      });
+
+      // Observar cambios de contenido para reajustar la altura del slide activo
+      setTimeout(() => { if (argonSwiper) argonSwiper.updateAutoHeight(200); }, 600);
+      document.querySelectorAll('details.native-accordion').forEach(det => {
+        det.addEventListener('toggle', () => {
+          setTimeout(() => { if (argonSwiper) argonSwiper.updateAutoHeight(200); }, 50);
+        });
+      });
+    });
+
+    function goToArgonTab(index) {
+      if (argonSwiper) argonSwiper.slideTo(index, 300);
+      updateBottomNavActiveState(index);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function updateBottomNavActiveState(activeIdx) {
+      for (let i = 0; i < 4; i++) {
+        const btn = document.getElementById('nav-btn-' + i);
+        if (!btn) continue;
+        btn.className = (i === activeIdx)
+          ? 'flex flex-col items-center py-1 text-cyan-400 scale-105 transition'
+          : 'flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 transition';
+      }
+    }
+
+    function stepArgonDate(deltaDays) {
+      const input = document.getElementById('selected-date');
+      if (!input || !input.value) return;
+      const d = new Date(input.value + 'T12:00:00-04:00');
+      d.setDate(d.getDate() + deltaDays);
+      const nextIso = d.toISOString().split('T')[0];
+      input.value = nextIso;
+      if (typeof loadDayData === 'function') loadDayData(nextIso);
+    }
+  </script>
+  <!-- FIN DE LA PARTE 1 -->
   <!-- ========================================================================
-       PARTE 2 DE 2 (v5.2): MOTOR GRAPHOS + BITÁCORA NUTRICIONAL + WEBHOOK QA
+       PARTE 2 DE 2 (ARGON v6.0 NATIVE SHELL):
+       MOTOR MBE + SWIPER SYNC + BOTTOM SHEETS TÁCTILES + LUCIDE + COACH IA
        ======================================================================== -->
   <script>
+    // Guardián de errores en vivo para evitar bloqueos silenciosos
+    window.addEventListener('error', (e) => {
+      const st = document.getElementById('sync-status-text');
+      if (st && e && e.message) st.textContent = 'Aviso JS: ' + e.message;
+    });
+
     let supabaseClient = null;
     let apexChartInstance = null;
     let currentApexTab = 'hrv';
-    const STORAGE_KEY_RECORDS = 'argon_graphos_records_v52';
+    let argonCoachHistory = [];
+    const STORAGE_KEY_RECORDS = 'argon_graphos_records_v54';
+
+    // Reajusta la altura del contenedor deslizable Swiper cuando cambia el DOM
+    function refreshSwiperHeight(delay = 60) {
+      setTimeout(() => {
+        if (typeof argonSwiper !== 'undefined' && argonSwiper) {
+          argonSwiper.updateAutoHeight(220);
+        }
+      }, delay);
+    }
 
     function toggleHelp(id) {
       const el = document.getElementById(id);
-      if (el) el.classList.toggle('hidden');
+      if (el) {
+        el.classList.toggle('hidden');
+        refreshSwiperHeight(40);
+      }
     }
 
-    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+    function openModal(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const panel = el.querySelector('.bottom-sheet-panel');
+      if (panel) {
+        panel.style.transform = 'translateY(0px)';
+        panel.style.transition = '';
+      }
+      el.classList.remove('hidden');
+    }
 
+    function closeModal(id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    }
+
+    // Corte estricto de medianoche (00:00:00) en hora de Venezuela (America/Caracas)
     function getLocalTodayIso() {
-     return new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Caracas',
-      year: 'numeric', month: '2-digit', day: '2-digit'
-     }).format(new Date());
+      try {
+        return new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/Caracas',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).format(new Date());
+      } catch (_) {
+        const d = new Date();
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+      }
     }
 
-    // 1. Inicialización del Grafo al Cargar la PWA
+    // 1. Inicialización Principal del Sistema v6.0
     window.addEventListener('DOMContentLoaded', () => {
       if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
       updateCountdown();
       setInterval(updateCountdown, 60000);
 
       injectCustomMealLoggerUI();
+      injectArgonCoachUI();
+      upgradeNativeIconsAndGestures();
 
       const todayStr = getLocalTodayIso();
-      document.getElementById('selected-date').value = todayStr;
+      const dateInput = document.getElementById('selected-date');
+      if (dateInput) dateInput.value = todayStr;
 
       initSupabaseFromStorage();
       const localData = getLocalStore();
@@ -768,7 +942,72 @@
       }
     });
 
-    // Inyecta la Bitácora de Comidas del Día y el Registrador Personalizado en la Tarjeta 2
+    // 1B. Iconos Vectoriales Lucide + Física Táctil de Arrastre en Bottom Sheets
+    function upgradeNativeIconsAndGestures() {
+      // Convertir iconos de la barra inferior a vectores Lucide estilo Whoop/Apple Health
+      const navIcons = [
+        { id: 'nav-btn-0', icon: 'activity', label: 'Hoy' },
+        { id: 'nav-btn-1', icon: 'moon', label: 'Sueño' },
+        { id: 'nav-btn-2', icon: 'scale', label: 'Cuerpo' },
+        { id: 'nav-btn-3', icon: 'flame', label: 'Macros' }
+      ];
+      if (window.lucide) {
+        navIcons.forEach(item => {
+          const btn = document.getElementById(item.id);
+          if (btn) {
+            btn.innerHTML = `<i data-lucide="${item.icon}" class="w-4 h-4 stroke-[2.2]"></i><span class="text-[10px] font-semibold mt-1">${item.label}</span>`;
+          }
+        });
+        lucide.createIcons();
+      }
+
+      // Cerrar cualquier modal al tocar el fondo oscuro (backdrop)
+      ['log-modal', 'qa-modal', 'settings-modal', 'coach-modal'].forEach(modalId => {
+        const modalEl = document.getElementById(modalId);
+        if (!modalEl) return;
+        modalEl.addEventListener('click', (e) => {
+          if (e.target === modalEl) closeModal(modalId);
+        });
+
+        // Gestos táctiles para arrastrar hacia abajo el Bottom Sheet (Drag-to-dismiss)
+        const sheet = modalEl.querySelector('.bottom-sheet-panel');
+        if (!sheet) return;
+        let startY = 0;
+        let currentDeltaY = 0;
+        let isDragging = false;
+
+        sheet.addEventListener('touchstart', (e) => {
+          if (sheet.scrollTop > 5) return;
+          startY = e.touches[0].clientY;
+          currentDeltaY = 0;
+          isDragging = true;
+          sheet.style.transition = 'none';
+        }, { passive: true });
+
+        sheet.addEventListener('touchmove', (e) => {
+          if (!isDragging) return;
+          const delta = e.touches[0].clientY - startY;
+          if (delta > 0) {
+            currentDeltaY = delta;
+            sheet.style.transform = `translateY(${delta}px)`;
+          }
+        }, { passive: true });
+
+        sheet.addEventListener('touchend', () => {
+          if (!isDragging) return;
+          isDragging = false;
+          sheet.style.transition = 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)';
+          if (currentDeltaY > 95) {
+            sheet.style.transform = 'translateY(100%)';
+            setTimeout(() => closeModal(modalId), 200);
+          } else {
+            sheet.style.transform = 'translateY(0px)';
+          }
+        });
+      });
+    }
+
+    // 2. Bitácora Interactiva de Comidas y Registrador Auto-Atwater
     function injectCustomMealLoggerUI() {
       const resetBtn = document.querySelector('button[onclick="resetTodayMeals()"]');
       if (!resetBtn || document.getElementById('custom-meal-box')) return;
@@ -777,27 +1016,27 @@
 
       const extraUI = document.createElement('div');
       extraUI.id = 'custom-meal-box';
-      extraUI.className = 'mt-3 pt-2.5 border-t border-slate-800/80 space-y-2 text-xs';
+      extraUI.className = 'mt-3 pt-3 border-t border-slate-800/80 space-y-2.5 text-xs';
       extraUI.innerHTML = `
         <div class="flex items-center justify-between">
           <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">🍴 Bitácora de Comidas de Hoy (Zepp / Manual)</span>
-          <button onclick="toggleHelp('custom-meal-form')" class="text-[10px] px-2 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 font-semibold">
+          <button onclick="toggleHelp('custom-meal-form')" class="text-[10px] px-2.5 py-1 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 font-semibold">
             + Comida Personalizada
           </button>
         </div>
         <div id="meals-log-list" class="flex flex-wrap gap-1.5 text-[10px] text-slate-400">
           <span>Sin comidas registradas hoy. Usa los botones rápidos o sincroniza Zepp.</span>
         </div>
-        <div id="custom-meal-form" class="hidden p-2.5 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2">
+        <div id="custom-meal-form" class="hidden p-3 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-2">
           <div class="grid grid-cols-5 gap-1.5">
-            <input id="cm-name" type="text" placeholder="Plato (ej. Pollo)" class="col-span-2 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-[11px]" />
-            <input id="cm-prot" type="number" placeholder="Prot (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-emerald-300 text-[11px]" />
-            <input id="cm-carbs" type="number" placeholder="Carbs (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-cyan-300 text-[11px]" />
-            <input id="cm-fat" type="number" placeholder="Grasa (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-amber-300 text-[11px]" />
+            <input id="cm-name" type="text" placeholder="Plato (ej. Pollo)" class="col-span-2 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-white text-[11px]" />
+            <input id="cm-prot" type="number" placeholder="Prot (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1.5 text-emerald-300 text-[11px]" />
+            <input id="cm-carbs" type="number" placeholder="Carbs (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1.5 text-cyan-300 text-[11px]" />
+            <input id="cm-fat" type="number" placeholder="Grasa (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1.5 text-amber-300 text-[11px]" />
           </div>
           <div class="flex items-center justify-between gap-2">
-            <input id="cm-kcal" type="number" placeholder="Kcal totales (auto)" class="w-1/2 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-[11px] font-mono" />
-            <button onclick="submitCustomMeal()" class="w-1/2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[11px] uppercase">
+            <input id="cm-kcal" type="number" placeholder="Kcal totales (auto)" class="w-1/2 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-white text-[11px] font-mono" />
+            <button onclick="submitCustomMeal()" class="w-1/2 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[11px] uppercase">
               Guardar Comida
             </button>
           </div>
@@ -836,7 +1075,7 @@
       await quickAddMeal(kcal, p, c, f, name);
     }
 
-    // 2. Reloj de Cuenta Regresiva al 7 de Diciembre de 2026
+    // 3. Reloj de Cuenta Regresiva al 7 de Diciembre de 2026
     function updateCountdown() {
       const deadline = new Date('2026-12-07T00:00:00-04:00').getTime();
       const diff = Math.max(0, deadline - Date.now());
@@ -846,19 +1085,22 @@
       if (el) el.textContent = `${days}d ${hours}h`;
     }
 
-    // 3. Conexión con Supabase
+    // 4. Conexión y Ajustes de Supabase + Google Apps Script URL
     function initSupabaseFromStorage() {
       const url = (localStorage.getItem('argon_sb_url') || 'https://eqbvzgqumwvksiovboth.supabase.co').trim();
       const key = (localStorage.getItem('argon_sb_key') || '').trim();
-      document.getElementById('cfg-url').value = url;
-      document.getElementById('cfg-key').value = key;
-      document.getElementById('cfg-target-weight').value = localStorage.getItem('argon_target_w') || '80.0';
-      document.getElementById('cfg-wake-time').value = localStorage.getItem('argon_wake_time') || '06:00';
+      const gasUrl = (localStorage.getItem('argon_gas_url') || '').trim();
+
+      if (document.getElementById('cfg-url')) document.getElementById('cfg-url').value = url;
+      if (document.getElementById('cfg-key')) document.getElementById('cfg-key').value = key;
+      if (document.getElementById('cfg-target-weight')) document.getElementById('cfg-target-weight').value = localStorage.getItem('argon_target_w') || '80.0';
+      if (document.getElementById('cfg-wake-time')) document.getElementById('cfg-wake-time').value = localStorage.getItem('argon_wake_time') || '06:00';
+      if (document.getElementById('cfg-gas-url')) document.getElementById('cfg-gas-url').value = gasUrl;
 
       if (url && key && window.supabase) {
         supabaseClient = window.supabase.createClient(url, key);
         document.getElementById('sync-status-text').textContent = 'Supabase Conectado ✓';
-        document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-emerald-400 animate-pulse';
+        document.getElementById('status-dot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse';
         syncFromSupabase();
       } else {
         document.getElementById('sync-status-text').textContent = 'Modo Local Activo';
@@ -870,34 +1112,28 @@
       localStorage.setItem('argon_sb_key', document.getElementById('cfg-key').value.trim());
       localStorage.setItem('argon_target_w', document.getElementById('cfg-target-weight').value);
       localStorage.setItem('argon_wake_time', document.getElementById('cfg-wake-time').value);
+      const gasInput = document.getElementById('cfg-gas-url');
+      if (gasInput) localStorage.setItem('argon_gas_url', gasInput.value.trim());
       closeModal('settings-modal');
       initSupabaseFromStorage();
     }
 
     // ========================================================================
-    // 4. MOTOR MATEMÁTICO MBE v5.2 (FEELFIT + WHOOP 4D + HEALTHSPAN + MEALS)
+    // 5. MOTOR MATEMÁTICO MBE v6.0 (FEELFIT + DEUDA SUEÑO 7.5H + ATWATER 0 KCAL)
     // ========================================================================
     function computeArgonDayScore(todayRaw, historyRawList, prevComputed) {
       const wakeTimeStr = localStorage.getItem('argon_wake_time') || '06:00';
-      const basalNeedH = 7.75;
-      // Cálculo exacto de edad cronológica (Nacido: 12 Nov 1997 -> 28.92 años hoy, 29.0 el 12 Nov)
+      const basalNeedH = 7.50; // Calibrado a 7h 30m de sueño neto efectivo
+
+      // Edad cronológica exacta (Nacido: 12 Nov 1997)
       const birthDate = new Date('1997-11-12T00:00:00-04:00');
       const refDate = todayRaw.log_date ? new Date(todayRaw.log_date + 'T12:00:00-04:00') : new Date();
       const chronologicalAge = +((refDate.getTime() - birthDate.getTime()) / (365.2425 * 86400000)).toFixed(2);
       const heightM = 1.73;
 
-      // Actualizar automáticamente la etiqueta visual "Edad Cronológica: 25.0a" en la tarjeta
-      setTimeout(() => {
-        document.querySelectorAll('div, span').forEach(el => {
-          if (el.children.length === 0 && el.textContent.includes('Edad Cronológica:')) {
-            el.textContent = `Edad Cronológica: ${chronologicalAge.toFixed(1)}a`;
-          }
-        });
-      }, 50);
-
-      // A. BIOIMPEDANCIA FEELFIT (Peso y % Grasa por webhook; Músculo, Agua y Visceral auto-calculados por curva Qingniu/Feelfit)
-      const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.weight_kg : 87.25);
-      const rawBf = parseFloat(todayRaw.body_fat_pct) || (prevComputed ? prevComputed.body_fat_pct : 24.4);
+      // A. BIOIMPEDANCIA FEELFIT
+      const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.weight_kg : 86.80);
+      const rawBf = parseFloat(todayRaw.body_fat_pct) || (prevComputed ? prevComputed.body_fat_pct : 24.1);
       const ffmPct = +(100.0 - rawBf).toFixed(1);
 
       const fatMassKg = +(rawW * (rawBf / 100.0)).toFixed(2);
@@ -949,10 +1185,10 @@
       const totalLoad = cardioTrimp + neuroLoad + shiftLoad;
       const strainScore = Math.min(20.8, Math.max(0.0, 21.0 * (1.0 - Math.exp(-0.00165 * totalLoad))));
 
-      // C. SUEÑO EN 4 PILARES + VENTANA CIRCADIANA
-      const prevTst = prevComputed && prevComputed.total_sleep_min ? prevComputed.total_sleep_min : 440;
+      // C. SUEÑO EN 4 PILARES + AMORTIZACIÓN DE DEUDA (PROCESO S BORBÉLY)
+      const prevTst = prevComputed && prevComputed.total_sleep_min ? prevComputed.total_sleep_min : 450;
       const tstMin = parseInt(todayRaw.total_sleep_min, 10) || prevTst;
-      const tibMin = parseInt(todayRaw.time_in_bed_min, 10) || Math.max(tstMin + 28, Math.round(tstMin * 1.07));
+      const tibMin = parseInt(todayRaw.time_in_bed_min, 10) || Math.max(tstMin + 25, Math.round(tstMin * 1.06));
       const deepMin = parseInt(todayRaw.deep_sleep_min, 10) || Math.round(tstMin * 0.20);
       const remMin = parseInt(todayRaw.rem_sleep_min, 10) || Math.round(tstMin * 0.22);
       const lightMin = Math.max(0, tstMin - deepMin - remMin);
@@ -962,16 +1198,19 @@
       const swsPct = (deepMin / Math.max(1, tstMin)) * 100;
       const remPct = (remMin / Math.max(1, tstMin)) * 100;
 
+      // Incluye el sueño de hoy y permite que dormir > 7.50h amortice deuda previa
       let weightedDebtH = 0;
-      historyRawList.slice(0, 7).forEach((r, idx) => {
-        const pastTstH = ((parseInt(r.total_sleep_min, 10) || 430) + (parseInt(r.nap_sleep_min, 10) || 0)) / 60.0;
-        weightedDebtH += Math.max(0, basalNeedH - pastTstH) * Math.exp(-0.35 * idx);
+      const last7Sleeps = [todayRaw, ...historyRawList.slice(0, 6)];
+      last7Sleeps.forEach((r, idx) => {
+        const pastTstH = ((parseInt(r.total_sleep_min, 10) || 450) + (parseInt(r.nap_sleep_min, 10) || 0)) / 60.0;
+        weightedDebtH += (basalNeedH - pastTstH) * Math.exp(-0.35 * idx);
       });
+      weightedDebtH = Math.max(0, +weightedDebtH.toFixed(2));
 
       const dynamicNeedH = Math.min(10.0, Math.max(6.5, basalNeedH + (0.042 * strainScore) + (0.35 * weightedDebtH) - Math.min(1.5, napMin / 60.0)));
       const hoursVsNeededPct = Math.min(100, Math.round((((tstMin + napMin) / 60.0) / dynamicNeedH) * 100));
 
-      const recentTstList = [tstMin, ...historyRawList.slice(0, 6).map(r => parseInt(r.total_sleep_min, 10) || 430)];
+      const recentTstList = [tstMin, ...historyRawList.slice(0, 6).map(r => parseInt(r.total_sleep_min, 10) || 450)];
       const meanTst = recentTstList.reduce((a, b) => a + b, 0) / recentTstList.length;
       const sdTstHours = Math.sqrt(recentTstList.reduce((s, v) => s + Math.pow((v - meanTst) / 60.0, 2), 0) / recentTstList.length);
       const sleepRegularityPct = Math.min(98, Math.max(55, Math.round(94 - (sdTstHours * 14.0) - (nightAwakeH * 3.5))));
@@ -990,16 +1229,20 @@
       const endMin = Math.round(wakeTotalMin - (reqTibHours * 60) + 15) % 1440;
       const fmtTime = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
-      // D. RECUPERACIÓN AUTONÓMICA 4D
+      // D. RECUPERACIÓN AUTONÓMICA 4D (Con filtro anti-artefactos RMSSD > 130 ms)
       const prevRmssd = prevComputed && prevComputed.rmssd_ms ? prevComputed.rmssd_ms : 50.0;
       const prevRhr = prevComputed && prevComputed.rhr_bpm ? prevComputed.rhr_bpm : 54.5;
-      const rmssdToday = parseFloat(todayRaw.rmssd_ms) || prevRmssd;
+      const rawRmssdCandidate = parseFloat(todayRaw.rmssd_ms) || prevRmssd;
+      const rmssdToday = rawRmssdCandidate > 130 ? prevRmssd : rawRmssdCandidate;
       const rhrToday = parseFloat(todayRaw.rhr_bpm) || prevRhr;
       const respToday = parseFloat(todayRaw.resp_rate_brpm) || 14.1;
       const spo2Today = parseFloat(todayRaw.spo2_pct) || 97.6;
 
       const lnRmssdToday = Math.log(Math.max(5.0, rmssdToday));
-      const histRmssd = historyRawList.slice(0, 14).map(r => parseFloat(r.rmssd_ms) || 49.0);
+      const histRmssd = historyRawList.slice(0, 14).map(r => {
+        const v = parseFloat(r.rmssd_ms) || 49.0;
+        return v > 130 ? 50.0 : v;
+      });
       const histLn = histRmssd.map(v => Math.log(Math.max(5.0, v)));
       const histRhr = historyRawList.slice(0, 14).map(r => parseFloat(r.rhr_bpm) || 55.5);
       const histResp = historyRawList.slice(0, 14).map(r => parseFloat(r.resp_rate_brpm) || 14.2);
@@ -1052,7 +1295,6 @@
       const targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
       const targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
 
-      // Si existe bitácora detallada de comidas (meals_log_json), consolidar desde allí
       const mealsLog = Array.isArray(todayRaw.meals_log_json) ? todayRaw.meals_log_json : [];
       let realIntakeKcal = Math.max(0, parseInt(todayRaw.intake_kcal, 10) || 0);
       let realProt = Math.max(0, parseFloat(todayRaw.intake_protein_g) || 0);
@@ -1073,7 +1315,6 @@
 
       // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO
       const hrMax = 208 - (0.7 * chronologicalAge);
-    
       const vo2Max = +((15.3 * (hrMax / meanRhr)) * (ffmPct / 79.0) + (z45Min * 0.05)).toFixed(1);
 
       const deltaVo2 = +Math.max(-3.2, Math.min(2.5, -0.18 * (vo2Max - 43.0))).toFixed(1);
@@ -1089,10 +1330,11 @@
 
       const kcalLeft = Math.max(0, targetKcal - realIntakeKcal);
       const coachNote = `Recuperación ${recoveryScore}% (${recStatus === 'OPTIMAL' ? 'Óptima para alta carga' : 'Moderar intensidad'}) | Strain hoy: ${strainScore.toFixed(1)}/21 (Meta: ${recMaxStrain}). ` +
-        `Peso Feelfit: ${rawW} kg (${rawBf}% grasa, ${ffmKg} kg sin grasa). Meta calórica Atwater: ${targetKcal} kcal (Comido: ${realIntakeKcal} kcal, restan ${kcalLeft} kcal). Acuéstate entre ${fmtTime(startMin)} y ${fmtTime(endMin)}.`;
+        `Peso Feelfit: ${rawW} kg (${rawBf}% grasa, ${ffmKg} kg sin grasa). Meta Atwater: ${targetKcal} kcal (Comido: ${realIntakeKcal} kcal, restan ${kcalLeft} kcal). Acuéstate entre ${fmtTime(startMin)} y ${fmtTime(endMin)}.`;
 
       return {
         log_date: todayRaw.log_date,
+        chronological_age: chronologicalAge,
         weight_kg: rawW,
         body_fat_pct: rawBf,
         fat_mass_kg: fatMassKg,
@@ -1133,7 +1375,7 @@
         sleep_hours_vs_needed_pct: hoursVsNeededPct,
         sleep_regularity_pct: sleepRegularityPct,
         high_sleep_stress_pct: highSleepStressPct,
-        cumulative_sleep_debt_hours: +weightedDebtH.toFixed(2),
+        cumulative_sleep_debt_hours: weightedDebtH,
         dynamic_sleep_need_hours: +dynamicNeedH.toFixed(2),
         optimal_bedtime_start: fmtTime(startMin),
         optimal_bedtime_end: fmtTime(endMin),
@@ -1173,7 +1415,7 @@
     }
 
     // ========================================================================
-    // 5. RENDERIZADO COMPLETO DE LOS 48 NODOS DEL DOM + BITÁCORA DE COMIDAS
+    // 6. RENDERIZADO COMPLETO DE LA INTERFAZ Y TELEMETRÍA APEXCHARTS
     // ========================================================================
     function fmtHoursMin(totalMinutes) {
       const m = Math.max(0, Math.round(totalMinutes || 0));
@@ -1190,7 +1432,10 @@
     function renderDashboard(record, allRecordsSorted) {
       const circ = 251.2;
 
-      // 1. Anillos Superiores
+      const chronoEl = document.getElementById('chrono-age-label');
+      if (chronoEl) chronoEl.textContent = `Edad Cronológica: ${(record.chronological_age || 28.9).toFixed(1)}a`;
+
+      // 1. Anillos Superiores (Hoy)
       const recPct = record.recovery_score;
       const recRing = document.getElementById('ring-recovery');
       recRing.style.strokeDashoffset = circ - (recPct / 100) * circ;
@@ -1248,25 +1493,24 @@
       document.getElementById('bar-carb').style.width = `${Math.min(100, (record.intake_carbs_g / Math.max(1, record.target_carbs_g)) * 100)}%`;
       document.getElementById('bar-fat').style.width = `${Math.min(100, (record.intake_fat_g / Math.max(1, record.target_fat_g)) * 100)}%`;
 
-      // Renderizar chips de comidas registradas hoy
       const mealsContainer = document.getElementById('meals-log-list');
       if (mealsContainer) {
         const meals = Array.isArray(record.meals_log_json) ? record.meals_log_json : [];
         if (meals.length === 0 && record.intake_kcal === 0) {
           mealsContainer.innerHTML = '<span>Sin comidas registradas hoy. Usa los botones rápidos o sincroniza Zepp.</span>';
         } else if (meals.length === 0 && record.intake_kcal > 0) {
-          mealsContainer.innerHTML = `<span class="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">Acumulado: ${record.intake_kcal} kcal (${record.intake_protein_g}P / ${record.intake_carbs_g}C / ${record.intake_fat_g}G)</span>`;
+          mealsContainer.innerHTML = `<span class="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">Acumulado: ${record.intake_kcal} kcal (${record.intake_protein_g}P / ${record.intake_carbs_g}C / ${record.intake_fat_g}G)</span>`;
         } else {
           mealsContainer.innerHTML = meals.map((m, idx) => `
-            <span class="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200">
+            <span class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-slate-800/90 border border-slate-700 text-slate-200">
               <span><strong>${m.name || 'Comida'}:</strong> ${m.kcal}kcal (${m.prot}P/${m.carbs}C/${m.fat}G)</span>
-              <button onclick="removeMealByIndex(${idx})" class="text-red-400 hover:text-red-300 font-bold ml-1">✕</button>
+              <button onclick="removeMealByIndex(${idx})" class="text-rose-400 hover:text-rose-300 font-bold ml-1">✕</button>
             </span>
           `).join('');
         }
       }
 
-      // 3. Recuperación Autonómica 4D
+      // 3. Monitor Autonómico 4D
       document.getElementById('metric-lnrmssd').textContent = record.ln_rmssd;
       document.getElementById('z-score-pill').textContent = `${record.hrv_z_score >= 0 ? '+' : ''}${record.hrv_z_score} SD`;
       document.getElementById('metric-rmssd-ms').textContent = `${record.rmssd_ms} ms`;
@@ -1340,7 +1584,7 @@
       document.getElementById('argon-age-val').textContent = record.argon_physiological_age.toFixed(1);
       const ageDeltaEl = document.getElementById('argon-age-delta-badge');
       ageDeltaEl.textContent = `${fmtDeltaYears(record.total_age_delta)} vs cronológica`;
-      ageDeltaEl.className = record.total_age_delta <= 0 ? 'text-xs font-bold text-emerald-400 mt-0.5' : 'text-xs font-bold text-amber-400 mt-0.5';
+      ageDeltaEl.className = record.total_age_delta <= 0 ? 'text-xs font-bold text-emerald-400' : 'text-xs font-bold text-amber-400';
 
       document.getElementById('pace-of-aging-val').textContent = `${record.pace_of_aging_x.toFixed(2)}x`;
       document.getElementById('vo2max-val').textContent = `${record.vo2_max_ml_kg_min} ml/kg/min`;
@@ -1353,11 +1597,9 @@
       document.getElementById('activity-age-impact').textContent = fmtDeltaYears(record.delta_act_years);
 
       renderApexTelemetry(allRecordsSorted.slice(-14));
+      refreshSwiperHeight(80);
     }
 
-    // ========================================================================
-    // 6. TELEMETRÍA LONGITUDINAL APEXCHARTS (3 PESTAÑAS)
-    // ========================================================================
     function switchApexTab(tabName) {
       currentApexTab = tabName;
       ['hrv', 'strain', 'weight'].forEach(t => {
@@ -1370,15 +1612,17 @@
       const store = getLocalStore();
       const allSorted = Object.keys(store).sort().map(d => store[d]);
       renderApexTelemetry(allSorted.slice(-14));
+      refreshSwiperHeight(90);
     }
 
     function renderApexTelemetry(last14) {
       if (!window.ApexCharts || !last14 || last14.length === 0) return;
       const container = document.querySelector('#apex-telemetry-chart');
+      if (!container) return;
       const categories = last14.map(r => r.log_date.slice(5));
 
       let options = {
-        chart: { height: 255, background: 'transparent', toolbar: { show: false }, animations: { enabled: true, speed: 400 } },
+        chart: { height: 255, background: 'transparent', toolbar: { show: false }, animations: { enabled: true, speed: 350 } },
         theme: { mode: 'dark' },
         grid: { borderColor: 'rgba(255,255,255,0.06)', strokeDashArray: 3 },
         xaxis: { categories, labels: { style: { colors: '#94A3B8', fontSize: '10px' } }, axisBorder: { show: false } },
@@ -1559,20 +1803,20 @@
       const rawInput = {
         ...existing,
         log_date: dateStr,
-        weight_kg: valOrKeep('in-weight', existing.weight_kg || 87.25, true),
-        body_fat_pct: valOrKeep('in-bf', existing.body_fat_pct || 24.4, true),
+        weight_kg: valOrKeep('in-weight', existing.weight_kg || 86.80, true),
+        body_fat_pct: valOrKeep('in-bf', existing.body_fat_pct || 24.1, true),
         skeletal_muscle_pct: valOrKeep('in-muscle', existing.skeletal_muscle_pct || 48.9, true),
         visceral_fat_index: valOrKeep('in-visceral', existing.visceral_fat_index || 11.0, true),
-        tmb_kcal: valOrKeep('in-tmb', existing.tmb_kcal || 1794, false),
+        tmb_kcal: valOrKeep('in-tmb', existing.tmb_kcal || 1793, false),
         body_water_pct: valOrKeep('in-water', existing.body_water_pct || 54.6, true),
         rmssd_ms: valOrKeep('in-rmssd', existing.rmssd_ms || 50.0, true),
         rhr_bpm: valOrKeep('in-rhr', existing.rhr_bpm || 54.5, true),
-        total_sleep_min: valOrKeep('in-tst', existing.total_sleep_min || 440, false),
+        total_sleep_min: valOrKeep('in-tst', existing.total_sleep_min || 450, false),
         deep_sleep_min: valOrKeep('in-deep', existing.deep_sleep_min || 88, false),
-        rem_sleep_min: valOrKeep('in-rem', existing.rem_sleep_min || 96, false),
-        steps_count: valOrKeep('in-steps', existing.steps_count || 4262, false),
-        pickleball_or_gym_minutes: valOrKeep('in-workout-min', existing.pickleball_or_gym_minutes || 40, false),
-        session_rpe: valOrKeep('in-rpe', existing.session_rpe || 7.0, true),
+        rem_sleep_min: valOrKeep('in-rem', existing.rem_sleep_min || 98, false),
+        steps_count: valOrKeep('in-steps', existing.steps_count || 0, false),
+        pickleball_or_gym_minutes: valOrKeep('in-workout-min', existing.pickleball_or_gym_minutes || 0, false),
+        session_rpe: valOrKeep('in-rpe', existing.session_rpe || 0, true),
         intake_kcal: valOrKeep('in-kcal', existing.intake_kcal || 0, false),
         night_awake_shift_hours: valOrKeep('in-shift-hours', existing.night_awake_shift_hours || 0, true)
       };
@@ -1585,7 +1829,6 @@
       if (supabaseClient) await pushDayToSupabase(computed);
     }
 
-    // Calibra 14d preservando las comidas que ya hayas registrado hoy
     async function seedCalibratedFeelfitHistory(pushCloud = true) {
       const existingStore = getLocalStore();
       const todayIso = getLocalTodayIso();
@@ -1602,30 +1845,24 @@
         const dateStr = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
         const isToday = (i === 0);
-        const isShift = (i === 4 || i === 9);
         const isPickleball = (!isToday && i % 2 === 0);
 
         const raw = {
           log_date: dateStr,
-          weight_kg: isToday ? 86.80 : +(87.25 + (i * 0.06)).toFixed(2),
-          body_fat_pct: isToday ? 24.4 : +(24.4 + (i * 0.04)).toFixed(1),
-          skeletal_muscle_pct: 48.9,
-          visceral_fat_index: 11.0,
-          tmb_kcal: 1794,
-          body_water_pct: 54.6,
-          rmssd_ms: isShift ? 39.5 : (isToday ? 50.0 : +(49.0 + Math.sin(i) * 5.0).toFixed(1)),
-          rhr_bpm: isShift ? 61.0 : (isToday ? 54.5 : +(55.0 - Math.sin(i) * 2.0).toFixed(1)),
-          total_sleep_min: isShift ? 330 : (isToday ? 460 : Math.round(440 + Math.cos(i) * 18)),
-          time_in_bed_min: isShift ? 365 : 485,
-          deep_sleep_min: isShift ? 60 : 88,
-          rem_sleep_min: isShift ? 68 : 96,
+          weight_kg: isToday ? (existingToday.weight_kg || 86.80) : +(86.85 + (i * 0.04)).toFixed(2),
+          body_fat_pct: isToday ? (existingToday.body_fat_pct || 24.1) : +(24.1 + (i * 0.02)).toFixed(1),
+          rmssd_ms: isToday ? 50.0 : +(49.5 + Math.sin(i) * 4.5).toFixed(1),
+          rhr_bpm: isToday ? 54.5 : +(55.0 - Math.sin(i) * 1.8).toFixed(1),
+          total_sleep_min: isToday ? (existingToday.total_sleep_min || 451) : Math.round(450 + Math.cos(i) * 12),
+          time_in_bed_min: 480,
+          deep_sleep_min: isToday ? (existingToday.deep_sleep_min || 61) : 88,
+          rem_sleep_min: isToday ? (existingToday.rem_sleep_min || 131) : 98,
           pickleball_or_gym_minutes: isToday ? 0 : (isPickleball ? 85 : 30),
           session_rpe: isToday ? 0 : (isPickleball ? 7.5 : 5.5),
-          steps_count: isToday ? (existingToday.steps_count || 0) : (isShift ? 14200 : (isPickleball ? 11500 : 8200)),
-          night_awake_shift_hours: isShift ? 5.0 : 0.0,
-          resp_rate_brpm: isShift ? 16.0 : 14.1,
+          steps_count: isToday ? (existingToday.steps_count || 0) : (isPickleball ? 11500 : 8200),
+          night_awake_shift_hours: 0.0,
+          resp_rate_brpm: 14.1,
           spo2_pct: 97.6,
-          // Protege tus comidas registradas hoy para que nunca vuelvan a 0 por accidente
           intake_kcal: isToday ? (existingToday.intake_kcal || 0) : 1743,
           intake_protein_g: isToday ? (existingToday.intake_protein_g || 0) : 155,
           intake_carbs_g: isToday ? (existingToday.intake_carbs_g || 0) : 139,
@@ -1719,7 +1956,6 @@
       }
     }
 
-    // Dual-Table Fetch: Lee directamente daily_raw_biometrics y computed_daily_scores sin pérdidas
     async function syncFromSupabase() {
       if (!supabaseClient) return;
       try {
@@ -1734,7 +1970,9 @@
         const compMap = {};
         (compRes.data || []).forEach(c => { compMap[c.log_date] = c; });
 
-        const allDates = Array.from(new Set([...Object.keys(rawMap), ...Object.keys(compMap)])).sort();
+        const todayIso = getLocalTodayIso();
+        const allDates = Array.from(new Set([...Object.keys(rawMap), ...Object.keys(compMap), todayIso])).sort();
+
         if (allDates.length > 0) {
           const store = getLocalStore();
           const historyRaw = [];
@@ -1743,11 +1981,17 @@
           allDates.forEach(dStr => {
             const r = rawMap[dStr] || {};
             const c = compMap[dStr] || {};
+            const lastW = prevComp ? prevComp.weight_kg : 86.80;
+            const lastBf = prevComp ? prevComp.body_fat_pct : 24.1;
+
             const merged = {
               ...c,
               ...r,
-              weight_kg: parseFloat(r.weight_kg) || parseFloat(c.trend_weight_kg) || 86.80,
-              body_fat_pct: parseFloat(r.body_fat_pct) || parseFloat(c.trend_body_fat_pct) || 24.2,
+              log_date: dStr,
+              weight_kg: (r.weight_kg && r.weight_kg >= 65) ? parseFloat(r.weight_kg) : lastW,
+              body_fat_pct: (r.body_fat_pct && r.body_fat_pct >= 10) ? parseFloat(r.body_fat_pct) : lastBf,
+              steps_count: parseInt(r.steps_count, 10) || 0,
+              pickleball_or_gym_minutes: parseFloat(r.pickleball_or_gym_minutes) || 0,
               intake_kcal: Math.max(parseInt(r.intake_kcal, 10) || 0, parseInt(c.intake_kcal, 10) || 0),
               intake_protein_g: Math.max(parseFloat(r.intake_protein_g) || 0, parseFloat(c.intake_protein_g) || 0),
               intake_carbs_g: Math.max(parseFloat(r.intake_carbs_g) || 0, parseFloat(c.intake_carbs_g) || 0),
@@ -1762,7 +2006,7 @@
           });
 
           saveLocalStore(store);
-          loadDayData(allDates[allDates.length - 1]);
+          loadDayData(todayIso);
           document.getElementById('sync-status-text').textContent = `Cloud Activo (${allDates.length}d)`;
         }
       } catch (e) {
@@ -1772,7 +2016,7 @@
     }
 
     // ========================================================================
-    // 8. SUITE DE AUDITORÍA QA + INSPECTOR EN VIVO DE HC WEBHOOK (SUPABASE)
+    // 8. SUITE DE AUDITORÍA QA + INSPECTOR EN VIVO DE HC WEBHOOK
     // ========================================================================
     async function runQualityAuditModal() {
       const store = getLocalStore();
@@ -1814,7 +2058,6 @@
           `Comido hoy: ${rec.intake_kcal} kcal (${rec.intake_protein_g}g P / ${rec.intake_carbs_g}g C / ${rec.intake_fat_g}g G) en ${(rec.meals_log_json || []).length} registros.`);
       }
 
-      // Consultar últimos logs reales de HC Webhook en Supabase
       let webhookHtml = '<div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400">Conecta Supabase para inspeccionar webhook_logs.</div>';
       if (supabaseClient) {
         try {
@@ -1841,7 +2084,7 @@
               `;
             }).join('');
           } else {
-            webhookHtml = '<div class="p-2.5 rounded-xl bg-slate-950 border border-amber-500/30 text-amber-300 text-[11px]">Aún no hay envíos en <code>webhook_logs</code>. Ejecuta <code>testSimulateHCWebhookWithZeppMeals</code> en Google Apps Script o pulsa "Sync Now" en HC Webhook.</div>';
+            webhookHtml = '<div class="p-2.5 rounded-xl bg-slate-950 border border-amber-500/30 text-amber-300 text-[11px]">Aún no hay envíos en <code>webhook_logs</code>.</div>';
           }
         } catch (err) {
           webhookHtml = `<div class="p-2 rounded bg-red-500/10 text-red-300 text-[10px]">Error leyendo webhook_logs: ${err.message}</div>`;
@@ -1862,86 +2105,30 @@
 
       openModal('qa-modal');
     }
+
     // ========================================================================
-    // 9. MÓDULO AUTÓNOMO: CHAT CLÍNICO IA (GEMINI MBE) INTEGRADO EN ARGON
+    // 9. MÓDULO NATIVO BOTTOM SHEET: COACH CLÍNICO IA (GEMINI MBE)
     // ========================================================================
-    let argonCoachHistory = [];
-
-    window.addEventListener('DOMContentLoaded', () => {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-  updateCountdown();
-  setInterval(updateCountdown, 60000);
-
-  injectArgonCoachUI();
-
-  const todayStr = getLocalTodayIso();
-  document.getElementById('selected-date').value = todayStr;
-
-  initSupabaseFromStorage();
-  const localData = getLocalStore();
-  const dates = Object.keys(localData).sort();
-  const latestRec = dates.length ? localData[dates[dates.length - 1]] : null;
-
-  if (dates.length < 7 || (latestRec && latestRec.weight_kg < 80)) {
-    seedCalibratedFeelfitHistory(false);
-  } else {
-    loadDayData(todayStr);
-  }
-});
-
-function initSupabaseFromStorage() {
-  const url = (localStorage.getItem('argon_sb_url') || 'https://eqbvzgqumwvksiovboth.supabase.co').trim();
-  const key = (localStorage.getItem('argon_sb_key') || '').trim();
-  const cfgUrlEl = document.getElementById('cfg-url');
-  const cfgKeyEl = document.getElementById('cfg-key');
-  if (cfgUrlEl) cfgUrlEl.value = url;
-  if (cfgKeyEl) cfgKeyEl.value = key;
-
-  if (url && key && window.supabase) {
-    supabaseClient = window.supabase.createClient(url, key);
-    document.getElementById('sync-status-text').textContent = 'Supabase Conectado ✓';
-    document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-emerald-400 animate-pulse';
-    syncFromSupabase();
-  } else {
-    document.getElementById('sync-status-text').textContent = 'Modo Local Activo';
-  }
-}
-
     function injectArgonCoachUI() {
-      if (document.getElementById('argon-coach-fab')) return;
+      if (document.getElementById('coach-modal')) return;
 
-      // 1. Agregar campo de Webhook URL en el modal de Configuración (⚙️)
       const settingsContainer = document.querySelector('#settings-modal .space-y-3');
       if (settingsContainer && !document.getElementById('cfg-gas-url')) {
         const gasDiv = document.createElement('div');
         gasDiv.innerHTML = `
           <label class="text-cyan-400 font-semibold block mb-1">Google Apps Script Webhook URL (Para Coach IA)</label>
-          <input id="cfg-gas-url" type="text" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono text-[11px]" />
+          <input id="cfg-gas-url" type="text" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-[11px]" />
         `;
         settingsContainer.appendChild(gasDiv);
         document.getElementById('cfg-gas-url').value = localStorage.getItem('argon_gas_url') || '';
-
-        // Interceptar guardado de ajustes para persistir también la URL de Apps Script
-        const origSave = window.saveSettings;
-        window.saveSettings = function() {
-          const gasInput = document.getElementById('cfg-gas-url');
-          if (gasInput) localStorage.setItem('argon_gas_url', gasInput.value.trim());
-          origSave();
-        };
       }
 
-      // 2. Crear Botón Flotante (FAB) y Modal del Coach Clínico MBE
       const wrapper = document.createElement('div');
       wrapper.innerHTML = `
-        <button id="argon-coach-fab" onclick="openArgonCoachModal()"
-          class="fixed bottom-5 right-5 z-40 flex items-center space-x-2 px-4 py-3 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase tracking-wider shadow-lg shadow-cyan-500/30 hover:scale-105 transition">
-          <span>🧠 Coach MBE</span>
-        </button>
-
-        <div id="coach-modal" class="fixed inset-0 z-50 hidden bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-2 sm:p-4">
-          <div class="bg-slate-900 border border-cyan-500/40 rounded-2xl max-w-lg w-full h-[85vh] flex flex-col overflow-hidden shadow-2xl">
-            <!-- Header -->
-            <div class="px-4 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+        <div id="coach-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center">
+          <div class="bottom-sheet-panel bg-slate-900 border-t sm:border border-cyan-500/40 rounded-t-3xl sm:rounded-3xl max-w-lg w-full h-[86vh] flex flex-col overflow-hidden shadow-2xl">
+            <div class="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mt-2.5 mb-1 sm:hidden"></div>
+            <div class="px-4 py-2.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between">
               <div class="flex items-center space-x-2">
                 <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 <div>
@@ -1952,35 +2139,32 @@ function initSupabaseFromStorage() {
               <button onclick="closeModal('coach-modal')" class="text-slate-400 hover:text-white text-sm px-2">✕</button>
             </div>
 
-            <!-- Botones de Consulta Rápida (1 Clic) -->
             <div class="px-3 py-2 bg-slate-950/60 border-b border-slate-800 flex gap-1.5 overflow-x-auto text-[10px]">
               <button onclick="askQuickCoach('Analiza mi recuperación, VFC y sueño de hoy y dime cómo debo entrenar hoy en pesas o pickleball.')"
-                class="shrink-0 px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25 font-semibold">
+                class="shrink-0 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25 font-semibold">
                 🏋️ Plan Entreno Hoy
               </button>
               <button onclick="askQuickCoach('Según las calorías y macros que llevo hoy y mi peso actual en Feelfit, ¿qué me recomiendas comer en mi próxima comida o cena para cuadrar la Ley de Atwater?')"
-                class="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 font-semibold">
+                class="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 font-semibold">
                 🥩 Qué Comer / Macros
               </button>
               <button onclick="askQuickCoach('Evalúa mi deuda de sueño, tendencia de 14 días de VFC y ritmo de envejecimiento. ¿Qué ajustes de biohacking o descanso necesito esta noche?')"
-                class="shrink-0 px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-300 hover:bg-purple-500/25 font-semibold">
+                class="shrink-0 px-2.5 py-1.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 hover:bg-purple-500/25 font-semibold">
                 🌙 Sueño & Biohacking
               </button>
             </div>
 
-            <!-- Área de Mensajes -->
             <div id="coach-chat-messages" class="flex-1 p-4 overflow-y-auto space-y-3 text-xs">
-              <div class="p-3 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-200 leading-relaxed">
+              <div class="p-3.5 rounded-2xl bg-slate-800/80 border border-slate-700 text-slate-200 leading-relaxed">
                 👨‍⚕️ <strong>¡Hola, colega!</strong> Tengo cargados tus biomarcadores de hoy (Peso Feelfit, VFC, RHR, Sueño, Strain y tus macros restantes por Atwater). Toca uno de los botones de arriba o escríbeme tu consulta.
               </div>
             </div>
 
-            <!-- Input -->
             <div class="p-3 bg-slate-950 border-t border-slate-800 flex items-center gap-2">
               <input id="coach-user-input" type="text" placeholder="Pregúntale sobre tu entreno, macros, guardia o sueño..."
                 onkeydown="if(event.key==='Enter') sendCoachMessage()"
-                class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400" />
-              <button onclick="sendCoachMessage()" class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs uppercase">
+                class="flex-1 bg-slate-900 border border-slate-700 rounded-2xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-400" />
+              <button onclick="sendCoachMessage()" class="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase">
                 Enviar
               </button>
             </div>
@@ -1994,7 +2178,7 @@ function initSupabaseFromStorage() {
       openModal('coach-modal');
       const gasUrl = (localStorage.getItem('argon_gas_url') || '').trim();
       if (!gasUrl) {
-        appendCoachBubble('model', 'ℹ️ Para activar el chat directo aquí, toca primero el botón ⚙️ (arriba a la derecha en la barra principal) y pega tu URL de Google Apps Script (`https://script.google.com/macros/s/.../exec`) en el nuevo campo inferior.');
+        appendCoachBubble('model', 'ℹ️ Para activar el chat directo aquí, toca primero el botón ⚙️ (arriba a la derecha) y pega tu URL de Google Apps Script (`https://script.google.com/macros/s/.../exec`).');
       }
     }
 
@@ -2004,9 +2188,13 @@ function initSupabaseFromStorage() {
     }
 
     function formatCoachMarkdown(text) {
-      return String(text || '')
+      if (!text) return '';
+      return String(text)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/\*\*(.*?)\*\*/g, '<strong class="text-cyan-300">$1</strong>')
+        .replace(/^---$/gm, '<hr class="border-slate-700 my-2"/>')
+        .replace(/###\s*(.*?)(?=\n|$)/g, '<div class="font-bold text-cyan-300 mt-2 mb-1">$1</div>')
+        .replace(/##\s*(.*?)(?=\n|$)/g, '<div class="font-bold text-emerald-300 mt-2 mb-1">$1</div>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="text-cyan-200">$1</strong>')
         .replace(/\n/g, '<br/>');
     }
 
@@ -2016,10 +2204,10 @@ function initSupabaseFromStorage() {
       const id = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
       div.id = id;
       if (role === 'user') {
-        div.className = 'ml-8 p-3 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-100 text-right';
+        div.className = 'ml-8 p-3 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-100 text-right';
         div.textContent = text;
       } else {
-        div.className = 'mr-4 p-3 rounded-xl bg-slate-800/90 border border-slate-700 text-slate-200 leading-relaxed';
+        div.className = 'mr-4 p-3.5 rounded-2xl bg-slate-800/90 border border-slate-700 text-slate-200 leading-relaxed';
         div.innerHTML = isLoading ? '<span class="text-cyan-400 animate-pulse">🧬 Analizando tus últimos 14 días en Supabase...</span>' : formatCoachMarkdown(text);
       }
       box.appendChild(div);
@@ -2063,11 +2251,10 @@ function initSupabaseFromStorage() {
       } catch (err) {
         const loadingEl = document.getElementById(loadingId);
         if (loadingEl) {
-          loadingEl.innerHTML = `<span class="text-red-400">⚠️ Error de conexión con Google Apps Script: verifica que la URL en ⚙️ termine en <code>/exec</code> y que hayas publicado la "Nueva versión" con acceso para "Cualquier persona".</span>`;
+          loadingEl.innerHTML = `<span class="text-rose-400">⚠️ Error de conexión con Google Apps Script: verifica que la URL en ⚙️ termine en <code>/exec</code> y que hayas publicado la "Nueva versión" con acceso para "Cualquier persona".</span>`;
         }
       }
-    } 
+    }
   </script>
 </body>
 </html>
-  
