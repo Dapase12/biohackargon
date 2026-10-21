@@ -2,7 +2,7 @@
 <html lang="es" class="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#05080F" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
   <!-- Lucide Vector Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide@0.460.0"></script>
   <!-- ApexCharts & Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -42,10 +42,15 @@
         radial-gradient(circle at 85% 90%, rgba(16, 185, 129, 0.08), transparent 40%);
       color: #F8FAFC;
       overflow-x: hidden;
-      padding-bottom: 92px;
+      padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
     }
 
     .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* Inputs seleccionables + safe areas (iOS/Android) */
+    input, textarea { -webkit-user-select: text; user-select: text; }
+    nav.fixed { padding-bottom: calc(0.375rem + env(safe-area-inset-bottom, 0px)); }
+    header.sticky { padding-top: calc(0.625rem + env(safe-area-inset-top, 0px)); }
 
     /* Tarjetas estilo Apple Health / Whoop 4.0 */
     .native-card {
@@ -139,7 +144,7 @@
       </div>
 
       <!-- Meta 7 Dic Countdown Pill -->
-      <div class="hidden xs:flex flex-col items-center px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-800">
+      <div class="hidden min-[400px]:flex flex-col items-center px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-800">
         <span class="text-[8px] uppercase tracking-widest text-slate-400 font-semibold">Meta 7 Dic</span>
         <span id="countdown-timer" class="text-[11px] font-mono font-bold text-cyan-400">--d --h</span>
       </div>
@@ -171,7 +176,7 @@
       </div>
 
       <div class="flex items-center gap-1.5">
-        <button onclick="seedCalibratedFeelfitHistory(true)"
+        <button onclick="if(confirm('Esto agrega datos DEMO solo en dias vacios (solo local). Continuar?')) seedCalibratedFeelfitHistory(false)"
           class="px-2.5 py-1 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] font-semibold">
           Base 14d
         </button>
@@ -843,9 +848,10 @@
     function stepArgonDate(deltaDays) {
       const input = document.getElementById('selected-date');
       if (!input || !input.value) return;
-      const d = new Date(input.value + 'T12:00:00-04:00');
-      d.setDate(d.getDate() + deltaDays);
-      const nextIso = d.toISOString().split('T')[0];
+      const nextIso = addDaysIso(input.value, deltaDays);
+      if (nextIso > getLocalTodayIso()) return;
+      
+      
       input.value = nextIso;
       if (typeof loadDayData === 'function') loadDayData(nextIso);
     }
@@ -876,6 +882,8 @@
         }
       }, delay);
     }
+
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
     function toggleHelp(id) {
       const el = document.getElementById(id);
@@ -935,7 +943,7 @@
       const dates = Object.keys(localData).sort();
       const latestRec = dates.length ? localData[dates[dates.length - 1]] : null;
 
-      if (dates.length < 7 || (latestRec && latestRec.weight_kg < 80)) {
+      if (dates.length === 0 && !(localStorage.getItem('argon_sb_key') || '').trim()) {
         seedCalibratedFeelfitHistory(false);
       } else {
         loadDayData(todayStr);
@@ -1123,6 +1131,7 @@
     // ========================================================================
     function computeArgonDayScore(todayRaw, historyRawList, prevComputed) {
       const wakeTimeStr = localStorage.getItem('argon_wake_time') || '06:00';
+      const MIN_BASELINE_DAYS = 7;
       const basalNeedH = 7.50; // Calibrado a 7h 30m de sueño neto efectivo
 
       // Edad cronológica exacta (Nacido: 12 Nov 1997)
@@ -1160,7 +1169,7 @@
       const nightAwakeH = Math.max(0, parseFloat(todayRaw.night_awake_shift_hours) || 0);
 
       const ambientZ1 = Math.round(Math.max(0, steps - 2000) / 320);
-      const zones = todayRaw.hr_zones_minutes && (todayRaw.hr_zones_minutes.z1 || todayRaw.hr_zones_minutes.z2)
+      const zones = todayRaw.hr_zones_real === true && todayRaw.hr_zones_minutes
         ? todayRaw.hr_zones_minutes
         : {
             z1: ambientZ1 + Math.round(workoutMin * 0.22),
@@ -1250,12 +1259,12 @@
       const meanArr = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
       const sdArr = (arr, m) => arr.length > 1 ? Math.sqrt(arr.reduce((s, v) => s + Math.pow(v - m, 2), 0) / arr.length) : 0.12;
 
-      const meanRmssd = histRmssd.length >= 3 ? meanArr(histRmssd) : rmssdToday;
-      const meanLn = histLn.length >= 3 ? meanArr(histLn) : lnRmssdToday;
-      const sdLn = Math.max(0.08, histLn.length >= 3 ? sdArr(histLn, meanLn) : 0.12);
-      const meanRhr = histRhr.length >= 3 ? meanArr(histRhr) : rhrToday;
-      const sdRhr = Math.max(1.5, histRhr.length >= 3 ? sdArr(histRhr, meanRhr) : 2.2);
-      const meanResp = histResp.length >= 3 ? meanArr(histResp) : 14.2;
+      const meanRmssd = histRmssd.length >= MIN_BASELINE_DAYS ? meanArr(histRmssd) : rmssdToday;
+      const meanLn = histLn.length >= MIN_BASELINE_DAYS ? meanArr(histLn) : lnRmssdToday;
+      const sdLn = Math.max(0.08, histLn.length >= MIN_BASELINE_DAYS ? sdArr(histLn, meanLn) : 0.12);
+      const meanRhr = histRhr.length >= MIN_BASELINE_DAYS ? meanArr(histRhr) : rhrToday;
+      const sdRhr = Math.max(1.5, histRhr.length >= MIN_BASELINE_DAYS ? sdArr(histRhr, meanRhr) : 2.2);
+      const meanResp = histResp.length >= MIN_BASELINE_DAYS ? meanArr(histResp) : 14.2;
 
       const hrvZ = (lnRmssdToday - meanLn) / sdLn;
       const rhrZ = (rhrToday - meanRhr) / sdRhr;
@@ -1315,7 +1324,7 @@
 
       // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO
       const hrMax = 208 - (0.7 * chronologicalAge);
-      const vo2Max = +((15.3 * (hrMax / meanRhr)) * (ffmPct / 79.0) + (z45Min * 0.05)).toFixed(1);
+      const vo2Max = +((15.3 * (hrMax / meanRhr)) * (ffmPct / 79.0)).toFixed(1);
 
       const deltaVo2 = +Math.max(-3.2, Math.min(2.5, -0.18 * (vo2Max - 43.0))).toFixed(1);
       const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.12 * (meanRhr - 60.0))).toFixed(1);
@@ -1335,6 +1344,7 @@
       return {
         log_date: todayRaw.log_date,
         chronological_age: chronologicalAge,
+        calibrating: histLn.length < MIN_BASELINE_DAYS,
         weight_kg: rawW,
         body_fat_pct: rawBf,
         fat_mass_kg: fatMassKg,
@@ -1443,7 +1453,7 @@
       recRing.style.stroke = recColor;
       document.getElementById('val-recovery').textContent = `${recPct}%`;
       const badgeRec = document.getElementById('badge-recovery');
-      badgeRec.textContent = recPct >= 67 ? 'ÓPTIMO' : (recPct >= 34 ? 'MODERADO' : 'FATIGA SNC');
+      badgeRec.textContent = record.calibrating ? 'CALIBRANDO' : (recPct >= 67 ? 'ÓPTIMO' : (recPct >= 34 ? 'MODERADO' : 'FATIGA SNC'));
       badgeRec.style.color = recColor;
       document.getElementById('sub-recovery').textContent = `VFC: ${record.rmssd_ms} ms`;
 
@@ -1470,9 +1480,9 @@
       document.getElementById('muscle-mass-sub').textContent = `Muscular: ${record.muscle_mass_kg} kg`;
       document.getElementById('metric-visceral').textContent = `${record.visceral_fat_index}`;
       document.getElementById('metric-water').textContent = `${record.body_water_pct}%`;
-      document.getElementById('water-prot-sub').textContent = `${record.water_mass_kg} kg | Prot: 17.2%`;
+      document.getElementById('water-prot-sub').textContent = `${record.water_mass_kg} kg`;
       document.getElementById('metric-tmb').textContent = `${record.tmb_kcal} kcal`;
-      document.getElementById('tmb-sub').textContent = `Ósea: ${record.bone_mass_kg}kg | Edad Mtb: 32`;
+      document.getElementById('tmb-sub').textContent = `Ósea: ${record.bone_mass_kg}kg`;
 
       const deficitToday = Math.max(250, record.dynamic_tdee_kcal - record.target_kcal);
       const weeklyFatLossKg = +((deficitToday * 7) / 7700).toFixed(2);
@@ -1503,7 +1513,7 @@
         } else {
           mealsContainer.innerHTML = meals.map((m, idx) => `
             <span class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-slate-800/90 border border-slate-700 text-slate-200">
-              <span><strong>${m.name || 'Comida'}:</strong> ${m.kcal}kcal (${m.prot}P/${m.carbs}C/${m.fat}G)</span>
+              <span><strong>${esc(m.name || 'Comida')}:</strong> ${m.kcal}kcal (${m.prot}P/${m.carbs}C/${m.fat}G)</span>
               <button onclick="removeMealByIndex(${idx})" class="text-rose-400 hover:text-rose-300 font-bold ml-1">✕</button>
             </span>
           `).join('');
@@ -1812,6 +1822,7 @@
         rmssd_ms: valOrKeep('in-rmssd', existing.rmssd_ms || 50.0, true),
         rhr_bpm: valOrKeep('in-rhr', existing.rhr_bpm || 54.5, true),
         total_sleep_min: valOrKeep('in-tst', existing.total_sleep_min || 450, false),
+        time_in_bed_min: (document.getElementById('in-tst').value !== '') ? null : existing.time_in_bed_min,
         deep_sleep_min: valOrKeep('in-deep', existing.deep_sleep_min || 88, false),
         rem_sleep_min: valOrKeep('in-rem', existing.rem_sleep_min || 98, false),
         steps_count: valOrKeep('in-steps', existing.steps_count || 0, false),
@@ -1829,12 +1840,18 @@
       if (supabaseClient) await pushDayToSupabase(computed);
     }
 
-    async function seedCalibratedFeelfitHistory(pushCloud = true) {
+    function addDaysIso(iso, n) {
+      const d = new Date(iso + 'T12:00:00Z');
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().slice(0, 10);
+    }
+
+    async function seedCalibratedFeelfitHistory(pushCloud = false) {
       const existingStore = getLocalStore();
       const todayIso = getLocalTodayIso();
       const existingToday = existingStore[todayIso] || {};
 
-      const store = {};
+      const store = { ...existingStore };
       const today = new Date();
       let prevComp = null;
       const historyRaw = [];
@@ -1842,7 +1859,12 @@
       for (let i = 13; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(today.getDate() - i);
-        const dateStr = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+        const dateStr = addDaysIso(todayIso, -i);
+        if (existingStore[dateStr]) {
+          prevComp = existingStore[dateStr];
+          historyRaw.push(existingStore[dateStr]);
+          continue;
+        }
 
         const isToday = (i === 0);
         const isPickleball = (!isToday && i % 2 === 0);
@@ -1887,7 +1909,7 @@
     async function pushDayToSupabase(c) {
       if (!supabaseClient) return;
       try {
-        await supabaseClient.from('daily_raw_biometrics').upsert({
+        const r1 = await supabaseClient.from('daily_raw_biometrics').upsert({
           log_date: c.log_date,
           rhr_bpm: c.rhr_bpm,
           rmssd_ms: c.rmssd_ms,
@@ -1899,7 +1921,7 @@
           rem_sleep_min: c.rem_sleep_min,
           light_sleep_min: c.light_sleep_min,
           steps_count: c.steps_count,
-          hr_zones_minutes: c.hr_zones_minutes,
+          
           pickleball_or_gym_minutes: c.pickleball_or_gym_minutes,
           session_rpe: c.session_rpe,
           is_hospital_shift: c.is_hospital_shift,
@@ -1917,7 +1939,8 @@
           meals_log_json: c.meals_log_json || []
         });
 
-        await supabaseClient.from('computed_daily_scores').upsert({
+        if (r1.error) throw r1.error;
+        const r2 = await supabaseClient.from('computed_daily_scores').upsert({
           log_date: c.log_date,
           ln_rmssd: c.ln_rmssd,
           ln_rmssd_14d_mean: c.ln_rmssd_14d_mean,
@@ -1950,9 +1973,12 @@
           intake_fat_g: c.intake_fat_g,
           clinical_coach_notes: c.clinical_coach_notes
         });
+        if (r2.error) throw r2.error;
         document.getElementById('sync-status-text').textContent = 'Sincronizado con Supabase ✓';
       } catch (err) {
         console.error('Error Supabase:', err);
+        document.getElementById('sync-status-text').textContent = 'Error de sync: ' + ((err && err.message) || 'ver consola');
+        document.getElementById('status-dot').className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
       }
     }
 
@@ -1992,10 +2018,10 @@
               body_fat_pct: (r.body_fat_pct && r.body_fat_pct >= 10) ? parseFloat(r.body_fat_pct) : lastBf,
               steps_count: parseInt(r.steps_count, 10) || 0,
               pickleball_or_gym_minutes: parseFloat(r.pickleball_or_gym_minutes) || 0,
-              intake_kcal: Math.max(parseInt(r.intake_kcal, 10) || 0, parseInt(c.intake_kcal, 10) || 0),
-              intake_protein_g: Math.max(parseFloat(r.intake_protein_g) || 0, parseFloat(c.intake_protein_g) || 0),
-              intake_carbs_g: Math.max(parseFloat(r.intake_carbs_g) || 0, parseFloat(c.intake_carbs_g) || 0),
-              intake_fat_g: Math.max(parseFloat(r.intake_fat_g) || 0, parseFloat(c.intake_fat_g) || 0),
+              intake_kcal: parseInt(r.intake_kcal, 10) || 0,
+              intake_protein_g: parseFloat(r.intake_protein_g) || 0,
+              intake_carbs_g: parseFloat(r.intake_carbs_g) || 0,
+              intake_fat_g: parseFloat(r.intake_fat_g) || 0,
               meals_log_json: Array.isArray(r.meals_log_json) ? r.meals_log_json : []
             };
 
@@ -2051,7 +2077,7 @@
           const el = document.getElementById(id);
           return !el || el.textContent.includes('--');
         });
-        addCheck('5. Vinculación DOM Completa (48 Nodos UI)', brokenDom.length === 0,
+        addCheck('5. Vinculación DOM Crítica (8 Nodos UI)', brokenDom.length === 0,
           brokenDom.length === 0 ? 'Cero etiquetas en "--". Todos los paneles están renderizados.' : `Nodos pendientes: ${brokenDom.join(', ')}`);
 
         addCheck('6. Bitácora Nutricional Persistente (Zepp / Manual)', true,
@@ -2075,11 +2101,11 @@
               return `
                 <div class="p-2 rounded-lg bg-slate-950 border border-cyan-500/30 space-y-1">
                   <div class="flex justify-between text-[10px] text-cyan-400 font-mono">
-                    <span>📡 ${l.source_app || 'HC_WEBHOOK'}</span>
+                    <span>📡 ${esc(l.source_app || 'HC_WEBHOOK')}</span>
                     <span>${dt}</span>
                   </div>
-                  <div class="text-[10px] text-slate-300"><strong>Categorías JSON:</strong> ${cats}</div>
-                  <div class="text-[10px] text-emerald-300 font-mono break-all">${sumStr}</div>
+                  <div class="text-[10px] text-slate-300"><strong>Categorías JSON:</strong> ${esc(cats)}</div>
+                  <div class="text-[10px] text-emerald-300 font-mono break-all">${esc(sumStr)}</div>
                 </div>
               `;
             }).join('');
@@ -2237,7 +2263,7 @@
           body: JSON.stringify({
             action: 'ask_coach',
             question: question,
-            history: argonCoachHistory
+            history: argonCoachHistory.slice(-6)
           })
         });
         const data = await res.json();
