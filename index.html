@@ -8,6 +8,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>ARGON v6.0 | Biometría Clínica MBE</title>
   <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="icon" type="image/png" href="icon-192.png" />
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -81,6 +83,24 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
+    /* ===== Pulido visual v6.5 ===== */
+    .font-mono, [id^="val-"], [id^="metric-"], [id^="nutri-"], [id^="macro-"] { font-variant-numeric: tabular-nums; }
+    .native-card {
+      background-image: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 40%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.07), 0 12px 32px -8px rgba(0,0,0,0.6);
+    }
+    #ring-recovery { filter: drop-shadow(0 0 5px rgba(255,255,255,0.18)); }
+    #ring-strain { filter: drop-shadow(0 0 6px rgba(6,182,212,0.55)); }
+    #ring-sleep { filter: drop-shadow(0 0 6px rgba(139,92,246,0.55)); }
+    button { transition: transform 0.12s ease, background-color 0.15s ease, border-color 0.15s ease; }
+    button:active { transform: scale(0.96); }
+    @keyframes cardIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .swiper-slide-active .native-card { animation: cardIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both; }
+    .swiper-slide-active .native-card:nth-child(2) { animation-delay: 0.06s; }
+    .swiper-slide-active .native-card:nth-child(3) { animation-delay: 0.12s; }
+    html body .text-\[9px\] { font-size: 10px; }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
     /* Anillos SVG */
     .ring-bg { fill: none; stroke: rgba(255, 255, 255, 0.06); stroke-width: 8; }
     .ring-fg {
@@ -93,6 +113,8 @@
       transform-origin: 50% 50%;
       transition: stroke-dashoffset 0.8s cubic-bezier(0.16, 1, 0.3, 1), stroke 0.4s ease;
     }
+
+    div:has(> #bar-prot), div:has(> #bar-carb), div:has(> #bar-fat) { display: none; }
 
     /* Segmented Control (Pestañas de gráficas) */
     .tab-btn-active {
@@ -311,6 +333,7 @@
                     <span id="base-hrv" class="text-[10px] text-slate-400 font-mono">-- ms base</span>
                   </div>
                   <div class="text-[10px] text-cyan-400 font-mono mt-1">lnRMSSD: <span id="metric-lnrmssd">--</span></div>
+                  <div id="spark-hrv" class="mt-1.5"></div>
                 </div>
 
                 <!-- FC Reposo -->
@@ -324,6 +347,7 @@
                     <span id="base-rhr" class="text-[10px] text-slate-400 font-mono">-- lpm base</span>
                   </div>
                   <div class="text-[10px] text-cyan-400 font-mono mt-1">Z-Score: <span id="metric-rhr-z">-- SD</span></div>
+                  <div id="spark-rhr" class="mt-1.5"></div>
                 </div>
 
                 <!-- Frecuencia Respiratoria -->
@@ -634,6 +658,8 @@
                 <span id="nutri-intake-kcal" class="text-[10px] text-white font-semibold block">Comido: 0</span>
               </div>
             </div>
+
+            <div id="macro-rings" class="grid grid-cols-3 gap-2"></div>
 
             <!-- Barras de Macronutrientes -->
             <div class="space-y-3">
@@ -1535,6 +1561,23 @@
         } else pAlert.classList.add('hidden');
       }
 
+      const macroRingsEl = document.getElementById('macro-rings');
+      if (macroRingsEl) {
+        const defs = [
+          ['Proteína', record.intake_protein_g, record.target_protein_g, '#10B981'],
+          ['Carbs', record.intake_carbs_g, record.target_carbs_g, '#06B6D4'],
+          ['Grasas', record.intake_fat_g, record.target_fat_g, '#F59E0B']
+        ];
+        macroRingsEl.innerHTML = defs.map(([lbl, cur, tgt, col]) => {
+          const pct = Math.min(100, Math.round((cur / Math.max(1, tgt)) * 100));
+          const over = cur > tgt * 1.05;
+          const c = over ? '#EF4444' : col;
+          const off = 213.6 - (pct / 100) * 213.6;
+          const left = Math.max(0, Math.round(tgt - cur));
+          return `<div class="flex flex-col items-center"><div class="relative w-20 h-20"><svg class="w-full h-full" viewBox="0 0 80 80"><circle cx="40" cy="40" r="34" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="7"></circle><circle cx="40" cy="40" r="34" fill="none" stroke="${c}" stroke-width="7" stroke-linecap="round" stroke-dasharray="213.6" stroke-dashoffset="${off}" transform="rotate(-90 40 40)" style="filter: drop-shadow(0 0 4px ${c}88)"></circle></svg><div class="absolute inset-0 flex flex-col items-center justify-center"><span class="text-base font-black text-white font-mono leading-none">${Math.round(cur)}</span><span class="text-[10px] text-slate-400">/ ${tgt} g</span></div></div><span class="text-[11px] font-bold mt-1" style="color:${c}">${lbl}</span><span class="text-[10px] text-slate-400 font-mono">${over ? '+' + Math.round(cur - tgt) + ' g de más' : left + ' g restan'}</span></div>`;
+        }).join('');
+      }
+
       const mealsContainer = document.getElementById('meals-log-list');
       if (mealsContainer) {
         const meals = Array.isArray(record.meals_log_json) ? record.meals_log_json : [];
@@ -1637,6 +1680,21 @@
       document.getElementById('ffm-age-impact').textContent = fmtDeltaYears(record.delta_ffm_years);
       document.getElementById('sleep-age-impact').textContent = fmtDeltaYears(record.delta_sleep_years);
       document.getElementById('activity-age-impact').textContent = fmtDeltaYears(record.delta_act_years);
+
+      const sparkSvg = (vals, col, base) => {
+        const v = vals.map(Number).filter(x => Number.isFinite(x));
+        if (v.length < 2) return '';
+        const b = Number.isFinite(Number(base)) ? Number(base) : v[v.length - 1];
+        const w = 100, h = 26, mn = Math.min(...v, b), mx = Math.max(...v, b), rg = (mx - mn) || 1;
+        const X = i => (i / (v.length - 1)) * w, Y = x => h - 2 - ((x - mn) / rg) * (h - 4);
+        const pts = v.map((x, i) => `${X(i).toFixed(1)},${Y(x).toFixed(1)}`).join(' ');
+        return `<svg viewBox="0 0 ${w} ${h}" class="w-full h-6" preserveAspectRatio="none"><line x1="0" x2="${w}" y1="${Y(b).toFixed(1)}" y2="${Y(b).toFixed(1)}" stroke="rgba(255,255,255,0.18)" stroke-dasharray="2 3" stroke-width="1"></line><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></polyline></svg>`;
+      };
+      const last7s = allRecordsSorted.filter(r => r.log_date <= record.log_date).slice(-7);
+      const sparkH = document.getElementById('spark-hrv');
+      if (sparkH) sparkH.innerHTML = sparkSvg(last7s.map(r => r.rmssd_ms), '#10B981', record.rmssd_14d_mean_ms);
+      const sparkR = document.getElementById('spark-rhr');
+      if (sparkR) sparkR.innerHTML = sparkSvg(last7s.map(r => r.rhr_bpm), '#06B6D4', record.rhr_14d_mean_bpm);
 
       renderApexTelemetry(allRecordsSorted.slice(-14));
       refreshSwiperHeight(80);
