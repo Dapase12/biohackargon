@@ -350,7 +350,7 @@
                   🧬
                 </div>
                 <div>
-                  <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">Edad Fisiológica ARGON</h2>
+                  <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">Edad Fisiológica ARGON (est.)</h2>
                   <div id="chrono-age-label" class="text-[10px] text-slate-400">Edad Cronológica: 28.9a</div>
                 </div>
               </div>
@@ -453,7 +453,7 @@
                   <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden"><div id="bar-pillar-hours" class="h-full bg-emerald-400 rounded-full" style="width:0%"></div></div>
                 </div>
                 <div>
-                  <div class="flex justify-between mb-1"><span class="text-slate-300">2. Regularidad Circadiana (SRI)</span><span id="pillar-reg-pct" class="font-mono font-bold text-cyan-400">--%</span></div>
+                  <div class="flex justify-between mb-1"><span class="text-slate-300">2. Regularidad de Duración (±SD)</span><span id="pillar-reg-pct" class="font-mono font-bold text-cyan-400">--%</span></div>
                   <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden"><div id="bar-pillar-reg" class="h-full bg-cyan-400 rounded-full" style="width:0%"></div></div>
                 </div>
                 <div>
@@ -1217,7 +1217,9 @@
       weightedDebtH = Math.max(0, +weightedDebtH.toFixed(2));
 
       const dynamicNeedH = Math.min(10.0, Math.max(6.5, basalNeedH + (0.042 * strainScore) + (0.35 * weightedDebtH) - Math.min(1.5, napMin / 60.0)));
-      const hoursVsNeededPct = Math.min(100, Math.round((((tstMin + napMin) / 60.0) / dynamicNeedH) * 100));
+      const prevStrain = prevComputed && parseFloat(prevComputed.strain_score) ? parseFloat(prevComputed.strain_score) : 0;
+      const needForRecoveryH = Math.min(10.0, Math.max(6.5, basalNeedH + (0.042 * prevStrain) + (0.35 * weightedDebtH) - Math.min(1.5, napMin / 60.0)));
+      const hoursVsNeededPct = Math.min(100, Math.round((((tstMin + napMin) / 60.0) / needForRecoveryH) * 100));
 
       const recentTstList = [tstMin, ...historyRawList.slice(0, 6).map(r => parseInt(r.total_sleep_min, 10) || 450)];
       const meanTst = recentTstList.reduce((a, b) => a + b, 0) / recentTstList.length;
@@ -1460,6 +1462,7 @@
       const strainVal = record.strain_score;
       document.getElementById('ring-strain').style.strokeDashoffset = circ - (Math.min(21, strainVal) / 21.0) * circ;
       document.getElementById('val-strain').textContent = strainVal.toFixed(1);
+      document.getElementById('ring-strain').style.stroke = strainVal > record.recommended_max_strain ? '#EF4444' : (strainVal >= record.recommended_max_strain * 0.8 ? '#F59E0B' : '#06B6D4');
       document.getElementById('badge-strain-target').textContent = `Meta: ${record.recommended_max_strain}`;
       document.getElementById('sub-strain').textContent = `${record.steps_count.toLocaleString()} pasos`;
 
@@ -1719,6 +1722,7 @@
 
       const labelMap = { 420: 'Desayuno', 650: 'Almuerzo', 480: 'Cena', 130: 'Whey Protein' };
       const mealName = customLabel || labelMap[addKcal] || 'Comida';
+      if (navigator.vibrate) navigator.vibrate(10);
       const currentMeals = Array.isArray(current.meals_log_json) ? [...current.meals_log_json] : [];
       currentMeals.push({
         id: 'manual_' + Date.now(),
