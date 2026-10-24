@@ -141,6 +141,58 @@
       height: auto;
       padding-bottom: 16px;
     }
+
+    /* ===== Responsive móvil: botones y controles táctiles ===== */
+    /* Evita el retardo de doble toque y el zoom accidental en iOS/Android */
+    button, [role="button"], a { touch-action: manipulation; }
+
+    /* Chips y pestañas: área táctil cómoda sin agrandar el diseño visual */
+    .chip {
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+    }
+    /* Botón de icono (✕, ⚙️): 36x36 px mínimos */
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      min-width: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    /* Acción principal: alto táctil de 48px */
+    .action-btn {
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* Navegación inferior: nunca colapsa bajo 48px */
+    #argon-nav-dock button { min-height: 48px; }
+    /* El botón del Coach conserva su tamaño cuadrado elevado */
+    #argon-nav-dock .coach-fab { min-height: 56px; }
+
+    /* Enlaces-botón pequeños (ⓘ, "Preguntar a IA", ✕ de listas): área táctil ampliada */
+    .link-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      flex-shrink: 0;
+    }
+
+    /* Pantallas muy estrechas (iPhone SE / Android pequeños) */
+    @media (max-width: 359px) {
+      .icon-btn { width: 34px; height: 34px; min-width: 34px; }
+      header button { padding-left: 0.375rem; padding-right: 0.375rem; }
+      #selected-date { width: 96px; }
+      #sync-status-text { display: none; }
+      header button { font-size: 10px; }
+    }
   </style>
 </head>
 
@@ -150,10 +202,10 @@
        1. TOP APP BAR FIJA (ESTILO WHOOP 4.0 + SELECTOR DE FECHA)
        ======================================================================== -->
   <header class="sticky top-0 z-30 bg-[#05080F]/85 backdrop-blur-xl border-b border-white/[0.06] px-3.5 py-2.5">
-    <div class="max-w-lg mx-auto flex items-center justify-between">
+    <div class="max-w-lg mx-auto flex flex-wrap items-center justify-between gap-y-2">
       <!-- Identidad + Estado Cloud -->
-      <div class="flex items-center space-x-2.5">
-        <div class="relative flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-cyan-500/30">
+      <div class="flex items-center space-x-2.5 min-w-0">
+        <div class="relative flex items-center justify-center w-8 h-8 shrink-0 rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-cyan-500/30">
           <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
         </div>
         <div>
@@ -174,36 +226,36 @@
       <!-- Acciones Rápidas (QA, +Día, Ajustes) -->
       <div class="flex items-center space-x-1.5">
         <button onclick="runQualityAuditModal()" title="Auditoría QA"
-          class="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 text-[11px] font-bold transition">
+          class="chip flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 text-[11px] font-bold transition">
           <span>✓ QA</span>
         </button>
         <button onclick="openModal('log-modal')" title="Cargar Biomarcadores"
-          class="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25 text-[11px] font-bold transition">
+          class="chip flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25 text-[11px] font-bold transition">
           <span>+ Día</span>
         </button>
         <button onclick="openModal('settings-modal')" title="Configuración"
-          class="p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition">
+          class="icon-btn p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition">
           ⚙️
         </button>
       </div>
     </div>
 
     <!-- Barra Sub-Header: Selector Deslizable de Fecha + Sincronización -->
-    <div class="max-w-lg mx-auto mt-2 pt-2 border-t border-white/[0.04] flex items-center justify-between gap-2">
-      <div class="flex items-center bg-slate-900/90 border border-slate-800 rounded-xl px-2 py-1">
-        <button onclick="stepArgonDate(-1)" class="px-1.5 text-slate-400 hover:text-white text-xs font-bold">◀</button>
+    <div class="max-w-lg mx-auto mt-2 pt-2 border-t border-white/[0.04] flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center bg-slate-900/90 border border-slate-800 rounded-xl px-1 py-0.5 min-w-0">
+        <button onclick="stepArgonDate(-1)" aria-label="Día anterior" class="icon-btn px-1.5 text-slate-400 hover:text-white text-xs font-bold">◀</button>
         <input id="selected-date" type="date" onchange="loadDayData(this.value)"
-          class="bg-transparent text-white text-xs font-semibold focus:outline-none text-center w-[112px]" />
-        <button onclick="stepArgonDate(1)" class="px-1.5 text-slate-400 hover:text-white text-xs font-bold">▶</button>
+          class="bg-transparent text-white text-xs font-semibold focus:outline-none text-center w-[112px] min-w-0" />
+        <button onclick="stepArgonDate(1)" aria-label="Día siguiente" class="icon-btn px-1.5 text-slate-400 hover:text-white text-xs font-bold">▶</button>
       </div>
 
-      <div class="flex items-center gap-1.5">
+      <div class="flex items-center gap-1.5 shrink-0">
         <button onclick="if(confirm('Esto agrega datos DEMO solo en dias vacios (solo local). Continuar?')) seedCalibratedFeelfitHistory(false)"
-          class="px-2.5 py-1 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] font-semibold">
+          class="chip px-2.5 py-1 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] font-semibold">
           Base 14d
         </button>
         <button onclick="syncFromSupabase()"
-          class="flex items-center space-x-1 px-3 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold active:scale-95 transition">
+          class="chip flex items-center space-x-1 px-3 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold active:scale-95 transition">
           <span>↻ Sincronizar</span>
         </button>
       </div>
@@ -228,7 +280,7 @@
               <div class="flex items-center space-x-2">
                 <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-300">Estado Fisiológico Integrado</span>
               </div>
-              <button onclick="toggleHelp('help-overview')" class="text-[10px] text-cyan-400 font-semibold">ⓘ ¿Cómo interpretar?</button>
+              <button onclick="toggleHelp('help-overview')" class="link-btn text-[10px] text-cyan-400 font-semibold">ⓘ ¿Cómo interpretar?</button>
             </div>
 
             <div id="help-overview" class="hidden p-3 rounded-xl bg-slate-950/90 border border-slate-800 text-[11px] text-slate-300 space-y-1">
@@ -240,7 +292,7 @@
             <div class="grid grid-cols-3 gap-2 pt-1">
               <!-- Recuperación -->
               <div onclick="goToArgonTab(1)" class="flex flex-col items-center cursor-pointer active:scale-95 transition">
-                <div class="relative w-24 h-24">
+                <div class="relative w-20 h-20 min-[380px]:w-24 min-[380px]:h-24">
                   <svg class="w-full h-full" viewBox="0 0 100 100">
                     <circle class="ring-bg" cx="50" cy="50" r="40"></circle>
                     <circle id="ring-recovery" class="ring-fg" cx="50" cy="50" r="40" stroke="#10B981"></circle>
@@ -256,7 +308,7 @@
 
               <!-- Strain -->
               <div onclick="goToArgonTab(2)" class="flex flex-col items-center cursor-pointer active:scale-95 transition">
-                <div class="relative w-24 h-24">
+                <div class="relative w-20 h-20 min-[380px]:w-24 min-[380px]:h-24">
                   <svg class="w-full h-full" viewBox="0 0 100 100">
                     <circle class="ring-bg" cx="50" cy="50" r="40"></circle>
                     <circle id="ring-strain" class="ring-fg" cx="50" cy="50" r="40" stroke="#06B6D4"></circle>
@@ -272,7 +324,7 @@
 
               <!-- Sueño -->
               <div onclick="goToArgonTab(1)" class="flex flex-col items-center cursor-pointer active:scale-95 transition">
-                <div class="relative w-24 h-24">
+                <div class="relative w-20 h-20 min-[380px]:w-24 min-[380px]:h-24">
                   <svg class="w-full h-full" viewBox="0 0 100 100">
                     <circle class="ring-bg" cx="50" cy="50" r="40"></circle>
                     <circle id="ring-sleep" class="ring-fg" cx="50" cy="50" r="40" stroke="#8B5CF6"></circle>
@@ -296,7 +348,7 @@
             <div class="p-3.5 rounded-2xl bg-slate-950/85 border border-cyan-500/20 space-y-1.5">
               <div class="flex items-center justify-between">
                 <span class="text-[10px] font-extrabold uppercase tracking-wider text-cyan-400">🩺 Prescripción Clínica Diaria (MBE)</span>
-                <button onclick="openArgonCoachModal()" class="text-[10px] font-bold text-emerald-400 hover:underline">Preguntar a IA →</button>
+                <button onclick="openArgonCoachModal()" class="link-btn text-[10px] font-bold text-emerald-400 hover:underline">Preguntar a IA →</button>
               </div>
               <p id="clinical-coach-notes" class="text-xs text-slate-200 leading-relaxed">--</p>
             </div>
@@ -501,10 +553,10 @@
           <section class="native-card p-4 space-y-3">
             <div class="flex items-center justify-between">
               <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">📈 Telemetría 14 Días</h2>
-              <div class="flex bg-slate-950 p-0.5 rounded-xl border border-slate-800">
-                <button id="tab-hrv" onclick="switchApexTab('hrv')" class="tab-btn-active text-[10px] font-semibold px-2.5 py-1 rounded-lg border transition">VFC</button>
-                <button id="tab-strain" onclick="switchApexTab('strain')" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg text-slate-400 border border-transparent transition">Strain</button>
-                <button id="tab-weight" onclick="switchApexTab('weight')" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg text-slate-400 border border-transparent transition">Peso</button>
+              <div class="flex bg-slate-950 p-0.5 rounded-xl border border-slate-800 shrink-0">
+                <button id="tab-hrv" onclick="switchApexTab('hrv')" class="chip tab-btn-active text-[10px] font-semibold px-2.5 py-1 rounded-lg border transition shrink-0">VFC</button>
+                <button id="tab-strain" onclick="switchApexTab('strain')" class="chip text-[10px] font-semibold px-2.5 py-1 rounded-lg text-slate-400 border border-transparent transition shrink-0">Strain</button>
+                <button id="tab-weight" onclick="switchApexTab('weight')" class="chip text-[10px] font-semibold px-2.5 py-1 rounded-lg text-slate-400 border border-transparent transition shrink-0">Peso</button>
               </div>
             </div>
             <div id="apex-telemetry-chart" class="w-full min-h-[255px]"></div>
@@ -524,7 +576,7 @@
                 <h2 class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">⚖️ Bioimpedancia Feelfit</h2>
                 <p class="text-[10px] text-slate-400">Sincronización Health Connect + Regresión Qingniu</p>
               </div>
-              <button onclick="toggleHelp('help-feelfit')" class="text-[10px] text-cyan-400 font-semibold">ⓘ ¿Cómo se calcula?</button>
+              <button onclick="toggleHelp('help-feelfit')" class="link-btn text-[10px] text-cyan-400 font-semibold">ⓘ ¿Cómo se calcula?</button>
             </div>
 
             <div id="help-feelfit" class="hidden p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-300 space-y-1">
@@ -700,11 +752,11 @@
             <div class="pt-2 border-t border-slate-800/80">
               <div class="flex flex-wrap items-center gap-1.5">
                 <span class="text-[10px] text-slate-400 mr-1">Sumar rápido:</span>
-                <button onclick="quickAddMeal(420, 38, 35, 14)" class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-slate-200 font-medium">+Desayuno (420)</button>
-                <button onclick="quickAddMeal(650, 55, 58, 22)" class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-slate-200 font-medium">+Almuerzo (650)</button>
-                <button onclick="quickAddMeal(480, 45, 32, 19)" class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-slate-200 font-medium">+Cena (480)</button>
-                <button onclick="quickAddMeal(130, 25, 3, 2)" class="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-300 font-semibold">+Whey</button>
-                <button onclick="resetTodayMeals()" class="px-2.5 py-1 rounded-xl bg-rose-500/15 border border-rose-500/30 text-[11px] text-rose-300 font-semibold">Reset 0</button>
+                <button onclick="quickAddMeal(420, 38, 35, 14)" class="chip px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-slate-200 font-medium">+Desayuno (420)</button>
+                <button onclick="quickAddMeal(650, 55, 58, 22)" class="chip px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-slate-200 font-medium">+Almuerzo (650)</button>
+                <button onclick="quickAddMeal(480, 45, 32, 19)" class="chip px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-slate-200 font-medium">+Cena (480)</button>
+                <button onclick="quickAddMeal(130, 25, 3, 2)" class="chip px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-300 font-semibold">+Whey</button>
+                <button onclick="resetTodayMeals()" class="chip px-2.5 py-1 rounded-xl bg-rose-500/15 border border-rose-500/30 text-[11px] text-rose-300 font-semibold">Reset 0</button>
               </div>
             </div>
           </section>
@@ -718,14 +770,14 @@
   <!-- ========================================================================
        3. BARRA DE NAVEGACIÓN INFERIOR NATIVA (GLASSMORPHISM DOCK + COACH IA)
        ======================================================================== -->
-  <nav class="fixed bottom-0 inset-x-0 z-40 bg-[#05080F]/90 backdrop-blur-2xl border-t border-white/[0.08] px-2 py-1.5">
+  <nav id="argon-nav-dock" class="fixed bottom-0 inset-x-0 z-40 bg-[#05080F]/90 backdrop-blur-2xl border-t border-white/[0.08] px-2 py-1.5">
     <div class="max-w-lg mx-auto grid grid-cols-5 items-center text-center">
-      <button onclick="goToArgonTab(0)" id="nav-btn-0" class="flex flex-col items-center py-1 text-cyan-400 transition">
+      <button onclick="goToArgonTab(0)" id="nav-btn-0" class="flex flex-col items-center justify-center py-1 text-cyan-400 transition">
         <span class="text-base leading-none">🏠</span>
         <span class="text-[10px] font-bold mt-1">Hoy</span>
       </button>
 
-      <button onclick="goToArgonTab(1)" id="nav-btn-1" class="flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 transition">
+      <button onclick="goToArgonTab(1)" id="nav-btn-1" class="flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-200 transition">
         <span class="text-base leading-none">🌙</span>
         <span class="text-[10px] font-semibold mt-1">Sueño</span>
       </button>
@@ -733,18 +785,18 @@
       <!-- Botón Central Elevado: Coach Clínico MBE -->
       <div class="flex justify-center">
         <button onclick="openArgonCoachModal()"
-          class="-mt-5 flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/30 active:scale-95 transition border-2 border-[#05080F]">
+          class="coach-fab -mt-5 flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/30 active:scale-95 transition border-2 border-[#05080F]">
           <span class="text-lg leading-none">🧠</span>
           <span class="text-[9px] font-black uppercase tracking-tighter mt-0.5">Coach</span>
         </button>
       </div>
 
-      <button onclick="goToArgonTab(2)" id="nav-btn-2" class="flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 transition">
+      <button onclick="goToArgonTab(2)" id="nav-btn-2" class="flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-200 transition">
         <span class="text-base leading-none">⚖️</span>
         <span class="text-[10px] font-semibold mt-1">Cuerpo</span>
       </button>
 
-      <button onclick="goToArgonTab(3)" id="nav-btn-3" class="flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 transition">
+      <button onclick="goToArgonTab(3)" id="nav-btn-3" class="flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-200 transition">
         <span class="text-base leading-none">🥩</span>
         <span class="text-[10px] font-semibold mt-1">Macros</span>
       </button>
@@ -761,7 +813,7 @@
       <div class="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-1 sm:hidden"></div>
       <div class="flex justify-between items-center">
         <h3 class="text-sm font-black uppercase tracking-wider text-cyan-400">📋 Cargar Biomarcadores del Día</h3>
-        <button onclick="closeModal('log-modal')" class="text-slate-400 hover:text-white text-sm px-2">✕</button>
+        <button onclick="closeModal('log-modal')" class="icon-btn text-slate-400 hover:text-white text-sm px-2">✕</button>
       </div>
       <div class="grid grid-cols-2 gap-2.5 text-xs">
         <div><label class="text-slate-400 block mb-1">Peso Feelfit (kg)</label><input id="in-weight" type="number" step="0.05" placeholder="86.80" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
@@ -781,7 +833,7 @@
         <div><label class="text-slate-400 block mb-1">Kcal Ingeridas Hoy</label><input id="in-kcal" type="number" placeholder="1650" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
         <div><label class="text-slate-400 block mb-1">Horas Guardia Nocturna</label><input id="in-shift-hours" type="number" step="0.5" placeholder="0" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
       </div>
-      <button onclick="saveAndComputeManualEntry()" class="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase tracking-wider">
+      <button onclick="saveAndComputeManualEntry()" class="action-btn w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase tracking-wider">
         Guardar y Recalcular Grafo MBE
       </button>
     </div>
@@ -793,10 +845,10 @@
       <div class="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-1 sm:hidden"></div>
       <div class="flex justify-between items-center">
         <h3 class="text-sm font-black uppercase tracking-wider text-emerald-400">✓ Reporte de Auditoría Clínica (ARGON v6.0)</h3>
-        <button onclick="closeModal('qa-modal')" class="text-slate-400 hover:text-white text-sm px-2">✕</button>
+        <button onclick="closeModal('qa-modal')" class="icon-btn text-slate-400 hover:text-white text-sm px-2">✕</button>
       </div>
       <div id="qa-results-list" class="space-y-2 text-xs"></div>
-      <button onclick="closeModal('qa-modal')" class="w-full py-2.5 rounded-2xl bg-slate-800 text-slate-200 font-bold text-xs">Cerrar Auditoría</button>
+      <button onclick="closeModal('qa-modal')" class="action-btn w-full py-2.5 rounded-2xl bg-slate-800 text-slate-200 font-bold text-xs">Cerrar Auditoría</button>
     </div>
   </div>
 
@@ -806,7 +858,7 @@
       <div class="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-1 sm:hidden"></div>
       <div class="flex justify-between items-center">
         <h3 class="text-sm font-black uppercase tracking-wider text-cyan-400">⚙️ Credenciales Cloud & Webhook</h3>
-        <button onclick="closeModal('settings-modal')" class="text-slate-400 hover:text-white text-sm px-2">✕</button>
+        <button onclick="closeModal('settings-modal')" class="icon-btn text-slate-400 hover:text-white text-sm px-2">✕</button>
       </div>
       <div class="space-y-3 text-xs">
         <div>
@@ -828,7 +880,7 @@
           </div>
         </div>
       </div>
-      <button onclick="saveSettings()" class="w-full py-3 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs uppercase tracking-wider">
+      <button onclick="saveSettings()" class="action-btn w-full py-3 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs uppercase tracking-wider">
         Guardar y Reconectar
       </button>
     </div>
@@ -1061,7 +1113,7 @@
       extraUI.innerHTML = `
         <div class="flex items-center justify-between">
           <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">🍴 Bitácora de Comidas de Hoy (Zepp / Manual)</span>
-          <button onclick="toggleHelp('custom-meal-form')" class="text-[10px] px-2.5 py-1 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 font-semibold">
+          <button onclick="toggleHelp('custom-meal-form')" class="chip text-[10px] px-2.5 py-1 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 font-semibold">
             + Comida Personalizada
           </button>
         </div>
@@ -1069,15 +1121,15 @@
           <span>Sin comidas registradas hoy. Usa los botones rápidos o sincroniza Zepp.</span>
         </div>
         <div id="custom-meal-form" class="hidden p-3 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-2">
-          <div class="grid grid-cols-5 gap-1.5">
-            <input id="cm-name" type="text" placeholder="Plato (ej. Pollo)" class="col-span-2 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-white text-[11px]" />
-            <input id="cm-prot" type="number" placeholder="Prot (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1.5 text-emerald-300 text-[11px]" />
-            <input id="cm-carbs" type="number" placeholder="Carbs (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1.5 text-cyan-300 text-[11px]" />
-            <input id="cm-fat" type="number" placeholder="Grasa (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1.5 text-amber-300 text-[11px]" />
+          <div class="grid grid-cols-2 min-[400px]:grid-cols-5 gap-1.5">
+            <input id="cm-name" type="text" placeholder="Plato (ej. Pollo)" class="col-span-2 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 min-[400px]:py-1.5 text-white text-[11px]" />
+            <input id="cm-prot" type="number" placeholder="Prot (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded-xl px-2 py-2 min-[400px]:py-1.5 text-emerald-300 text-[11px]" />
+            <input id="cm-carbs" type="number" placeholder="Carbs (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded-xl px-2 py-2 min-[400px]:py-1.5 text-cyan-300 text-[11px]" />
+            <input id="cm-fat" type="number" placeholder="Grasa (g)" oninput="autoCalcCustomMealKcal()" class="bg-slate-900 border border-slate-700 rounded-xl px-2 py-2 min-[400px]:py-1.5 text-amber-300 text-[11px]" />
           </div>
-          <div class="flex items-center justify-between gap-2">
-            <input id="cm-kcal" type="number" placeholder="Kcal totales (auto)" class="w-1/2 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-white text-[11px] font-mono" />
-            <button onclick="submitCustomMeal()" class="w-1/2 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[11px] uppercase">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <input id="cm-kcal" type="number" placeholder="Kcal totales (auto)" class="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 min-[400px]:py-1.5 text-white text-[11px] font-mono" />
+            <button onclick="submitCustomMeal()" class="chip flex-1 min-w-0 py-2 min-[400px]:py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[11px] uppercase">
               Guardar Comida
             </button>
           </div>
@@ -1229,10 +1281,11 @@
 
       // C. SUEÑO EN 4 PILARES + AMORTIZACIÓN DE DEUDA (PROCESO S BORBÉLY)
       const prevTst = prevComputed && prevComputed.total_sleep_min ? prevComputed.total_sleep_min : 450;
-      const tstMin = parseInt(todayRaw.total_sleep_min, 10) || prevTst;
-      const tibMin = parseInt(todayRaw.time_in_bed_min, 10) || Math.max(tstMin + 25, Math.round(tstMin * 1.06));
-      const deepMin = parseInt(todayRaw.deep_sleep_min, 10) || Math.round(tstMin * 0.20);
-      const remMin = parseInt(todayRaw.rem_sleep_min, 10) || Math.round(tstMin * 0.22);
+      const sleepMissing = !(parseInt(todayRaw.total_sleep_min, 10) >= 120) || (parseInt(todayRaw.total_sleep_min, 10) === 450 && parseInt(todayRaw.deep_sleep_min, 10) === 84 && parseInt(todayRaw.rem_sleep_min, 10) === 96);
+      const tstMin = sleepMissing ? 0 : parseInt(todayRaw.total_sleep_min, 10);
+      const tibMin = sleepMissing ? 0 : (parseInt(todayRaw.time_in_bed_min, 10) || Math.max(tstMin + 25, Math.round(tstMin * 1.06)));
+      const deepMin = sleepMissing ? 0 : (parseInt(todayRaw.deep_sleep_min, 10) || Math.round(tstMin * 0.20));
+      const remMin = sleepMissing ? 0 : (parseInt(todayRaw.rem_sleep_min, 10) || Math.round(tstMin * 0.22));
       const lightMin = Math.max(0, tstMin - deepMin - remMin);
       const napMin = parseInt(todayRaw.nap_sleep_min, 10) || 0;
 
@@ -1309,7 +1362,7 @@
         Math.max(0, rhrZ * 9.0) + Math.max(0, -hrvZ * 7.0) + Math.max(0, 38 - (swsPct + remPct)) * 0.6
       )));
 
-      const sleepZ = Math.max(-3, Math.min(2, (sleepArchScore - 92.0) / 10.0));
+      const sleepZ = sleepMissing ? 0 : Math.max(-3, Math.min(2, (sleepArchScore - 92.0) / 10.0));
       const psi = (0.55 * hrvZ) - (0.20 * rhrZ) + (0.25 * sleepZ) - penalty;
       const recoveryScore = Math.min(99, Math.max(1, Math.round(100.0 / (1.0 + Math.exp(-1.15 * psi)))));
 
@@ -1364,7 +1417,7 @@
       const deltaVo2 = +Math.max(-3.2, Math.min(2.5, -0.18 * (vo2Max - 43.0))).toFixed(1);
       const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.12 * (meanRhr - 60.0))).toFixed(1);
       const deltaFfm = +Math.max(-2.2, Math.min(2.2, -0.16 * (ffmPct - 79.0))).toFixed(1);
-      const deltaSleep = +Math.max(-1.5, Math.min(1.8, -0.025 * (sleepRegularityPct - 78) - 0.25 * ((tstMin / 60.0) - 7.2))).toFixed(1);
+      const deltaSleep = +Math.max(-1.5, Math.min(1.8, -0.025 * (sleepRegularityPct - 78) - 0.25 * ((sleepMissing ? 7.2 : tstMin / 60.0) - 7.2))).toFixed(1);
       const avgSteps7d = meanArr([steps, ...historyRawList.slice(0, 6).map(r => parseInt(r.steps_count, 10) || 7500)]);
       const deltaAct = +Math.max(-1.8, Math.min(1.5, -0.18 * ((avgSteps7d - 6500) / 1000.0) - (workoutMin >= 30 ? 0.35 : 0.0))).toFixed(1);
 
@@ -1380,6 +1433,7 @@
         log_date: todayRaw.log_date,
         chronological_age: chronologicalAge,
         calibrating: histLn.length < MIN_BASELINE_DAYS,
+        sleep_missing: sleepMissing,
         weight_kg: rawW,
         body_fat_pct: rawBf,
         fat_mass_kg: fatMassKg,
@@ -1488,7 +1542,7 @@
       recRing.style.stroke = recColor;
       document.getElementById('val-recovery').textContent = `${recPct}%`;
       const badgeRec = document.getElementById('badge-recovery');
-      badgeRec.textContent = record.calibrating ? 'CALIBRANDO' : (recPct >= 67 ? 'ÓPTIMO' : (recPct >= 34 ? 'MODERADO' : 'FATIGA SNC'));
+      badgeRec.textContent = record.sleep_missing ? 'SIN SUEÑO' : record.calibrating ? 'CALIBRANDO' : (recPct >= 67 ? 'ÓPTIMO' : (recPct >= 34 ? 'MODERADO' : 'FATIGA SNC'));
       badgeRec.style.color = recColor;
       document.getElementById('sub-recovery').textContent = `VFC: ${record.rmssd_ms} ms`;
 
@@ -1501,7 +1555,7 @@
 
       const sleepPct = Math.round(record.sleep_architecture_score);
       document.getElementById('ring-sleep').style.strokeDashoffset = circ - (sleepPct / 100) * circ;
-      document.getElementById('val-sleep').textContent = `${sleepPct}%`;
+      document.getElementById('val-sleep').textContent = record.sleep_missing ? '--' : `${sleepPct}%`;
       document.getElementById('badge-sleep-eff').textContent = `Efic: ${Math.round(record.sleep_efficiency_pct)}%`;
       document.getElementById('sub-sleep').textContent = `Deuda: ${record.cumulative_sleep_debt_hours}h`;
 
@@ -1589,7 +1643,7 @@
           mealsContainer.innerHTML = meals.map((m, idx) => `
             <span class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-slate-800/90 border border-slate-700 text-slate-200">
               <span><strong>${esc(m.name || 'Comida')}:</strong> ${m.kcal}kcal (${m.prot}P/${m.carbs}C/${m.fat}G)</span>
-              <button onclick="removeMealByIndex(${idx})" class="text-rose-400 hover:text-rose-300 font-bold ml-1">✕</button>
+              <button onclick="removeMealByIndex(${idx})" class="link-btn text-rose-400 hover:text-rose-300 font-bold ml-1 px-1.5">✕</button>
             </span>
           `).join('');
         }
@@ -1619,7 +1673,7 @@
       // 4. Calificación del Sueño (4 Pilares Clínicos)
       const tstH = Math.floor(record.total_sleep_min / 60);
       const tstM = record.total_sleep_min % 60;
-      document.getElementById('sleep-tst').textContent = `${tstH}h ${tstM}m`;
+      document.getElementById('sleep-tst').textContent = record.sleep_missing ? 'Sin datos' : `${tstH}h ${tstM}m`;
       const swsRemPct = Math.round(((record.deep_sleep_min + record.rem_sleep_min) / Math.max(1, record.total_sleep_min)) * 100);
       document.getElementById('sleep-sws-rem').textContent = `SWS+REM: ${swsRemPct}%`;
       document.getElementById('sleep-debt').textContent = `${record.cumulative_sleep_debt_hours} h`;
@@ -2253,20 +2307,20 @@
                   <p class="text-[10px] text-slate-400">Conectado a tu biometría en vivo de Supabase</p>
                 </div>
               </div>
-              <button onclick="closeModal('coach-modal')" class="text-slate-400 hover:text-white text-sm px-2">✕</button>
+              <button onclick="closeModal('coach-modal')" class="icon-btn text-slate-400 hover:text-white text-sm px-2">✕</button>
             </div>
 
             <div class="px-3 py-2 bg-slate-950/60 border-b border-slate-800 flex gap-1.5 overflow-x-auto text-[10px]">
               <button onclick="askQuickCoach('Analiza mi recuperación, VFC y sueño de hoy y dime cómo debo entrenar hoy en pesas o pickleball.')"
-                class="shrink-0 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25 font-semibold">
+                class="chip shrink-0 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25 font-semibold">
                 🏋️ Plan Entreno Hoy
               </button>
               <button onclick="askQuickCoach('Según las calorías y macros que llevo hoy y mi peso actual en Feelfit, ¿qué me recomiendas comer en mi próxima comida o cena para cuadrar la Ley de Atwater?')"
-                class="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 font-semibold">
+                class="chip shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 font-semibold">
                 🥩 Qué Comer / Macros
               </button>
               <button onclick="askQuickCoach('Evalúa mi deuda de sueño, tendencia de 14 días de VFC y ritmo de envejecimiento. ¿Qué ajustes de biohacking o descanso necesito esta noche?')"
-                class="shrink-0 px-2.5 py-1.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 hover:bg-purple-500/25 font-semibold">
+                class="chip shrink-0 px-2.5 py-1.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 hover:bg-purple-500/25 font-semibold">
                 🌙 Sueño & Biohacking
               </button>
             </div>
@@ -2281,7 +2335,7 @@
               <input id="coach-user-input" type="text" placeholder="Pregúntale sobre tu entreno, macros, guardia o sueño..."
                 onkeydown="if(event.key==='Enter') sendCoachMessage()"
                 class="flex-1 bg-slate-900 border border-slate-700 rounded-2xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-400" />
-              <button onclick="sendCoachMessage()" class="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase">
+              <button onclick="sendCoachMessage()" class="action-btn px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase shrink-0">
                 Enviar
               </button>
             </div>
