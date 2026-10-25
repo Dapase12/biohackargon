@@ -116,6 +116,16 @@
 
     div:has(> #bar-prot), div:has(> #bar-carb), div:has(> #bar-fat) { display: none; }
 
+    @media (min-width: 1024px) {
+      main.max-w-lg, header .max-w-lg, nav .max-w-lg { max-width: 1120px; }
+      .argon-main-swiper { overflow: visible; }
+      .argon-main-swiper .swiper-wrapper { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; transform: none !important; width: 100% !important; height: auto !important; }
+      .argon-main-swiper .swiper-slide { width: auto !important; margin: 0 !important; height: auto; opacity: 1 !important; }
+      #nav-btn-0, #nav-btn-1, #nav-btn-2, #nav-btn-3 { display: none; }
+      nav .max-w-lg { grid-template-columns: 1fr; }
+      body { padding-bottom: 96px; }
+    }
+
     /* Segmented Control (Pestañas de gráficas) */
     .tab-btn-active {
       background: rgba(6, 182, 212, 0.18);
@@ -219,7 +229,7 @@
 
       <!-- Meta 7 Dic Countdown Pill -->
       <div class="hidden min-[400px]:flex flex-col items-center px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-800">
-        <span class="text-[8px] uppercase tracking-widest text-slate-400 font-semibold">Meta 7 Dic</span>
+        <span id="goal-date-label" class="text-[8px] uppercase tracking-widest text-slate-400 font-semibold">Meta 7 Dic</span>
         <span id="countdown-timer" class="text-[11px] font-mono font-bold text-cyan-400">--d --h</span>
       </div>
 
@@ -353,6 +363,8 @@
               <p id="clinical-coach-notes" class="text-xs text-slate-200 leading-relaxed">--</p>
             </div>
           </section>
+
+          <section id="goal-card" class="native-card p-4 space-y-2.5"></section>
 
           <!-- Acordeón Desplegable 1: Monitor de Signos Vitales 4D (Estilo Whoop Health Monitor) -->
           <details class="native-card native-accordion group overflow-hidden" open>
@@ -970,6 +982,72 @@
 
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+    function getGoal() {
+      return {
+        target: parseFloat(localStorage.getItem('argon_target_w')) || 80,
+        start: parseFloat(localStorage.getItem('argon_start_w')) || 0,
+        date: localStorage.getItem('argon_goal_date') || '2026-12-07'
+      };
+    }
+
+    function injectGoalSettingsUI() {
+      const box = document.querySelector('#settings-modal .space-y-3');
+      if (!box || document.getElementById('cfg-start-weight')) return;
+      const d = document.createElement('div');
+      d.className = 'grid grid-cols-2 gap-2';
+      const g = getGoal();
+      d.innerHTML = `
+        <div><label class="text-slate-400 block mb-1">Peso Inicial (kg)</label>
+          <input id="cfg-start-weight" type="number" step="0.1" inputmode="decimal" placeholder="auto" value="${g.start || ''}" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">Fecha Meta</label>
+          <input id="cfg-goal-date" type="date" value="${g.date}" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>`;
+      box.appendChild(d);
+    }
+
+    function renderGoalProgress(record, all) {
+      const el = document.getElementById('goal-card');
+      if (!el) return;
+      const g = getGoal();
+      const start = g.start || (all.length ? all[0].weight_kg : record.weight_kg);
+      const cur = parseFloat(record.trend_weight_kg || record.weight_kg);
+      const total = start - g.target;
+      const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(((start - cur) / total) * 100))) : (cur <= g.target ? 100 : 0);
+      const daysLeft = Math.max(0, Math.round((new Date(g.date + 'T12:00:00Z') - new Date(getLocalTodayIso() + 'T12:00:00Z')) / 86400000));
+      const remaining = Math.max(0, cur - g.target);
+      const needWk = daysLeft > 0 ? (remaining / daysLeft) * 7 : 0;
+      const last = all.slice(-14);
+      let realWk = 0;
+      if (last.length >= 7) {
+        const a = parseFloat(last[0].trend_weight_kg || last[0].weight_kg), b = parseFloat(last[last.length - 1].trend_weight_kg || last[last.length - 1].weight_kg);
+        realWk = ((a - b) / (last.length - 1)) * 7;
+      }
+      const onTrack = realWk >= needWk * 0.9;
+      const col = pct >= 100 ? '#10B981' : (onTrack ? '#06B6D4' : '#F59E0B');
+      const aggressive = needWk > cur * 0.01;
+      let msg = 'Vas a tiempo: mantén el ritmo actual.';
+      if (pct >= 100) msg = '¡Meta alcanzada! Pasa a fase de mantenimiento.';
+      else if (daysLeft === 0) msg = 'La fecha meta ya venció: ajústala en Ajustes.';
+      else if (aggressive) msg = 'Ritmo necesario >1 % del peso por semana: riesgo de perder masa magra. Considera mover la fecha.';
+      else if (!onTrack) msg = 'Vas más lento de lo necesario: revisa déficit, pasos y adherencia.';
+      const box = (t, v) => `<div class="p-2 rounded-xl bg-slate-950/70 border border-slate-800"><span class="text-[10px] text-slate-400 block">${t}</span><span class="text-sm font-black font-mono text-white">${v}</span></div>`;
+      el.innerHTML = `
+        <div class="flex items-center justify-between">
+          <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">🎯 Progreso hacia la meta</h2>
+          <button onclick="openModal('settings-modal')" class="text-[10px] px-2.5 py-1 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-semibold">Editar meta</button>
+        </div>
+        <div class="flex items-end justify-between">
+          <span class="text-3xl font-black font-mono" style="color:${col}">${pct}%</span>
+          <span class="text-[11px] text-slate-400 font-mono">${start.toFixed(1)} → <b class="text-white">${cur.toFixed(1)}</b> → ${g.target.toFixed(1)} kg</span>
+        </div>
+        <div class="w-full h-3 rounded-full bg-slate-900 overflow-hidden border border-slate-800"><div class="h-full rounded-full transition-all duration-700" style="width:${pct}%;background:${col}"></div></div>
+        <div class="grid grid-cols-3 gap-2 text-center">
+          ${box('Faltan', remaining.toFixed(1) + ' kg')}
+          ${box('Días restantes', daysLeft)}
+          ${box('kg/sem real | necesario', realWk.toFixed(2) + ' | ' + needWk.toFixed(2))}
+        </div>
+        <p class="text-[11px] leading-snug" style="color:${col}">${msg}</p>`;
+    }
+
     function toggleHelp(id) {
       const el = document.getElementById(id);
       if (el) {
@@ -1170,10 +1248,15 @@
 
     // 3. Reloj de Cuenta Regresiva al 7 de Diciembre de 2026
     function updateCountdown() {
-      const deadline = new Date('2026-12-07T00:00:00-04:00').getTime();
+      const deadline = new Date((localStorage.getItem('argon_goal_date') || '2026-12-07') + 'T00:00:00-04:00').getTime();
       const diff = Math.max(0, deadline - Date.now());
       const days = Math.floor(diff / 86400000);
       const hours = Math.floor((diff % 86400000) / 3600000);
+      const lbl = document.getElementById('goal-date-label');
+      if (lbl) {
+        const gd = new Date((localStorage.getItem('argon_goal_date') || '2026-12-07') + 'T12:00:00Z');
+        lbl.textContent = 'Meta ' + gd.getUTCDate() + ' ' + ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][gd.getUTCMonth()];
+      }
       const el = document.getElementById('countdown-timer');
       if (el) el.textContent = `${days}d ${hours}h`;
     }
@@ -1205,6 +1288,11 @@
       localStorage.setItem('argon_sb_key', document.getElementById('cfg-key').value.trim());
       localStorage.setItem('argon_target_w', document.getElementById('cfg-target-weight').value);
       localStorage.setItem('argon_wake_time', document.getElementById('cfg-wake-time').value);
+      const sw = document.getElementById('cfg-start-weight'), gd = document.getElementById('cfg-goal-date');
+      if (sw) localStorage.setItem('argon_start_w', sw.value);
+      if (gd && gd.value) localStorage.setItem('argon_goal_date', gd.value);
+      updateCountdown();
+      if (document.getElementById('selected-date').value) loadDayData(document.getElementById('selected-date').value);
       const gasInput = document.getElementById('cfg-gas-url');
       if (gasInput) localStorage.setItem('argon_gas_url', gasInput.value.trim());
       closeModal('settings-modal');
@@ -1750,6 +1838,7 @@
       const sparkR = document.getElementById('spark-rhr');
       if (sparkR) sparkR.innerHTML = sparkSvg(last7s.map(r => r.rhr_bpm), '#06B6D4', record.rhr_14d_mean_bpm);
 
+      renderGoalProgress(record, allRecordsSorted);
       renderApexTelemetry(allRecordsSorted.slice(-14));
       refreshSwiperHeight(80);
     }
@@ -2281,6 +2370,7 @@
     // 9. MÓDULO NATIVO BOTTOM SHEET: COACH CLÍNICO IA (GEMINI MBE)
     // ========================================================================
     function injectArgonCoachUI() {
+      injectGoalSettingsUI();
       if (document.getElementById('coach-modal')) return;
 
       const settingsContainer = document.querySelector('#settings-modal .space-y-3');
