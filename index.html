@@ -1341,16 +1341,42 @@
       const sRpe = Math.max(0, parseFloat(todayRaw.session_rpe) || (workoutMin > 0 ? 7.0 : 0));
       const nightAwakeH = Math.max(0, parseFloat(todayRaw.night_awake_shift_hours) || 0);
 
-      const ambientZ1 = Math.round(Math.max(0, steps - 2000) / 320);
-      const zones = todayRaw.hr_zones_real === true && todayRaw.hr_zones_minutes
-        ? todayRaw.hr_zones_minutes
-        : {
-            z1: ambientZ1 + Math.round(workoutMin * 0.22),
-            z2: Math.round(workoutMin * 0.33),
-            z3: Math.round(workoutMin * 0.20),
-            z4: Math.round(workoutMin * 0.17),
-            z5: Math.round(workoutMin * 0.08)
-          };
+      // Pasos netos (descuento pasos deportivos ~85 pasos/min ejercicio) para NEAT
+      const stepsNet = Math.max(0, steps - workoutMin * 85);
+
+      const ambientZ1 = Math.round(Math.max(0, stepsNet - 2000) / 320);
+
+      // Zonas dinámicas por RPE cuando no hay hr_zones_real
+      let zones;
+      if (todayRaw.hr_zones_real === true && todayRaw.hr_zones_minutes) {
+        zones = todayRaw.hr_zones_minutes;
+      } else {
+        // Distribución base
+        let baseZ1 = ambientZ1 + Math.round(workoutMin * 0.22);
+        let baseZ2 = Math.round(workoutMin * 0.33);
+        let baseZ3 = Math.round(workoutMin * 0.20);
+        let baseZ4 = Math.round(workoutMin * 0.17);
+        let baseZ5 = Math.round(workoutMin * 0.08);
+
+        // Redistribución Z1-Z2 -> Z3-Z5 proporcional al RPE (RPE 1-10, centro 5.5)
+        if (workoutMin > 0 && sRpe > 0) {
+          const rpeFactor = Math.max(0, Math.min(1, (sRpe - 1) / 9)); // 0-1
+          const shiftAmount = (baseZ1 + baseZ2) * rpeFactor * 0.5; // máx 50% del peso bajo
+          baseZ1 = Math.round(baseZ1 * (1 - rpeFactor * 0.5));
+          baseZ2 = Math.round(baseZ2 * (1 - rpeFactor * 0.5));
+          const totalHigh = baseZ3 + baseZ4 + baseZ5;
+          if (totalHigh > 0) {
+            baseZ3 += Math.round(shiftAmount * (baseZ3 / totalHigh));
+            baseZ4 += Math.round(shiftAmount * (baseZ4 / totalHigh));
+            baseZ5 += Math.round(shiftAmount * (baseZ5 / totalHigh));
+          } else {
+            baseZ3 += Math.round(shiftAmount * 0.5);
+            baseZ4 += Math.round(shiftAmount * 0.3);
+            baseZ5 += Math.round(shiftAmount * 0.2);
+          }
+        }
+        zones = { z1: baseZ1, z2: baseZ2, z3: baseZ3, z4: baseZ4, z5: baseZ5 };
+      }
 
       const z13Min = (parseFloat(zones.z1) || 0) + (parseFloat(zones.z2) || 0) + (parseFloat(zones.z3) || 0);
       const z45Min = (parseFloat(zones.z4) || 0) + (parseFloat(zones.z5) || 0);
@@ -1360,9 +1386,10 @@
       for (const z in mids) {
         cardioTrimp += (parseFloat(zones[z]) || 0) * mids[z] * 0.64 * Math.exp(1.92 * mids[z]);
       }
-      cardioTrimp += (steps / 1000.0) * 6.5;
+      // Eliminada duplicidad: pasos basales ya inyectados en zones.z1 vía ambientZ1
 
-      const neuroLoad = 1.35 * ((4.0 * (parseFloat(zones.z4) || 0)) + (8.0 * (parseFloat(zones.z5) || 0))) + (0.45 * (sRpe * workoutMin));
+      // neuroLoad: solo componente neuromuscular real (sRPE * tiempo), sin duplicar Z4-Z5
+      const neuroLoad = 0.85 * (sRpe * workoutMin);
       const shiftLoad = nightAwakeH > 0 ? (1.40 * nightAwakeH * 35.0) : 0.0;
       const totalLoad = cardioTrimp + neuroLoad + shiftLoad;
       const strainScore = Math.min(20.8, Math.max(0.0, 21.0 * (1.0 - Math.exp(-0.00165 * totalLoad))));
@@ -1371,7 +1398,8 @@
       const prevTst = prevComputed && prevComputed.total_sleep_min ? prevComputed.total_sleep_min : 450;
       const sleepMissing = !(parseInt(todayRaw.total_sleep_min, 10) >= 120) || (parseInt(todayRaw.total_sleep_min, 10) === 450 && parseInt(todayRaw.deep_sleep_min, 10) === 84 && parseInt(todayRaw.rem_sleep_min, 10) === 96);
       const tstMin = sleepMissing ? 0 : parseInt(todayRaw.total_sleep_min, 10);
-      const tibMin = sleepMissing ? 0 : (parseInt(todayRaw.time_in_bed_min, 10) || Math.max(tstMin + 25, Math.round(tstMin * 1.06)));
+      // Eficiencia basal realista: Math.round(tstMin / 0.87) en vez de tstMin * 1.06
+      const tibMin = sleepMissing ? 0 : (parseInt(todayRaw.time_in_bed_min, 10) || Math.max(tstMin + 25, Math.round(tstMin / 0.87)));
       const deepMin = sleepMissing ? 0 : (parseInt(todayRaw.deep_sleep_min, 10) || Math.round(tstMin * 0.20));
       const remMin = sleepMissing ? 0 : (parseInt(todayRaw.rem_sleep_min, 10) || Math.round(tstMin * 0.22));
       const lightMin = Math.max(0, tstMin - deepMin - remMin);
@@ -1381,11 +1409,11 @@
       const swsPct = (deepMin / Math.max(1, tstMin)) * 100;
       const remPct = (remMin / Math.max(1, tstMin)) * 100;
 
-      // Incluye el sueño de hoy y permite que dormir > 7.50h amortice deuda previa
+      // Limpieza de noches vacías: solo noches válidas (total_sleep_min >= 120) para deuda y regularidad
+      const validSleeps = [todayRaw, ...historyRawList.slice(0, 6)].filter(r => parseInt(r.total_sleep_min, 10) >= 120);
       let weightedDebtH = 0;
-      const last7Sleeps = [todayRaw, ...historyRawList.slice(0, 6)];
-      last7Sleeps.forEach((r, idx) => {
-        const pastTstH = ((parseInt(r.total_sleep_min, 10) || 450) + (parseInt(r.nap_sleep_min, 10) || 0)) / 60.0;
+      validSleeps.forEach((r, idx) => {
+        const pastTstH = (parseInt(r.total_sleep_min, 10) + (parseInt(r.nap_sleep_min, 10) || 0)) / 60.0;
         weightedDebtH += (basalNeedH - pastTstH) * Math.exp(-0.35 * idx);
       });
       weightedDebtH = Math.max(0, +weightedDebtH.toFixed(2));
@@ -1395,16 +1423,18 @@
       const needForRecoveryH = Math.min(10.0, Math.max(6.5, basalNeedH + (0.042 * prevStrain) + (0.35 * weightedDebtH)));
       const hoursVsNeededPct = Math.min(100, Math.round((((tstMin + napMin) / 60.0) / needForRecoveryH) * 100));
 
-      const recentTstList = [tstMin, ...historyRawList.slice(0, 6).map(r => parseInt(r.total_sleep_min, 10) || 450)];
-      const meanTst = recentTstList.reduce((a, b) => a + b, 0) / recentTstList.length;
-      const sdTstHours = Math.sqrt(recentTstList.reduce((s, v) => s + Math.pow((v - meanTst) / 60.0, 2), 0) / recentTstList.length);
+      // SD solo con noches válidas
+      const recentValidTst = validSleeps.map(r => parseInt(r.total_sleep_min, 10));
+      const meanTst = recentValidTst.length ? recentValidTst.reduce((a, b) => a + b, 0) / recentValidTst.length : 450;
+      const sdTstHours = recentValidTst.length > 1 ? Math.sqrt(recentValidTst.reduce((s, v) => s + Math.pow((v - meanTst) / 60.0, 2), 0) / recentValidTst.length) : 0;
       const sleepRegularityPct = Math.min(98, Math.max(55, Math.round(94 - (sdTstHours * 14.0) - (nightAwakeH * 3.5))));
 
+      // Rebalanceo de etapas PPG: 0.50 * hoursVsNeededPct + 0.25 * sleepRegularityPct + 0.15 * seScore + 0.10 * stagesScore
       const sleepArchScore = Math.round(
-        0.45 * hoursVsNeededPct +
-        0.20 * sleepRegularityPct +
-        0.20 * Math.min(100, (sePct / 88.0) * 100) +
-        0.15 * Math.min(100, ((swsPct + remPct) / 40.0) * 100)
+        0.50 * hoursVsNeededPct +
+        0.25 * sleepRegularityPct +
+        0.15 * Math.min(100, (sePct / 88.0) * 100) +
+        0.10 * Math.min(100, ((swsPct + remPct) / 40.0) * 100)
       );
 
       const [wakeH, wakeM] = wakeTimeStr.split(':').map(Number);
@@ -1414,11 +1444,22 @@
       const endMin = Math.round(wakeTotalMin - (reqTibHours * 60) + 15) % 1440;
       const fmtTime = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
-      // D. RECUPERACIÓN AUTONÓMICA 4D (Con filtro anti-artefactos RMSSD > 130 ms)
+      // D. RECUPERACIÓN AUTONÓMICA 4D (MBE: Dynamic RMSSD cap, CV_7d, SWC, ACWR penalty)
       const prevRmssd = prevComputed && prevComputed.rmssd_ms ? prevComputed.rmssd_ms : 50.0;
       const prevRhr = prevComputed && prevComputed.rhr_bpm ? prevComputed.rhr_bpm : 54.5;
       const rawRmssdCandidate = parseFloat(todayRaw.rmssd_ms) || prevRmssd;
-      const rmssdToday = rawRmssdCandidate > 130 ? prevRmssd : rawRmssdCandidate;
+
+      // Dynamic RMSSD cap: mean_14d + 3*SD, ceiling 180ms (replaces hard 130ms)
+      const histRmssdForCap = historyRawList.slice(0, 14).filter(r => parseFloat(r.rmssd_ms) > 0 && !(parseFloat(r.rmssd_ms) === 50 && parseFloat(r.rhr_bpm) === 54.5)).map(r => {
+        const v = parseFloat(r.rmssd_ms) || 49.0;
+        return v > 180 ? 49.0 : v;
+      });
+      const histLnForCap = histRmssdForCap.map(v => Math.log(Math.max(5.0, v)));
+      const meanLnForCap = histLnForCap.length >= MIN_BASELINE_DAYS ? histLnForCap.reduce((a, b) => a + b, 0) / histLnForCap.length : Math.log(Math.max(5.0, prevRmssd));
+      const sdLnForCap = histLnForCap.length > 1 ? Math.sqrt(histLnForCap.reduce((s, v) => s + Math.pow(v - meanLnForCap, 2), 0) / histLnForCap.length) : 0.12;
+      const dynamicRmssdCap = Math.min(180, Math.round(Math.exp(meanLnForCap + 3 * sdLnForCap)));
+      const rmssdToday = rawRmssdCandidate > dynamicRmssdCap ? prevRmssd : rawRmssdCandidate;
+
       const rhrToday = parseFloat(todayRaw.rhr_bpm) || prevRhr;
       const respToday = parseFloat(todayRaw.resp_rate_brpm) || 14.1;
       const spo2Today = parseFloat(todayRaw.spo2_pct) || 97.6;
@@ -1426,7 +1467,7 @@
       const lnRmssdToday = Math.log(Math.max(5.0, rmssdToday));
       const histRmssd = historyRawList.slice(0, 14).filter(r => parseFloat(r.rmssd_ms) > 0 && !(parseFloat(r.rmssd_ms) === 50 && parseFloat(r.rhr_bpm) === 54.5)).map(r => {
         const v = parseFloat(r.rmssd_ms) || 49.0;
-        return v > 130 ? 50.0 : v;
+        return v > dynamicRmssdCap ? 49.0 : v;
       });
       const histLn = histRmssd.map(v => Math.log(Math.max(5.0, v)));
       const histRhr = historyRawList.slice(0, 14).filter(r => parseFloat(r.rhr_bpm) > 0 && !(parseFloat(r.rmssd_ms) === 50 && parseFloat(r.rhr_bpm) === 54.5)).map(r => parseFloat(r.rhr_bpm));
@@ -1437,10 +1478,20 @@
 
       const meanRmssd = histRmssd.length >= MIN_BASELINE_DAYS ? meanArr(histRmssd) : rmssdToday;
       const meanLn = histLn.length >= MIN_BASELINE_DAYS ? meanArr(histLn) : lnRmssdToday;
-      const sdLn = Math.max(0.08, histLn.length >= MIN_BASELINE_DAYS ? sdArr(histLn, meanLn) : 0.12);
+      // sdLn floor reduced from 0.08 to 0.04 for high autonomic stability weeks
+      const sdLn = Math.max(0.04, histLn.length >= MIN_BASELINE_DAYS ? sdArr(histLn, meanLn) : 0.12);
       const meanRhr = histRhr.length >= MIN_BASELINE_DAYS ? meanArr(histRhr) : rhrToday;
       const sdRhr = Math.max(1.5, histRhr.length >= MIN_BASELINE_DAYS ? sdArr(histRhr, meanRhr) : 2.2);
       const meanResp = histResp.length >= MIN_BASELINE_DAYS ? meanArr(histResp) : 14.2;
+
+      // CV_7d: SD of last 7 lnRMSSD / mean of last 7 lnRMSSD * 100
+      const last7Ln = histLn.slice(0, 7);
+      const meanLn7 = last7Ln.length ? meanArr(last7Ln) : meanLn;
+      const sdLn7 = last7Ln.length > 1 ? sdArr(last7Ln, meanLn7) : sdLn;
+      const cvLnRmssd7 = last7Ln.length >= 3 ? +((sdLn7 / Math.max(0.001, meanLn7)) * 100).toFixed(1) : 0;
+
+      // SWC: 0.3 * sdLn_7d
+      const swcLnRmssd = +(0.3 * sdLn7).toFixed(3);
 
       const hrvMissing = !(parseFloat(todayRaw.rmssd_ms) > 0) || (parseFloat(todayRaw.rmssd_ms) === 50 && parseFloat(todayRaw.rhr_bpm) === 54.5);
       const hrvZ = hrvMissing ? 0 : Math.max(-3, Math.min(3, (lnRmssdToday - meanLn) / sdLn));
@@ -1448,8 +1499,21 @@
       const rhrZ = rhrMissing ? 0 : Math.max(-3, Math.min(3, (rhrToday - meanRhr) / sdRhr));
       const penalty = (spo2Today < 94.0 ? 1.0 : 0.0) + (respToday > 16.8 ? 0.85 : 0.0);
 
+      // ACWR penalty: acute (3d) vs chronic (14d) load ratio, up to -2.0 strain penalty
+      const acuteLoad = historyRawList.slice(0, 3).reduce((s, r) => {
+        const st = parseFloat(r.strain_score) || 0;
+        return s + st;
+      }, 0);
+      const chronicLoad = historyRawList.slice(0, 14).reduce((s, r) => {
+        const st = parseFloat(r.strain_score) || 0;
+        return s + st;
+      }, 0);
+      const acwrRatio = chronicLoad > 0 ? acuteLoad / 3 / (chronicLoad / 14) : 1.0;
+      const acwrPenalty = Math.min(2.0, Math.max(0, (acwrRatio - 1.3) * 5));
+
+      // HighSleepStressPct without SWS+REM term
       const highSleepStressPct = Math.min(45, Math.max(0, Math.round(
-        Math.max(0, rhrZ * 9.0) + Math.max(0, -hrvZ * 7.0) + Math.max(0, 38 - (swsPct + remPct)) * 0.6
+        Math.max(0, rhrZ * 9.0) + Math.max(0, -hrvZ * 7.0)
       )));
 
       const sleepZ = sleepMissing ? 0 : Math.max(-3, Math.min(2, (sleepArchScore - 92.0) / 10.0));
@@ -1468,20 +1532,26 @@
         recMaxStrain = +(10.0 + (recoveryScore - 34) * 0.13).toFixed(1);
       }
 
-      // E. NUTRICIÓN, BITÁCORA DE COMIDAS Y LEY DE ATWATER (0 KCAL DESVIACIÓN)
+      // E. NUTRICIÓN, BITÁCORA DE COMIDAS Y LEY DE ATWATER (MBE: stepsNet, exact TEF, adaptive TDEE)
+      // stepsNet = total steps - walking steps (Zepp walking_steps or estimated from active time)
+      const walkingSteps = parseInt(todayRaw.walking_steps, 10) || (workoutMin > 0 ? Math.round(workoutMin * 130) : 0);
+      const stepsNet = Math.max(0, steps - walkingSteps);
+
+      // Theoretical TDEE (before adaptive blend)
       const rmrActive = tmbFeelfit * 1.15;
       const neatStepsKcal = Math.max(0, (steps - 2500) * 0.035);
       const netExerciseKcal = workoutMin * (strainScore >= 13 ? 5.5 : 4.2);
-      const dynamicTdee = Math.round(rmrActive + neatStepsKcal + netExerciseKcal);
+      let dynamicTdee = Math.round(rmrActive + neatStepsKcal + netExerciseKcal);
 
+      // Target macros from theoretical TDEE (initial)
       const desiredDeficit = strainScore >= 14.0 ? 500 : 550;
-      const rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
-
+      let rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
       const targetProt = Math.round(2.35 * ffmKg);
       const targetFat = Math.round(0.72 * rawW);
-      const targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
-      const targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
+      let targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
+      let targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
 
+      // Determine real intake
       const mealsLog = Array.isArray(todayRaw.meals_log_json) ? todayRaw.meals_log_json : [];
       let realIntakeKcal = Math.max(0, parseInt(todayRaw.intake_kcal, 10) || 0);
       let realProt = Math.max(0, parseFloat(todayRaw.intake_protein_g) || 0);
@@ -1500,18 +1570,41 @@
         realFat = Math.round(targetFat * ratio);
       }
 
-      // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO
+      // TEF exacto: proteína 25%, carbs 8%, grasa 2% (basado en ingesta REAL)
+      const tefEstimate = Math.round((realProt * 4 * 0.25) + (realCarbs * 4 * 0.08) + (realFat * 9 * 0.02));
+
+      // Adaptive TDEE: blend theoretical + empirical cuando hay ≥7 días válidos de ingesta
+      const validIntakeDays = historyRawList.slice(0, 14).filter(r => parseInt(r.intake_kcal, 10) > 500).length;
+      let empiricalTdee = dynamicTdee;
+      if (validIntakeDays >= 7) {
+        const recentIntakes = historyRawList.slice(0, 7).map(r => parseInt(r.intake_kcal, 10) || 0).filter(v => v > 500);
+        const avgIntake = recentIntakes.length ? recentIntakes.reduce((a, b) => a + b, 0) / recentIntakes.length : dynamicTdee;
+        // Empirical TDEE ≈ avg intake + TEF (assuming weight stable)
+        empiricalTdee = Math.round(avgIntake + tefEstimate);
+        // Blend 50/50 theoretical + empirical
+        dynamicTdee = Math.round((dynamicTdee + empiricalTdee) / 2);
+        // Recalculate targets with blended TDEE
+        rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
+        targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
+        targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
+      }
+
+      // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO (MBE: clean VO2max, 0.06 deltaRhr, lnRmssd)
       const hrMax = 208 - (0.7 * chronologicalAge);
-      const vo2Max = +((15.3 * (hrMax / meanRhr)) * (ffmPct / 79.0)).toFixed(1);
+      // VO2max limpio (Uth): sin modificador FFM para evitar colinealidad
+      const vo2Max = +(15.3 * (hrMax / meanRhr)).toFixed(1);
 
       const deltaVo2 = +Math.max(-3.2, Math.min(2.5, -0.18 * (vo2Max - 43.0))).toFixed(1);
-      const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.12 * (meanRhr - 60.0))).toFixed(1);
+      // deltaRhr coefficient reduced from 0.12 to 0.06
+      const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.06 * (meanRhr - 60.0))).toFixed(1);
       const deltaFfm = +Math.max(-2.2, Math.min(2.2, -0.16 * (ffmPct - 79.0))).toFixed(1);
       const deltaSleep = +Math.max(-1.5, Math.min(1.8, -0.025 * (sleepRegularityPct - 78) - 0.25 * ((sleepMissing ? 7.2 : tstMin / 60.0) - 7.2))).toFixed(1);
       const avgSteps7d = meanArr([steps, ...historyRawList.slice(0, 6).map(r => parseInt(r.steps_count, 10) || 7500)]);
       const deltaAct = +Math.max(-1.8, Math.min(1.5, -0.18 * ((avgSteps7d - 6500) / 1000.0) - (workoutMin >= 30 ? 0.35 : 0.0))).toFixed(1);
+      // lnRmssd impact: lower lnRMSSD = older physiological age
+      const deltaLnRmssd = +Math.max(-1.5, Math.min(1.5, -0.25 * (meanLn - 3.9))).toFixed(1);
 
-      const totalAgeDelta = +(deltaVo2 + deltaRhr + deltaFfm + deltaSleep + deltaAct).toFixed(1);
+      const totalAgeDelta = +(deltaVo2 + deltaRhr + deltaFfm + deltaSleep + deltaAct + deltaLnRmssd).toFixed(1);
       const argonAge = +(chronologicalAge + totalAgeDelta).toFixed(1);
       const paceOfAging = +Math.max(0.55, Math.min(1.65, 1.0 + (0.09 * totalAgeDelta))).toFixed(2);
 
@@ -1571,6 +1664,7 @@
         optimal_bedtime_start: fmtTime(startMin),
         optimal_bedtime_end: fmtTime(endMin),
         steps_count: steps,
+        steps_net: stepsNet,
         pickleball_or_gym_minutes: workoutMin,
         session_rpe: sRpe,
         hr_zones_minutes: zones,
@@ -1601,6 +1695,14 @@
         delta_ffm_years: deltaFfm,
         delta_sleep_years: deltaSleep,
         delta_act_years: deltaAct,
+        delta_lnrmssd_years: deltaLnRmssd,
+        // MBE new fields
+        dynamic_rmssd_cap_ms: dynamicRmssdCap,
+        cv_lnrmssd_7d_pct: cvLnRmssd7,
+        swc_lnrmssd: swcLnRmssd,
+        acwr_penalty_strain: +acwrPenalty.toFixed(2),
+        tef_kcal: tefEstimate,
+        empirical_tdee_kcal: empiricalTdee,
         clinical_coach_notes: coachNote
       };
     }
