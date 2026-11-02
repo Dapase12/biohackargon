@@ -412,7 +412,7 @@ function extractHealthConnectByDate_(payload) {
           }
           if (durMin >= 120 && durMin <= 840 && durMin >= (sleepBucket.sleep_total_min || 0)) {
             sleepBucket.sleep_total_min = durMin;
-            sleepBucket.sleep_tib_min = Math.round(durMin * 1.06);
+            sleepBucket.sleep_tib_min = Math.round(durMin / 0.87);
           }
         }
       }
@@ -465,6 +465,12 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
   }
 
   const historyRows = supabaseGet_(`daily_raw_biometrics?log_date=lt.${dateStr}&order=log_date.desc&limit=14`);
+  // Fetch computed history for ACWR (strain_score)
+  const computedHistoryRows = supabaseGet_(`computed_daily_scores?log_date=lt.${dateStr}&order=log_date.desc&limit=14`);
+  // Merge strain_score into historyRows
+  const computedMap = new Map(computedHistoryRows.map(r => [r.log_date, r.strain_score]));
+  historyRows.forEach(r => { r.strain_score = computedMap.get(r.log_date) || 0; });
+
   const lastKnownWeight = historyRows.length > 0 && historyRows[0].weight_kg ? parseFloat(historyRows[0].weight_kg) : 86.80;
   const lastKnownBf = historyRows.length > 0 && historyRows[0].body_fat_pct ? parseFloat(historyRows[0].body_fat_pct) : 24.4;
 
@@ -548,7 +554,7 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
     resp_rate_brpm: extractedDay.resp_list.length ? +avg(extractedDay.resp_list).toFixed(1) : (existing.resp_rate_brpm || 0),
     spo2_pct: extractedDay.spo2_list.length ? +avg(extractedDay.spo2_list).toFixed(1) : (existing.spo2_pct || 0),
     total_sleep_min: useNewSleep ? newSleepTotal : (prevSleepTotal || 0),
-    time_in_bed_min: useNewSleep ? (extractedDay.sleep_tib_min || Math.round(newSleepTotal * 1.05)) : (existing.time_in_bed_min || 0),
+    time_in_bed_min: useNewSleep ? (extractedDay.sleep_tib_min || Math.round(newSleepTotal / 0.87)) : (existing.time_in_bed_min || 0),
     deep_sleep_min: useNewSleep ? (extractedDay.sleep_deep_min || 0) : (existing.deep_sleep_min || 0),
     rem_sleep_min: useNewSleep ? (extractedDay.sleep_rem_min || 0) : (existing.rem_sleep_min || 0),
     light_sleep_min: useNewSleep ? (extractedDay.sleep_light_min || 0) : (existing.light_sleep_min || 0),
@@ -759,13 +765,18 @@ function computeArgonEngine_(todayRaw, historyRawList, prevComputed) {
       const sdRhr = Math.max(1.5, histRhr.length >= MIN_BASELINE_DAYS ? sdArr(histRhr, meanRhr) : 2.2);
       const meanResp = histResp.length >= MIN_BASELINE_DAYS ? meanArr(histResp) : 14.2;
 
-      // CV semanal lnRMSSD (7 días) y SWC (±0.5*SD_14d) para amortiguar ruido en psi
+      // CV semanal lnRMSSD (7 días) y SWC (0.3 * sdLn_7d) para amortiguar ruido en hrvZ
       const histLn7 = histLn.slice(0, 7);
-      const cvLnRmssd7 = histLn7.length >= 3 ? (sdArr(histLn7, meanArr(histLn7)) / Math.max(0.001, meanArr(histLn7))) * 100 : 0;
-      const swc = 0.5 * sdLn; // Smallest Worthwhile Change
+      const meanLn7 = histLn7.length ? meanArr(histLn7) : meanLn;
+      const sdLn7 = histLn7.length > 1 ? sdArr(histLn7, meanLn7) : sdLn;
+      const cvLnRmssd7 = histLn7.length >= 3 ? (sdLn7 / Math.max(0.001, meanLn7)) * 100 : 0;
+      const swcLnRmssd = 0.3 * sdLn7; // Smallest Worthwhile Change en unidades lnRMSSD
+      const swcZ = 0.3; // SWC en unidades Z-score (0.3 * sdLn / sdLn)
 
       const hrvMissing = !(parseFloat(todayRaw.rmssd_ms) > 0) || (parseFloat(todayRaw.rmssd_ms) === 50 && parseFloat(todayRaw.rhr_bpm) === 54.5);
-      const hrvZ = hrvMissing ? 0 : Math.max(-3, Math.min(3, (lnRmssdToday - meanLn) / sdLn));
+      let hrvZ = hrvMissing ? 0 : Math.max(-3, Math.min(3, (lnRmssdToday - meanLn) / sdLn));
+      // SWC dampening en hrvZ: si |hrvZ| < 0.3, amortigua hacia cero
+      if (Math.abs(hrvZ) < swcZ) hrvZ = hrvZ * (Math.abs(hrvZ) / swcZ);
       const rhrMissing = !(parseFloat(todayRaw.rhr_bpm) > 0) || (parseFloat(todayRaw.rmssd_ms) === 50 && parseFloat(todayRaw.rhr_bpm) === 54.5);
       const rhrZ = rhrMissing ? 0 : Math.max(-3, Math.min(3, (rhrToday - meanRhr) / sdRhr));
       const penalty = (spo2Today < 94.0 ? 1.0 : 0.0) + (respToday > 16.8 ? 0.85 : 0.0);
@@ -776,16 +787,14 @@ function computeArgonEngine_(todayRaw, historyRawList, prevComputed) {
       )));
 
       const sleepZ = sleepMissing ? 0 : Math.max(-3, Math.min(2, (sleepArchScore - 92.0) / 10.0));
-      // Amortiguación psi con SWC: reduce impacto si cambio < SWC
-      const psiRaw = (0.55 * hrvZ) - (0.20 * rhrZ) + (0.25 * sleepZ) - penalty;
-      const psi = Math.abs(psiRaw) < swc ? psiRaw * 0.5 : psiRaw;
+      const psi = (0.55 * hrvZ) - (0.20 * rhrZ) + (0.25 * sleepZ) - penalty;
       const recoveryScore = Math.min(99, Math.max(1, Math.round(100.0 / (1.0 + Math.exp(-1.15 * psi)))));
 
       // ACWR: carga aguda 3d vs crónica 14d -> ajuste recommended_max_strain
       let acwrPenalty = 0;
       if (historyRawList.length >= 14) {
         const acuteLoad = historyRawList.slice(0, 3).reduce((sum, r) => sum + (parseFloat(r.strain_score) || 0), 0) / 3;
-        const chronicLoad = historyRawList.slice(3, 14).reduce((sum, r) => sum + (parseFloat(r.strain_score) || 0), 0) / 11;
+        const chronicLoad = historyRawList.slice(0, 14).reduce((sum, r) => sum + (parseFloat(r.strain_score) || 0), 0) / 14;
         const acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : 1;
         if (acwr > 1.3) acwrPenalty = Math.min(2.0, (acwr - 1.3) * 5); // máx -2.0 puntos
       }
@@ -812,29 +821,39 @@ function computeArgonEngine_(todayRaw, historyRawList, prevComputed) {
       // TEF exacto por macronutriente (Atwater): proteína 25%, carbs 8%, grasa 2%
       const targetProt = Math.round(2.35 * ffmKg);
       const targetFat = Math.round(0.72 * rawW);
-      const targetCarbs = Math.max(45, Math.round((0 - (targetProt * 4) - (targetFat * 9)) / 4)); // temporal, recalculado abajo
 
-      // TEF = (TMB * 1.05) + (prot_g * 4 * 0.25) + (carbs_g * 4 * 0.08) + (fat_g * 9 * 0.02)
-      // Iteramos una vez para estimar TEF con macros objetivo
-      const tefEstimate = (tmbFeelfit * 1.05) + (targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02);
-      const rmrActive = tefEstimate;
+      // TDEE teórico inicial (sin TEF en rmrActive)
+      const rmrActive = tmbFeelfit * 1.15;
+      let dynamicTdee = Math.round(rmrActive + neatStepsKcal + netExerciseKcal);
+
+      // Target macros iniciales (para estimar TEF teórico)
+      const desiredDeficit = strainScore >= 14.0 ? 500 : 550;
+      let rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
+      let targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
+
+      // TEF teórico (basado en macros objetivo)
+      let tefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
 
       // TDEE adaptativo 14d: blend 50% teórico + 50% empírico si hay ≥7 días con intake ≥1200
-      let dynamicTdee = Math.round(rmrActive + neatStepsKcal + netExerciseKcal);
+      let empiricalTdee = dynamicTdee;
+      let meanIntake = 0;
+      let deltaTrendW = 0;
       const validIntakeDays = historyRawList.slice(0, 14).filter(r => parseInt(r.intake_kcal, 10) >= 1200);
       if (validIntakeDays.length >= 7) {
-        const meanIntake = validIntakeDays.reduce((s, r) => s + parseInt(r.intake_kcal, 10), 0) / validIntakeDays.length;
-        const trendW = parseFloat(prevComputed?.trend_weight_kg || todayRaw.weight_kg || rawW);
+        meanIntake = validIntakeDays.reduce((s, r) => s + parseInt(r.intake_kcal, 10), 0) / validIntakeDays.length;
+        // Usar trendW ya calculado arriba (línea ~740), no redeclarar
         const prevTrendW = historyRawList.length >= 14 ? parseFloat(historyRawList[13].weight_kg || trendW) : trendW;
-        const deltaTrendW = trendW - prevTrendW;
-        const empiricalTdee = meanIntake - (deltaTrendW * 7700 / validIntakeDays.length);
+        deltaTrendW = trendW - prevTrendW;
+        empiricalTdee = Math.round(meanIntake - (deltaTrendW * 7700 / validIntakeDays.length));
         dynamicTdee = Math.round((dynamicTdee + empiricalTdee) / 2);
+        // Recalcular targets con TDEE blended
+        rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
+        targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
+        // Recalcular TEF con macros finales
+        tefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
       }
 
-      const desiredDeficit = strainScore >= 14.0 ? 500 : 550;
-      const rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
-
-      const targetCarbsFinal = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
+      const targetCarbsFinal = targetCarbs;
       const targetKcal = (targetProt * 4) + (targetCarbsFinal * 4) + (targetFat * 9);
 
       const mealsLog = Array.isArray(todayRaw.meals_log_json) ? todayRaw.meals_log_json : [];
@@ -963,10 +982,10 @@ function computeArgonEngine_(todayRaw, historyRawList, prevComputed) {
         steps_net: stepsNet,
         dynamic_rmssd_cap_ms: +dynamicRmssdCap.toFixed(1),
         cv_lnrmssd_7d_pct: +cvLnRmssd7.toFixed(1),
-        swc_lnrmssd: +swc.toFixed(3),
+        swc_lnrmssd: +swcLnRmssd.toFixed(3),
         acwr_penalty_strain: +acwrPenalty.toFixed(2),
         tef_kcal: +tefEstimate.toFixed(1),
-        empirical_tdee_kcal: validIntakeDays.length >= 7 ? Math.round(meanIntake - (deltaTrendW * 7700 / validIntakeDays.length)) : null
+        empirical_tdee_kcal: validIntakeDays.length >= 7 ? empiricalTdee : null
       };
     }
 

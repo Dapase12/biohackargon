@@ -1341,8 +1341,9 @@
       const sRpe = Math.max(0, parseFloat(todayRaw.session_rpe) || (workoutMin > 0 ? 7.0 : 0));
       const nightAwakeH = Math.max(0, parseFloat(todayRaw.night_awake_shift_hours) || 0);
 
-      // Pasos netos (descuento pasos deportivos ~85 pasos/min ejercicio) para NEAT
-      const stepsNet = Math.max(0, steps - workoutMin * 85);
+      // Pasos netos: descuenta pasos de caminata (Zepp walking_steps o estimado 130 pasos/min ejercicio)
+      const walkingSteps = parseInt(todayRaw.walking_steps, 10) || (workoutMin > 0 ? Math.round(workoutMin * 130) : 0);
+      const stepsNet = Math.max(0, steps - walkingSteps);
 
       const ambientZ1 = Math.round(Math.max(0, stepsNet - 2000) / 320);
 
@@ -1351,19 +1352,21 @@
       if (todayRaw.hr_zones_real === true && todayRaw.hr_zones_minutes) {
         zones = todayRaw.hr_zones_minutes;
       } else {
-        // Distribución base
-        let baseZ1 = ambientZ1 + Math.round(workoutMin * 0.22);
-        let baseZ2 = Math.round(workoutMin * 0.33);
+        // Distribución base: separar ambientZ1 (caminata diaria) de workout Z1
+        const workoutZ1 = Math.round(workoutMin * 0.22);
+        const workoutZ2 = Math.round(workoutMin * 0.33);
+        let baseZ1 = ambientZ1 + workoutZ1;
+        let baseZ2 = workoutZ2;
         let baseZ3 = Math.round(workoutMin * 0.20);
         let baseZ4 = Math.round(workoutMin * 0.17);
         let baseZ5 = Math.round(workoutMin * 0.08);
 
-        // Redistribución Z1-Z2 -> Z3-Z5 proporcional al RPE (RPE 1-10, centro 5.5)
+        // Redistribución solo de workout Z1-Z2 -> Z3-Z5 proporcional al RPE (no toca ambientZ1)
         if (workoutMin > 0 && sRpe > 0) {
           const rpeFactor = Math.max(0, Math.min(1, (sRpe - 1) / 9)); // 0-1
-          const shiftAmount = (baseZ1 + baseZ2) * rpeFactor * 0.5; // máx 50% del peso bajo
-          baseZ1 = Math.round(baseZ1 * (1 - rpeFactor * 0.5));
-          baseZ2 = Math.round(baseZ2 * (1 - rpeFactor * 0.5));
+          const shiftAmount = (workoutZ1 + workoutZ2) * rpeFactor * 0.5; // máx 50% del peso bajo del workout
+          const newWorkoutZ1 = Math.round(workoutZ1 * (1 - rpeFactor * 0.5));
+          const newWorkoutZ2 = Math.round(workoutZ2 * (1 - rpeFactor * 0.5));
           const totalHigh = baseZ3 + baseZ4 + baseZ5;
           if (totalHigh > 0) {
             baseZ3 += Math.round(shiftAmount * (baseZ3 / totalHigh));
@@ -1374,6 +1377,8 @@
             baseZ4 += Math.round(shiftAmount * 0.3);
             baseZ5 += Math.round(shiftAmount * 0.2);
           }
+          baseZ1 = ambientZ1 + newWorkoutZ1;
+          baseZ2 = newWorkoutZ2;
         }
         zones = { z1: baseZ1, z2: baseZ2, z3: baseZ3, z4: baseZ4, z5: baseZ5 };
       }
@@ -1494,7 +1499,10 @@
       const swcLnRmssd = +(0.3 * sdLn7).toFixed(3);
 
       const hrvMissing = !(parseFloat(todayRaw.rmssd_ms) > 0) || (parseFloat(todayRaw.rmssd_ms) === 50 && parseFloat(todayRaw.rhr_bpm) === 54.5);
-      const hrvZ = hrvMissing ? 0 : Math.max(-3, Math.min(3, (lnRmssdToday - meanLn) / sdLn));
+      let hrvZ = hrvMissing ? 0 : Math.max(-3, Math.min(3, (lnRmssdToday - meanLn) / sdLn));
+      // SWC dampening: if |hrvZ| < 0.3 (SWC in Z units), dampen toward zero
+      const swcZ = 0.3;
+      if (Math.abs(hrvZ) < swcZ) hrvZ = hrvZ * (Math.abs(hrvZ) / swcZ);
       const rhrMissing = !(parseFloat(todayRaw.rhr_bpm) > 0) || (parseFloat(todayRaw.rmssd_ms) === 50 && parseFloat(todayRaw.rhr_bpm) === 54.5);
       const rhrZ = rhrMissing ? 0 : Math.max(-3, Math.min(3, (rhrToday - meanRhr) / sdRhr));
       const penalty = (spo2Today < 94.0 ? 1.0 : 0.0) + (respToday > 16.8 ? 0.85 : 0.0);
@@ -1531,13 +1539,13 @@
       } else {
         recMaxStrain = +(10.0 + (recoveryScore - 34) * 0.13).toFixed(1);
       }
+      // Aplicar penalización ACWR a la strain máxima recomendada
+      recMaxStrain = Math.max(4.0, +(recMaxStrain - acwrPenalty).toFixed(1));
 
       // E. NUTRICIÓN, BITÁCORA DE COMIDAS Y LEY DE ATWATER (MBE: stepsNet, exact TEF, adaptive TDEE)
-      // stepsNet = total steps - walking steps (Zepp walking_steps or estimated from active time)
-      const walkingSteps = parseInt(todayRaw.walking_steps, 10) || (workoutMin > 0 ? Math.round(workoutMin * 130) : 0);
-      const stepsNet = Math.max(0, steps - walkingSteps);
+      // stepsNet ya calculado arriba (steps - walkingSteps)
 
-      // Theoretical TDEE (before adaptive blend)
+      // Theoretical TDEE (before adaptive blend) - TMB * 1.15 sin TEF
       const rmrActive = tmbFeelfit * 1.15;
       const neatStepsKcal = Math.max(0, (steps - 2500) * 0.035);
       const netExerciseKcal = workoutMin * (strainScore >= 13 ? 5.5 : 4.2);
@@ -1550,6 +1558,9 @@
       const targetFat = Math.round(0.72 * rawW);
       let targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
       let targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
+
+      // TEF teórico (basado en macros objetivo)
+      let tefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
 
       // Determine real intake
       const mealsLog = Array.isArray(todayRaw.meals_log_json) ? todayRaw.meals_log_json : [];
@@ -1571,16 +1582,20 @@
       }
 
       // TEF exacto: proteína 25%, carbs 8%, grasa 2% (basado en ingesta REAL)
-      const tefEstimate = Math.round((realProt * 4 * 0.25) + (realCarbs * 4 * 0.08) + (realFat * 9 * 0.02));
+      tefEstimate = Math.round((realProt * 4 * 0.25) + (realCarbs * 4 * 0.08) + (realFat * 9 * 0.02));
 
       // Adaptive TDEE: blend theoretical + empirical cuando hay ≥7 días válidos de ingesta
-      const validIntakeDays = historyRawList.slice(0, 14).filter(r => parseInt(r.intake_kcal, 10) > 500).length;
+      // Empirical TDEE = meanIntake - (deltaWeight * 7700 / days)  [equilibrio energético]
+      const validIntakeDays = historyRawList.slice(0, 14).filter(r => parseInt(r.intake_kcal, 10) >= 1200);
       let empiricalTdee = dynamicTdee;
-      if (validIntakeDays >= 7) {
-        const recentIntakes = historyRawList.slice(0, 7).map(r => parseInt(r.intake_kcal, 10) || 0).filter(v => v > 500);
-        const avgIntake = recentIntakes.length ? recentIntakes.reduce((a, b) => a + b, 0) / recentIntakes.length : dynamicTdee;
-        // Empirical TDEE ≈ avg intake + TEF (assuming weight stable)
-        empiricalTdee = Math.round(avgIntake + tefEstimate);
+      let meanIntake = 0;
+      let deltaTrendW = 0;
+      if (validIntakeDays.length >= 7) {
+        meanIntake = validIntakeDays.reduce((s, r) => s + parseInt(r.intake_kcal, 10), 0) / validIntakeDays.length;
+        // trendW ya calculado arriba (EWMA)
+        const prevTrendW = historyRawList.length >= 14 ? parseFloat(historyRawList[13].weight_kg || trendW) : trendW;
+        deltaTrendW = trendW - prevTrendW;
+        empiricalTdee = Math.round(meanIntake - (deltaTrendW * 7700 / validIntakeDays.length));
         // Blend 50/50 theoretical + empirical
         dynamicTdee = Math.round((dynamicTdee + empiricalTdee) / 2);
         // Recalculate targets with blended TDEE
@@ -1595,16 +1610,14 @@
       const vo2Max = +(15.3 * (hrMax / meanRhr)).toFixed(1);
 
       const deltaVo2 = +Math.max(-3.2, Math.min(2.5, -0.18 * (vo2Max - 43.0))).toFixed(1);
-      // deltaRhr coefficient reduced from 0.12 to 0.06
-      const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.06 * (meanRhr - 60.0))).toFixed(1);
+      // Desacople FC basal: coeficiente 0.06 + impacto estabilidad autonómica (lnRmssd)
+      const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.06 * (meanRhr - 60.0) - 0.15 * (meanLn - 3.9))).toFixed(1);
       const deltaFfm = +Math.max(-2.2, Math.min(2.2, -0.16 * (ffmPct - 79.0))).toFixed(1);
       const deltaSleep = +Math.max(-1.5, Math.min(1.8, -0.025 * (sleepRegularityPct - 78) - 0.25 * ((sleepMissing ? 7.2 : tstMin / 60.0) - 7.2))).toFixed(1);
       const avgSteps7d = meanArr([steps, ...historyRawList.slice(0, 6).map(r => parseInt(r.steps_count, 10) || 7500)]);
       const deltaAct = +Math.max(-1.8, Math.min(1.5, -0.18 * ((avgSteps7d - 6500) / 1000.0) - (workoutMin >= 30 ? 0.35 : 0.0))).toFixed(1);
-      // lnRmssd impact: lower lnRMSSD = older physiological age
-      const deltaLnRmssd = +Math.max(-1.5, Math.min(1.5, -0.25 * (meanLn - 3.9))).toFixed(1);
 
-      const totalAgeDelta = +(deltaVo2 + deltaRhr + deltaFfm + deltaSleep + deltaAct + deltaLnRmssd).toFixed(1);
+      const totalAgeDelta = +(deltaVo2 + deltaRhr + deltaFfm + deltaSleep + deltaAct).toFixed(1);
       const argonAge = +(chronologicalAge + totalAgeDelta).toFixed(1);
       const paceOfAging = +Math.max(0.55, Math.min(1.65, 1.0 + (0.09 * totalAgeDelta))).toFixed(2);
 
@@ -1695,7 +1708,6 @@
         delta_ffm_years: deltaFfm,
         delta_sleep_years: deltaSleep,
         delta_act_years: deltaAct,
-        delta_lnrmssd_years: deltaLnRmssd,
         // MBE new fields
         dynamic_rmssd_cap_ms: dynamicRmssdCap,
         cv_lnrmssd_7d_pct: cvLnRmssd7,
