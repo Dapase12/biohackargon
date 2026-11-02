@@ -431,6 +431,15 @@
                     <span class="text-[10px] text-purple-300 font-mono">Sueño: <strong id="rec-sleep-perf">--%</strong></span>
                   </div>
                 </div>
+
+                <!-- CV 7d / SWC (MBE) -->
+                <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/80">
+                  <div class="text-[10px] text-slate-400">CV lnRMSSD 7d / SWC</div>
+                  <div class="flex items-baseline justify-between mt-1">
+                    <span id="metric-cv7d" class="text-base font-black text-cyan-400 font-mono">--%</span>
+                    <span id="metric-swc" class="text-[10px] text-slate-400 font-mono">SWC: --</span>
+                  </div>
+                </div>
               </div>
             </div>
           </details>
@@ -485,6 +494,10 @@
                 <div class="flex justify-between items-center p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/70">
                   <span class="text-slate-300">⚡ Volumen Fuerza / Pasos</span>
                   <span id="activity-age-impact" class="font-mono font-bold text-emerald-400">--</span>
+                </div>
+                <div class="flex justify-between items-center p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/70">
+                  <span class="text-slate-300">🧘 Tono Vagal (lnRMSSD)</span>
+                  <span id="lnrmssd-age-impact" class="font-mono font-bold text-cyan-400">--</span>
                 </div>
               </div>
             </div>
@@ -647,7 +660,10 @@
                 <h2 class="text-xs font-extrabold uppercase tracking-wider text-cyan-400">⚡ Carga de Esfuerzo 4D (Strain)</h2>
                 <p class="text-[10px] text-slate-400">Pesas • Pickleball • NEAT • Guardia Médica</p>
               </div>
-              <span id="shift-badge" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">Sin Guardia Nocturna</span>
+              <div class="flex items-center space-x-2">
+                <span id="acwr-badge" class="text-[9px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">ACWR: --</span>
+                <span id="shift-badge" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">Sin Guardia Nocturna</span>
+              </div>
             </div>
 
             <div class="grid grid-cols-3 gap-2">
@@ -680,8 +696,9 @@
                 <span id="strain-strength-time" class="text-xs font-bold text-emerald-400 font-mono">0:00</span>
               </div>
               <div class="p-2 rounded-xl bg-slate-950/60 border border-slate-800/70">
-                <span class="text-[9px] text-slate-400 block">Pasos Hoy</span>
+                <span class="text-[9px] text-slate-400 block">Pasos Totales</span>
                 <span id="load-steps" class="text-xs font-bold text-cyan-300 font-mono">--</span>
+                <span id="load-steps-net" class="text-[9px] text-emerald-400 block">NEAT: --</span>
               </div>
             </div>
           </section>
@@ -720,6 +737,11 @@
                 <span class="text-[10px] text-cyan-300 block">Meta Diaria</span>
                 <span id="nutri-target-kcal" class="text-base font-black text-cyan-300 font-mono">-- kcal</span>
                 <span id="nutri-intake-kcal" class="text-[10px] text-white font-semibold block">Comido: 0</span>
+              </div>
+              <span class="text-slate-500 font-bold">+</span>
+              <div class="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                <span class="text-[10px] text-emerald-300 block">TEF (Efecto Térmico)</span>
+                <span id="nutri-tef" class="text-base font-black text-emerald-300 font-mono">-- kcal</span>
               </div>
             </div>
 
@@ -1341,8 +1363,8 @@
       const sRpe = Math.max(0, parseFloat(todayRaw.session_rpe) || (workoutMin > 0 ? 7.0 : 0));
       const nightAwakeH = Math.max(0, parseFloat(todayRaw.night_awake_shift_hours) || 0);
 
-      // Pasos netos: descuenta pasos de caminata (Zepp walking_steps o estimado 130 pasos/min ejercicio)
-      const walkingSteps = parseInt(todayRaw.walking_steps, 10) || (workoutMin > 0 ? Math.round(workoutMin * 130) : 0);
+      // Pasos netos: descuenta pasos de caminata (Zepp walking_steps o estimado 85 pasos/min ejercicio)
+      const walkingSteps = parseInt(todayRaw.walking_steps, 10) || (workoutMin > 0 ? Math.round(workoutMin * 85) : 0);
       const stepsNet = Math.max(0, steps - walkingSteps);
 
       const ambientZ1 = Math.round(Math.max(0, stepsNet - 2000) / 320);
@@ -1545,22 +1567,31 @@
       // E. NUTRICIÓN, BITÁCORA DE COMIDAS Y LEY DE ATWATER (MBE: stepsNet, exact TEF, adaptive TDEE)
       // stepsNet ya calculado arriba (steps - walkingSteps)
 
-      // Theoretical TDEE (before adaptive blend) - TMB * 1.15 sin TEF
-      const rmrActive = tmbFeelfit * 1.15;
-      const neatStepsKcal = Math.max(0, (steps - 2500) * 0.035);
+      // Two-step TEF: preliminary TDEE for target macros -> TEF from target macros -> rmrActive = TMB*1.05 + TEF -> dynamicTDEE
+      // Step 1: Preliminary TDEE (without TEF in rmrActive)
+      const prelimRmrActive = tmbFeelfit * 1.15;
+      const neatStepsKcal = Math.max(0, (stepsNet - 2500) * 0.035);
       const netExerciseKcal = workoutMin * (strainScore >= 13 ? 5.5 : 4.2);
-      let dynamicTdee = Math.round(rmrActive + neatStepsKcal + netExerciseKcal);
+      const prelimTdee = Math.round(prelimRmrActive + neatStepsKcal + netExerciseKcal);
 
-      // Target macros from theoretical TDEE (initial)
+      // Step 2: Target macros from preliminary TDEE -> TEF estimate
       const desiredDeficit = strainScore >= 14.0 ? 500 : 550;
-      let rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
+      let rawTargetKcal = Math.min(2450, Math.max(1650, prelimTdee - desiredDeficit));
       const targetProt = Math.round(2.35 * ffmKg);
       const targetFat = Math.round(0.72 * rawW);
       let targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
+      const prelimTefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
+
+      // Step 3: rmrActive with TEF included (TMB * 1.05 + TEF)
+      const rmrActive = Math.round(tmbFeelfit * 1.05 + prelimTefEstimate);
+      let dynamicTdee = Math.round(rmrActive + neatStepsKcal + netExerciseKcal);
+
+      // Target macros from preliminary TDEE (already calculated above in two-step)
+      // desiredDeficit, targetProt, targetFat, targetCarbs, targetKcal, prelimTefEstimate already defined
       let targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
 
-      // TEF teórico (basado en macros objetivo)
-      let tefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
+      // TEF teórico (basado en macros objetivo) - prelimTefEstimate already calculated
+      let tefEstimate = prelimTefEstimate;
 
       // Determine real intake
       const mealsLog = Array.isArray(todayRaw.meals_log_json) ? todayRaw.meals_log_json : [];
@@ -1584,40 +1615,53 @@
       // TEF exacto: proteína 25%, carbs 8%, grasa 2% (basado en ingesta REAL)
       tefEstimate = Math.round((realProt * 4 * 0.25) + (realCarbs * 4 * 0.08) + (realFat * 9 * 0.02));
 
-      // Adaptive TDEE: blend theoretical + empirical cuando hay ≥7 días válidos de ingesta
-      // Empirical TDEE = meanIntake - (deltaWeight * 7700 / days)  [equilibrio energético]
+      // Adaptive TDEE: robust empirical blend with oldestWithWeight search in 14-day window
       const validIntakeDays = historyRawList.slice(0, 14).filter(r => parseInt(r.intake_kcal, 10) >= 1200);
       let empiricalTdee = dynamicTdee;
       let meanIntake = 0;
       let deltaTrendW = 0;
       if (validIntakeDays.length >= 7) {
         meanIntake = validIntakeDays.reduce((s, r) => s + parseInt(r.intake_kcal, 10), 0) / validIntakeDays.length;
-        // trendW ya calculado arriba (EWMA)
-        const prevTrendW = historyRawList.length >= 14 ? parseFloat(historyRawList[13].weight_kg || trendW) : trendW;
+        // Find oldest day with weight in 14-day window for robust spanDays
+        let oldestWithWeight = null;
+        for (let i = historyRawList.length - 1; i >= 0 && i >= historyRawList.length - 14; i--) {
+          const w = parseFloat(historyRawList[i].weight_kg);
+          if (Number.isFinite(w) && w >= 65) { oldestWithWeight = { w, idx: i }; break; }
+        }
+        const spanDays = oldestWithWeight ? (validIntakeDays.length - 1 - oldestWithWeight.idx) : validIntakeDays.length;
+        const safeSpan = Math.max(7, Math.min(14, spanDays));
+        const prevTrendW = oldestWithWeight ? oldestWithWeight.w : trendW;
         deltaTrendW = trendW - prevTrendW;
-        empiricalTdee = Math.round(meanIntake - (deltaTrendW * 7700 / validIntakeDays.length));
+        empiricalTdee = Math.round(meanIntake - (deltaTrendW * 7700 / safeSpan));
+        // Safety bounds: empirical TDEE must be within ±25% of theoretical
+        const lowerBound = Math.round(dynamicTdee * 0.75);
+        const upperBound = Math.round(dynamicTdee * 1.25);
+        empiricalTdee = Math.max(lowerBound, Math.min(upperBound, empiricalTdee));
         // Blend 50/50 theoretical + empirical
         dynamicTdee = Math.round((dynamicTdee + empiricalTdee) / 2);
         // Recalculate targets with blended TDEE
         rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
         targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
         targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
+        // Recalculate TEF with final macros
+        tefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
       }
 
-      // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO (MBE: clean VO2max, 0.06 deltaRhr, lnRmssd)
+      // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO (MBE: clean VO2max, 0.06 deltaRhr, -0.25 deltaLnRmssd separated)
       const hrMax = 208 - (0.7 * chronologicalAge);
       // VO2max limpio (Uth): sin modificador FFM para evitar colinealidad
       const vo2Max = +(15.3 * (hrMax / meanRhr)).toFixed(1);
 
       const deltaVo2 = +Math.max(-3.2, Math.min(2.5, -0.18 * (vo2Max - 43.0))).toFixed(1);
-      // Desacople FC basal: coeficiente 0.06 + impacto estabilidad autonómica (lnRmssd)
-      const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.06 * (meanRhr - 60.0) - 0.15 * (meanLn - 3.9))).toFixed(1);
+      // Desacople FC basal: deltaRhr (0.06 * (meanRhr - 60)) SEPARADO de deltaLnRmssd (-0.25 * (meanLn - 3.9))
+      const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.06 * (meanRhr - 60.0))).toFixed(1);
+      const deltaLnRmssd = +Math.max(-2.2, Math.min(2.2, -0.25 * (meanLn - 3.9))).toFixed(1);
       const deltaFfm = +Math.max(-2.2, Math.min(2.2, -0.16 * (ffmPct - 79.0))).toFixed(1);
       const deltaSleep = +Math.max(-1.5, Math.min(1.8, -0.025 * (sleepRegularityPct - 78) - 0.25 * ((sleepMissing ? 7.2 : tstMin / 60.0) - 7.2))).toFixed(1);
       const avgSteps7d = meanArr([steps, ...historyRawList.slice(0, 6).map(r => parseInt(r.steps_count, 10) || 7500)]);
       const deltaAct = +Math.max(-1.8, Math.min(1.5, -0.18 * ((avgSteps7d - 6500) / 1000.0) - (workoutMin >= 30 ? 0.35 : 0.0))).toFixed(1);
 
-      const totalAgeDelta = +(deltaVo2 + deltaRhr + deltaFfm + deltaSleep + deltaAct).toFixed(1);
+      const totalAgeDelta = +(deltaVo2 + deltaRhr + deltaLnRmssd + deltaFfm + deltaSleep + deltaAct).toFixed(1);
       const argonAge = +(chronologicalAge + totalAgeDelta).toFixed(1);
       const paceOfAging = +Math.max(0.55, Math.min(1.65, 1.0 + (0.09 * totalAgeDelta))).toFixed(2);
 
@@ -1705,6 +1749,7 @@
         pace_of_aging_x: paceOfAging,
         delta_vo2_years: deltaVo2,
         delta_rhr_years: deltaRhr,
+        delta_lnrmssd_years: deltaLnRmssd,
         delta_ffm_years: deltaFfm,
         delta_sleep_years: deltaSleep,
         delta_act_years: deltaAct,
@@ -1803,6 +1848,10 @@
       document.getElementById('nutri-target-kcal').textContent = `${record.target_kcal} kcal`;
       document.getElementById('nutri-intake-kcal').textContent = `Comido: ${record.intake_kcal}`;
 
+      // MBE: TEF display
+      const tefEl = document.getElementById('nutri-tef');
+      if (tefEl) tefEl.textContent = `${record.tef_kcal || 0} kcal`;
+
       document.getElementById('macro-prot-text').textContent = `${record.intake_protein_g} / ${record.target_protein_g} g`;
       document.getElementById('macro-carb-text').textContent = `${record.intake_carbs_g} / ${record.target_carbs_g} g`;
       document.getElementById('macro-fat-text').textContent = `${record.intake_fat_g} / ${record.target_fat_g} g`;
@@ -1876,6 +1925,12 @@
       document.getElementById('metric-spo2').textContent = `${record.spo2_pct}%`;
       document.getElementById('rec-sleep-perf').textContent = `${sleepPct}%`;
 
+      // MBE: CV 7d / SWC
+      const cv7dEl = document.getElementById('metric-cv7d');
+      if (cv7dEl) cv7dEl.textContent = `${record.cv_lnrmssd_7d_pct || 0}%`;
+      const swcEl = document.getElementById('metric-swc');
+      if (swcEl) swcEl.textContent = `SWC: ${record.swc_lnrmssd ? record.swc_lnrmssd.toFixed(3) : '--'}`;
+
       // 4. Calificación del Sueño (4 Pilares Clínicos)
       const tstH = Math.floor(record.total_sleep_min / 60);
       const tstM = record.total_sleep_min % 60;
@@ -1925,6 +1980,20 @@
         shiftBadge.className = 'text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400';
       }
 
+      // MBE: ACWR badge
+      const acwrBadge = document.getElementById('acwr-badge');
+      if (acwrBadge) {
+        const acwrPenalty = record.acwr_penalty_strain || 0;
+        acwrBadge.textContent = `ACWR: ${acwrPenalty.toFixed(2)}`;
+        acwrBadge.className = acwrPenalty > 0.5
+          ? 'text-[9px] px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40'
+          : 'text-[9px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+      }
+
+      // MBE: NEAT steps (steps_net)
+      const stepsNetEl = document.getElementById('load-steps-net');
+      if (stepsNetEl) stepsNetEl.textContent = `NEAT: ${(record.steps_net || 0).toLocaleString()}`;
+
       // 6. Edad Fisiológica ARGON
       document.getElementById('argon-age-val').textContent = record.argon_physiological_age.toFixed(1);
       const ageDeltaEl = document.getElementById('argon-age-delta-badge');
@@ -1940,6 +2009,9 @@
       document.getElementById('ffm-age-impact').textContent = fmtDeltaYears(record.delta_ffm_years);
       document.getElementById('sleep-age-impact').textContent = fmtDeltaYears(record.delta_sleep_years);
       document.getElementById('activity-age-impact').textContent = fmtDeltaYears(record.delta_act_years);
+      // MBE: Vagal tone (delta_lnrmssd_years)
+      const lnrmssdAgeEl = document.getElementById('lnrmssd-age-impact');
+      if (lnrmssdAgeEl) lnrmssdAgeEl.textContent = fmtDeltaYears(record.delta_lnrmssd_years);
 
       const sparkSvg = (vals, col, base) => {
         const v = vals.map(Number).filter(x => Number.isFinite(x));
@@ -2435,6 +2507,12 @@
 
         addCheck('6. Bitácora Nutricional Persistente (Zepp / Manual)', true,
           `Comido hoy: ${rec.intake_kcal} kcal (${rec.intake_protein_g}g P / ${rec.intake_carbs_g}g C / ${rec.intake_fat_g}g G) en ${(rec.meals_log_json || []).length} registros.`);
+
+        // Check 7: MBE v6.0 New Fields Integrity
+        const mbeKeys = ['cv_lnrmssd_7d_pct', 'swc_lnrmssd', 'acwr_penalty_strain', 'tef_kcal', 'empirical_tdee_kcal', 'delta_lnrmssd_years', 'steps_net', 'dynamic_rmssd_cap_ms'];
+        const mbeNan = mbeKeys.filter(k => rec[k] === null || rec[k] === undefined || isNaN(rec[k]));
+        addCheck('7. Integridad MBE v6.0 (CV/SWC/ACWR/TEF/Vagal/NEAT)', mbeNan.length === 0,
+          mbeNan.length === 0 ? 'Todos los campos MBE v6.0 son números válidos.' : `Faltantes/NaN: ${mbeNan.join(', ')}`);
       }
 
       let webhookHtml = '<div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400">Conecta Supabase para inspeccionar webhook_logs.</div>';
