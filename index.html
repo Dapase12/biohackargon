@@ -8,6 +8,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>ARGON v6.0 | Biometría Clínica MBE</title>
   <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
+  <link rel="icon" href="icon-192.png" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="icon" type="image/png" href="icon-192.png" />
 
@@ -203,6 +205,15 @@
       #sync-status-text { display: none; }
       header button { font-size: 10px; }
     }
+  
+    input,textarea{-webkit-user-select:text;user-select:text}
+    .tnum{font-variant-numeric:tabular-nums}
+    .chip{padding:5px 10px;border-radius:12px;font-size:11px;font-weight:600;border:1px solid rgba(255,255,255,.1);background:rgba(15,23,42,.8);color:#94A3B8;transition:all .15s}
+    .chip:active{transform:scale(.94)}
+    .chip.on{background:rgba(6,182,212,.2);border-color:rgba(6,182,212,.55);color:#67E8F9}
+    .argon-toast{position:fixed;left:50%;transform:translateX(-50%) translateY(20px);bottom:calc(130px + env(safe-area-inset-bottom));z-index:60;background:rgba(15,23,42,.96);border:1px solid rgba(6,182,212,.4);color:#E2E8F0;font-size:12px;font-weight:600;padding:8px 14px;border-radius:14px;opacity:0;pointer-events:none;transition:all .25s}
+    .argon-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+    .trend-card{background:rgba(2,6,23,.7);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:10px}
   </style>
 </head>
 
@@ -365,6 +376,35 @@
           </section>
 
           <section id="goal-card" class="native-card p-4 space-y-2.5"></section>
+
+          <!-- ARGON+: Insights, Hidratación, Diario -->
+          <section class="native-card p-4 space-y-2.5">
+            <div class="flex items-start justify-between gap-2">
+              <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">✨ Insights de Hoy</h2>
+              <div id="streak-chips" class="flex gap-1 flex-wrap justify-end"></div>
+            </div>
+            <div id="insights-list" class="space-y-2"></div>
+          </section>
+          <section class="native-card p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <h2 class="text-xs font-extrabold uppercase tracking-wider text-sky-300">💧 Hidratación</h2>
+              <span id="water-text" class="text-xs font-mono font-bold text-sky-300 tnum">0 / -- ml</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden"><div id="water-bar" class="h-full bg-sky-400 rounded-full transition-all duration-500" style="width:0%"></div></div>
+            <div class="flex gap-1.5">
+              <button class="chip" onclick="addWater(250)">+250 ml</button>
+              <button class="chip" onclick="addWater(500)">+500 ml</button>
+              <button class="chip" onclick="addWater(750)">+750 ml</button>
+              <button class="chip" onclick="addWater(-250)">↩ −250</button>
+            </div>
+          </section>
+          <section class="native-card p-4 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">📓 Diario del Día</h2>
+              <span class="text-[10px] text-slate-400">Se cruza con tu recuperación de mañana</span>
+            </div>
+            <div id="journal-chips" class="flex flex-wrap gap-1.5"></div>
+          </section>
 
           <!-- Acordeón Desplegable 1: Monitor de Signos Vitales 4D (Estilo Whoop Health Monitor) -->
           <details class="native-card native-accordion group overflow-hidden" open>
@@ -797,6 +837,29 @@
 
         </div>
 
+        <!-- PESTAÑA 5: TENDENCIAS -->
+        <div class="swiper-slide space-y-3.5">
+          <section class="native-card p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">📈 Tendencias</h2>
+              <div class="flex bg-slate-950 p-0.5 rounded-xl border border-slate-800">
+                <button id="tr-7" onclick="setTrendRange(7)" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-transparent text-slate-400">7d</button>
+                <button id="tr-14" onclick="setTrendRange(14)" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-transparent text-slate-400">14d</button>
+                <button id="tr-30" onclick="setTrendRange(30)" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-transparent text-slate-400">30d</button>
+              </div>
+            </div>
+            <p id="trend-summary" class="text-[11px] text-slate-300 leading-relaxed"></p>
+            <div id="trend-cards" class="grid grid-cols-2 gap-2"></div>
+          </section>
+          <section class="native-card p-4 space-y-2.5">
+            <div>
+              <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">🔬 Impacto del Diario en tu Recuperación</h2>
+              <p class="text-[10px] text-slate-400">Recuperación del día siguiente con vs. sin cada hábito (mín. 2 y 3 días).</p>
+            </div>
+            <div id="journal-corr" class="space-y-1.5"></div>
+          </section>
+        </div>
+
       </div>
     </div>
   </main>
@@ -804,38 +867,16 @@
   <!-- ========================================================================
        3. BARRA DE NAVEGACIÓN INFERIOR NATIVA (GLASSMORPHISM DOCK + COACH IA)
        ======================================================================== -->
-  <nav id="argon-nav-dock" class="fixed bottom-0 inset-x-0 z-40 bg-[#05080F]/90 backdrop-blur-2xl border-t border-white/[0.08] px-2 py-1.5">
+  <nav id="argon-nav-dock" class="fixed bottom-0 inset-x-0 z-40 bg-[#05080F]/90 backdrop-blur-2xl border-t border-white/[0.08] px-2 py-1.5" style="padding-bottom:max(6px,env(safe-area-inset-bottom))">
     <div class="max-w-lg mx-auto grid grid-cols-5 items-center text-center">
-      <button onclick="goToArgonTab(0)" id="nav-btn-0" class="flex flex-col items-center justify-center py-1 text-cyan-400 transition">
-        <span class="text-base leading-none">🏠</span>
-        <span class="text-[10px] font-bold mt-1">Hoy</span>
-      </button>
-
-      <button onclick="goToArgonTab(1)" id="nav-btn-1" class="flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-200 transition">
-        <span class="text-base leading-none">🌙</span>
-        <span class="text-[10px] font-semibold mt-1">Sueño</span>
-      </button>
-
-      <!-- Botón Central Elevado: Coach Clínico MBE -->
-      <div class="flex justify-center">
-        <button onclick="openArgonCoachModal()"
-          class="coach-fab -mt-5 flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/30 active:scale-95 transition border-2 border-[#05080F]">
-          <span class="text-lg leading-none">🧠</span>
-          <span class="text-[9px] font-black uppercase tracking-tighter mt-0.5">Coach</span>
-        </button>
-      </div>
-
-      <button onclick="goToArgonTab(2)" id="nav-btn-2" class="flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-200 transition">
-        <span class="text-base leading-none">⚖️</span>
-        <span class="text-[10px] font-semibold mt-1">Cuerpo</span>
-      </button>
-
-      <button onclick="goToArgonTab(3)" id="nav-btn-3" class="flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-200 transition">
-        <span class="text-base leading-none">🥩</span>
-        <span class="text-[10px] font-semibold mt-1">Macros</span>
-      </button>
+      <button onclick="goToArgonTab(0)" id="nav-btn-0" class="flex flex-col items-center justify-center py-1 text-cyan-400 transition"><span class="text-base leading-none">🏠</span><span class="text-[10px] font-bold mt-1">Hoy</span></button>
+      <button onclick="goToArgonTab(1)" id="nav-btn-1" class="flex flex-col items-center justify-center py-1 text-slate-400 transition"><span class="text-base leading-none">🌙</span><span class="text-[10px] font-semibold mt-1">Sueño</span></button>
+      <button onclick="goToArgonTab(2)" id="nav-btn-2" class="flex flex-col items-center justify-center py-1 text-slate-400 transition"><span class="text-base leading-none">⚖️</span><span class="text-[10px] font-semibold mt-1">Cuerpo</span></button>
+      <button onclick="goToArgonTab(3)" id="nav-btn-3" class="flex flex-col items-center justify-center py-1 text-slate-400 transition"><span class="text-base leading-none">🥩</span><span class="text-[10px] font-semibold mt-1">Macros</span></button>
+      <button onclick="goToArgonTab(4)" id="nav-btn-4" class="flex flex-col items-center justify-center py-1 text-slate-400 transition"><span class="text-base leading-none">📈</span><span class="text-[10px] font-semibold mt-1">Tendencias</span></button>
     </div>
   </nav>
+  <button id="coach-fab" onclick="openArgonCoachModal()" aria-label="Coach IA" class="fixed right-4 z-40 w-12 h-12 rounded-full bg-gradient-to-tr from-emerald-500 to-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/30 active:scale-90 transition flex items-center justify-center text-xl" style="bottom:calc(76px + env(safe-area-inset-bottom))">🧠</button>
 
   <!-- ========================================================================
        4. MODALES TIPO BOTTOM SHEET NATIVO (+ DÍA, AUDITORÍA QA, AJUSTES ⚙️)
@@ -866,6 +907,15 @@
         <div><label class="text-slate-400 block mb-1">RPE Sesión (1-10)</label><input id="in-rpe" type="number" step="0.5" placeholder="7.5" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
         <div><label class="text-slate-400 block mb-1">Kcal Ingeridas Hoy</label><input id="in-kcal" type="number" placeholder="1650" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
         <div><label class="text-slate-400 block mb-1">Horas Guardia Nocturna</label><input id="in-shift-hours" type="number" step="0.5" placeholder="0" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div class="col-span-2 pt-1 text-[10px] font-bold uppercase tracking-wider text-cyan-400">Opcional · Zonas FC reales (min) y caminata</div>
+        <div><label class="text-slate-400 block mb-1">Pasos de caminata</label><input id="in-walking-steps" type="number" placeholder="3000" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div class="grid grid-cols-5 gap-1 col-span-2">
+          <input id="in-z1" type="number" placeholder="Z1" class="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-white text-center" />
+          <input id="in-z2" type="number" placeholder="Z2" class="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-white text-center" />
+          <input id="in-z3" type="number" placeholder="Z3" class="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-white text-center" />
+          <input id="in-z4" type="number" placeholder="Z4" class="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-white text-center" />
+          <input id="in-z5" type="number" placeholder="Z5" class="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-white text-center" />
+        </div>
       </div>
       <button onclick="saveAndComputeManualEntry()" class="action-btn w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase tracking-wider">
         Guardar y Recalcular Grafo MBE
@@ -955,7 +1005,7 @@
     }
 
     function updateBottomNavActiveState(activeIdx) {
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 5; i++) {
         const btn = document.getElementById('nav-btn-' + i);
         if (!btn) continue;
         btn.className = (i === activeIdx)
@@ -1142,7 +1192,8 @@
         { id: 'nav-btn-0', icon: 'activity', label: 'Hoy' },
         { id: 'nav-btn-1', icon: 'moon', label: 'Sueño' },
         { id: 'nav-btn-2', icon: 'scale', label: 'Cuerpo' },
-        { id: 'nav-btn-3', icon: 'flame', label: 'Macros' }
+        { id: 'nav-btn-3', icon: 'flame', label: 'Macros' },
+        { id: 'nav-btn-4', icon: 'trending-up', label: 'Tendencias' }
       ];
       if (window.lucide) {
         navIcons.forEach(item => {
@@ -1364,15 +1415,18 @@
       const nightAwakeH = Math.max(0, parseFloat(todayRaw.night_awake_shift_hours) || 0);
 
       // Pasos netos: descuenta pasos de caminata (Zepp walking_steps o estimado 85 pasos/min ejercicio)
-      const walkingSteps = parseInt(todayRaw.walking_steps, 10) || (workoutMin > 0 ? Math.round(workoutMin * 85) : 0);
+      const hz = (todayRaw.hr_zones_minutes && typeof todayRaw.hr_zones_minutes === 'object') ? todayRaw.hr_zones_minutes : null;
+      const zonesReal = todayRaw.hr_zones_real === true || !!(hz && hz.real === true);
+      const explicitWalk = parseInt(todayRaw.walking_steps, 10) || parseInt(hz && hz.walking_steps, 10) || 0;
+      const walkingSteps = explicitWalk || (workoutMin > 0 ? Math.round(workoutMin * 85) : 0);
       const stepsNet = Math.max(0, steps - walkingSteps);
 
       const ambientZ1 = Math.round(Math.max(0, stepsNet - 2000) / 320);
 
       // Zonas dinámicas por RPE cuando no hay hr_zones_real
       let zones;
-      if (todayRaw.hr_zones_real === true && todayRaw.hr_zones_minutes) {
-        zones = todayRaw.hr_zones_minutes;
+      if (zonesReal && hz) {
+        zones = { z1: parseFloat(hz.z1) || 0, z2: parseFloat(hz.z2) || 0, z3: parseFloat(hz.z3) || 0, z4: parseFloat(hz.z4) || 0, z5: parseFloat(hz.z5) || 0 };
       } else {
         // Distribución base: separar ambientZ1 (caminata diaria) de workout Z1
         const workoutZ1 = Math.round(workoutMin * 0.22);
@@ -1711,7 +1765,7 @@
         steps_net: stepsNet,
         pickleball_or_gym_minutes: workoutMin,
         session_rpe: sRpe,
-        hr_zones_minutes: zones,
+        hr_zones_minutes: Object.assign({}, zones, zonesReal ? { real: true } : {}, explicitWalk ? { walking_steps: explicitWalk } : {}),
         z13_minutes: z13Min,
         z45_minutes: z45Min,
         is_hospital_shift: nightAwakeH > 0,
@@ -2247,6 +2301,15 @@
         night_awake_shift_hours: valOrKeep('in-shift-hours', existing.night_awake_shift_hours || 0, true)
       };
 
+      const zv = (id) => { const el = document.getElementById(id); return el && el.value !== '' ? parseFloat(el.value) : null; };
+      const zs = ['z1','z2','z3','z4','z5'].map(z => zv('in-' + z));
+      const ws = zv('in-walking-steps');
+      if (zs.some(v => v !== null) || ws !== null) {
+        const pz = existing.hr_zones_minutes || {};
+        const zo = { real: zs.some(v => v !== null) || pz.real === true, walking_steps: ws !== null ? ws : (pz.walking_steps || 0) };
+        ['z1','z2','z3','z4','z5'].forEach((k, i) => { zo[k] = zs[i] !== null ? zs[i] : (parseFloat(pz[k]) || 0); });
+        rawInput.hr_zones_minutes = zo;
+      }
       const computed = computeArgonDayScore(rawInput, pastList, pastList[0] || null);
       store[dateStr] = computed;
       saveLocalStore(store);
@@ -2262,6 +2325,8 @@
     }
 
     async function seedCalibratedFeelfitHistory(pushCloud = false) {
+      if (Object.keys(getLocalStore()).length > 0 && !confirm('Esto reemplaza tu historial local por datos simulados de calibración. ¿Continuar?')) return;
+      pushCloud = false;
       const existingStore = getLocalStore();
       const todayIso = getLocalTodayIso();
       const existingToday = existingStore[todayIso] || {};
@@ -2403,8 +2468,8 @@
       try {
         document.getElementById('sync-status-text').textContent = 'Sincronizando DAG...';
         const [rawRes, compRes] = await Promise.all([
-          supabaseClient.from('daily_raw_biometrics').select('*').order('log_date', { ascending: true }).limit(30),
-          supabaseClient.from('computed_daily_scores').select('*').order('log_date', { ascending: true }).limit(30)
+          supabaseClient.from('daily_raw_biometrics').select('*').order('log_date', { ascending: false }).limit(30),
+          supabaseClient.from('computed_daily_scores').select('*').order('log_date', { ascending: false }).limit(30)
         ]);
 
         const rawMap = {};
@@ -2686,6 +2751,7 @@
           body: JSON.stringify({
             action: 'ask_coach',
             question: question,
+            client_context: window.argonJournalContext ? window.argonJournalContext() : null,
             history: argonCoachHistory.slice(-6)
           })
         });
@@ -2706,5 +2772,166 @@
     }
   </script>
   <script src="argon-patch.js"></script>
+
+  <script>
+  /* ARGON+ : Tendencias, Insights, Diario, Hidratación, PTR, Toast */
+  (function () {
+    const JKEY = 'argon_journal_v1';
+    const BEH = [
+      ['caffeine','☕ Cafeína tarde'],['alcohol','🍷 Alcohol'],['late_meal','🍽️ Cena tardía'],['stress','😣 Estrés alto'],
+      ['sauna','🔥 Sauna'],['cold','🧊 Frío'],['meditation','🧘 Meditación'],['supplements','💊 Suplementos'],
+      ['screens','📱 Pantallas tarde'],['nap','😴 Siesta']
+    ];
+    let range = 14, lastAll = [], lastRec = null;
+    const $ = (id) => document.getElementById(id);
+    const jStore = () => { try { return JSON.parse(localStorage.getItem(JKEY) || '{}'); } catch (_) { return {}; } };
+    const curDate = () => ($('selected-date') && $('selected-date').value) || getLocalTodayIso();
+    const jDay = (d) => { const e = jStore()[d] || {}; return { water_ml: e.water_ml || 0, flags: e.flags || {} }; };
+    const avg = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
+    const nextDay = (d) => { const t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + 1); return t.toISOString().slice(0, 10); };
+    const caracasHour = () => { try { return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Caracas', hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (_) { return new Date().getHours(); } };
+
+    window.showToast = (msg) => {
+      let t = $('argon-toast');
+      if (!t) { t = document.createElement('div'); t.id = 'argon-toast'; t.className = 'argon-toast'; document.body.appendChild(t); }
+      t.textContent = msg; t.classList.add('show');
+      clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2200);
+    };
+    const buzz = (ms) => { try { navigator.vibrate && navigator.vibrate(ms || 8); } catch (_) {} };
+
+    function jUpdate(fn) {
+      const d = curDate(), s = jStore(), e = s[d] || { water_ml: 0, flags: {} };
+      fn(e); s[d] = e; localStorage.setItem(JKEY, JSON.stringify(s));
+      if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+        supabaseClient.from('daily_journal').upsert({ log_date: d, water_ml: e.water_ml, flags: e.flags }).then(() => {}, () => {});
+      }
+      if (lastRec) render(lastRec, lastAll);
+    }
+    window.addWater = (ml) => { buzz(); jUpdate(e => { e.water_ml = Math.max(0, (e.water_ml || 0) + ml); }); };
+    window.toggleBehavior = (id) => { buzz(); jUpdate(e => { e.flags[id] = !e.flags[id]; }); };
+    window.setTrendRange = (n) => { range = n; if (lastRec) renderTrends(lastAll); };
+    window.argonJournalContext = () => { const j = jDay(curDate()); return { agua_ml: j.water_ml, habitos_activos: BEH.filter(b => j.flags[b[0]]).map(b => b[1]) }; };
+
+    function spark(vals, color) {
+      if (vals.length < 2) return '<div class="h-7"></div>';
+      const mn = Math.min(...vals), mx = Math.max(...vals), rg = mx - mn || 1;
+      const pts = vals.map((v, i) => `${(i / (vals.length - 1) * 100).toFixed(1)},${(25 - ((v - mn) / rg) * 22).toFixed(1)}`).join(' ');
+      return `<svg viewBox="0 0 100 28" preserveAspectRatio="none" class="w-full h-7"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
+    }
+    const METRICS = [
+      { k: 'recovery_score', l: 'Recuperación', f: v => v.toFixed(0) + '%', c: '#10B981', g: 1 },
+      { k: 'rmssd_ms', l: 'VFC (RMSSD)', f: v => v.toFixed(1) + ' ms', c: '#22D3EE', g: 1, pos: 1 },
+      { k: 'rhr_bpm', l: 'FC reposo', f: v => v.toFixed(1) + ' lpm', c: '#F43F5E', g: -1, pos: 1 },
+      { k: 'total_sleep_min', l: 'Sueño', f: v => (v / 60).toFixed(1) + ' h', c: '#A78BFA', g: 1, pos: 1 },
+      { k: 'strain_score', l: 'Strain', f: v => v.toFixed(1), c: '#06B6D4', g: 0 },
+      { k: 'weight_kg', l: 'Peso', f: v => v.toFixed(1) + ' kg', c: '#38BDF8', g: -1, pos: 1 },
+      { k: 'body_fat_pct', l: '% Grasa', f: v => v.toFixed(1) + '%', c: '#F59E0B', g: -1, pos: 1 },
+      { k: 'intake_kcal', l: 'Kcal ingeridas', f: v => v.toFixed(0), c: '#34D399', g: 0, pos: 1 }
+    ];
+    const series = (arr, m) => arr.map(r => parseFloat(r[m.k])).filter(v => isFinite(v) && (!m.pos || v > 0));
+
+    function renderTrends(all) {
+      [7, 14, 30].forEach(n => { const b = $('tr-' + n); if (b) b.className = (n === range ? 'tab-btn-active ' : 'text-slate-400 border-transparent ') + 'text-[10px] font-semibold px-2.5 py-1 rounded-lg border'; });
+      const cur = all.slice(-range), prev = all.slice(-2 * range, -range);
+      const box = $('trend-cards'); if (!box) return;
+      box.innerHTML = METRICS.map(m => {
+        const a = series(cur, m), p = series(prev, m), ma = avg(a), mp = avg(p);
+        let d = '<span class="text-slate-500">—</span>';
+        if (isFinite(ma) && isFinite(mp)) {
+          const dv = ma - mp, good = m.g === 0 ? 0 : (dv * m.g > 0 ? 1 : -1);
+          const col = Math.abs(dv) < 1e-6 || m.g === 0 ? 'text-slate-400' : (good > 0 ? 'text-emerald-400' : 'text-amber-400');
+          const txt = m.k === 'total_sleep_min' ? (dv / 60).toFixed(1) + ' h' : Math.abs(dv) >= 10 ? dv.toFixed(0) : dv.toFixed(1);
+          d = `<span class="${col}">${dv >= 0 ? '▲' : '▼'} ${txt}</span>`;
+        }
+        return `<div class="trend-card"><div class="text-[10px] text-slate-400">${m.l} · prom.</div><div class="flex items-baseline justify-between"><span class="text-base font-black text-white font-mono tnum">${isFinite(ma) ? m.f(ma) : '--'}</span><span class="text-[10px] font-mono">${d}</span></div>${spark(a, m.c)}</div>`;
+      }).join('');
+      const rec = avg(series(cur, METRICS[0])), slp = avg(series(cur, METRICS[3])), st = avg(series(cur, METRICS[4]));
+      const w = series(cur, METRICS[5]);
+      const dw = w.length > 1 ? w[w.length - 1] - w[0] : NaN;
+      $('trend-summary').textContent = cur.length < 3 ? 'Aún hay pocos días registrados para mostrar tendencias.' :
+        `Últimos ${cur.length} días: recuperación media ${isFinite(rec) ? rec.toFixed(0) : '--'}%, sueño ${isFinite(slp) ? slp.toFixed(1) / 1 : '--'}${isFinite(slp) ? '' : ''} ${isFinite(slp) ? 'h' : ''}, strain medio ${isFinite(st) ? st.toFixed(1) : '--'}` + (isFinite(dw) ? `, peso ${dw >= 0 ? '+' : ''}${dw.toFixed(1)} kg.` : '.');
+      renderCorr(all);
+    }
+    function renderCorr(all) {
+      const J = jStore(), by = {}; all.forEach(r => { by[r.log_date] = r; });
+      const rows = BEH.map(([id, label]) => {
+        const w = [], wo = [];
+        Object.keys(J).forEach(d => {
+          const nx = by[nextDay(d)]; if (!nx || !(nx.recovery_score > 0) || nx.hrv_missing) return;
+          ((J[d].flags || {})[id] ? w : wo).push(nx.recovery_score);
+        });
+        return { label, nw: w.length, nwo: wo.length, d: (w.length >= 2 && wo.length >= 3) ? avg(w) - avg(wo) : NaN };
+      }).sort((a, b) => (isFinite(b.d) ? Math.abs(b.d) : -1) - (isFinite(a.d) ? Math.abs(a.d) : -1));
+      $('journal-corr').innerHTML = rows.map(r => {
+        const v = isFinite(r.d) ? `<span class="${r.d >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-mono font-bold">${r.d >= 0 ? '+' : ''}${r.d.toFixed(1)} pts</span>` : '<span class="text-slate-500 text-[10px]">sin datos</span>';
+        return `<div class="flex items-center justify-between p-2 rounded-xl bg-slate-950/60 border border-slate-800/70 text-xs"><span class="text-slate-200">${r.label}</span><span class="flex items-center gap-2">${v}<span class="text-[9px] text-slate-500">n=${r.nw}/${r.nwo}</span></span></div>`;
+      }).join('');
+    }
+
+    function streak(upto, pred) { let n = 0; for (let i = upto.length - 1; i >= 0 && pred(upto[i]); i--) n++; return n; }
+    function insights(r, upto) {
+      const o = [], isToday = r.log_date === getLocalTodayIso(), hr = caracasHour();
+      const gap = r.recommended_max_strain - r.strain_score;
+      if (r.calibrating) o.push(['🧪', 'Calibrando tu línea base (necesita 7 días con VFC y FC). Las puntuaciones son aproximadas.', 'sky']);
+      if (isToday && gap >= 3) o.push(['⚡', `Tienes margen para ~${gap.toFixed(1)} de strain más hoy (meta ${r.recommended_max_strain}).`, 'cyan']);
+      else if (gap < -1) o.push(['⚠️', `Superaste tu meta de strain por ${(-gap).toFixed(1)}. Prioriza sueño y proteína esta noche.`, 'amber']);
+      if (r.cumulative_sleep_debt_hours >= 2) o.push(['🌙', `Deuda de sueño de ${r.cumulative_sleep_debt_hours} h. Acuéstate entre ${r.optimal_bedtime_start} y ${r.optimal_bedtime_end}.`, 'purple']);
+      const rm = upto.slice(-3).map(x => x.rmssd_ms).filter(v => v > 0);
+      if (rm.length === 3 && r.rmssd_14d_mean_ms > 0) {
+        const dv = (avg(rm) / r.rmssd_14d_mean_ms - 1) * 100;
+        if (dv <= -8) o.push(['📉', `Tu VFC de 3 días está ${Math.abs(dv).toFixed(0)}% bajo tu línea base: reduce intensidad y vigila el estrés.`, 'amber']);
+        else if (dv >= 8) o.push(['📈', `Tu VFC de 3 días está ${dv.toFixed(0)}% sobre tu línea base: buena adaptación.`, 'emerald']);
+      }
+      const protLeft = r.target_protein_g - r.intake_protein_g;
+      if (isToday && hr >= 17 && protLeft > 25) o.push(['🥩', `Te faltan ${protLeft} g de proteína; cúbrelos en la cena o con whey.`, 'emerald']);
+      const j = jDay(r.log_date), goal = Math.round(r.weight_kg * 35 / 50) * 50;
+      if (isToday && hr >= 15 && j.water_ml < goal * 0.5) o.push(['💧', `Vas en ${j.water_ml} de ${goal} ml de agua.`, 'sky']);
+      const old = upto.length > 7 ? upto[upto.length - 8] : null;
+      if (old && old.trend_weight_kg > 0) {
+        const rate = (r.trend_weight_kg - old.trend_weight_kg) / 7 * 7;
+        o.push(['⚖️', `Peso tendencia: ${rate >= 0 ? '+' : ''}${rate.toFixed(2)} kg en 7 días (objetivo ≈ −0.5 kg/sem).`, rate <= -0.2 && rate >= -1 ? 'emerald' : 'amber']);
+      }
+      return o.slice(0, 5);
+    }
+    const TONE = { cyan: 'border-cyan-500/30 bg-cyan-500/5', amber: 'border-amber-500/30 bg-amber-500/5', purple: 'border-purple-500/30 bg-purple-500/5', emerald: 'border-emerald-500/30 bg-emerald-500/5', sky: 'border-sky-500/30 bg-sky-500/5' };
+
+    function render(r, all) {
+      lastRec = r; lastAll = all;
+      const upto = all.filter(x => x.log_date <= r.log_date);
+      const list = $('insights-list');
+      if (list) {
+        const ins = insights(r, upto);
+        list.innerHTML = ins.length ? ins.map(([i, t, c]) => `<div class="flex gap-2 p-2.5 rounded-xl border ${TONE[c] || TONE.sky} text-[11px] text-slate-200 leading-snug"><span>${i}</span><span>${t}</span></div>`).join('') : '<div class="text-[11px] text-slate-400">Sin alertas: todo en rango.</div>';
+      }
+      const sc = $('streak-chips');
+      if (sc) {
+        const fs = streak(upto, x => x.intake_kcal > 0), ss = streak(upto, x => x.total_sleep_min >= 420), tr = upto.slice(-7).filter(x => x.pickleball_or_gym_minutes > 0).length;
+        sc.innerHTML = [`🔥 Comidas ${fs}d`, `🌙 ≥7h ${ss}d`, `🏋️ ${tr}/7`].map(t => `<span class="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] text-slate-300 tnum">${t}</span>`).join('');
+      }
+      const j = jDay(r.log_date), goal = Math.round(r.weight_kg * 35 / 50) * 50;
+      if ($('water-text')) { $('water-text').textContent = `${j.water_ml} / ${goal} ml`; $('water-bar').style.width = Math.min(100, j.water_ml / goal * 100) + '%'; }
+      const jc = $('journal-chips');
+      if (jc) jc.innerHTML = BEH.map(([id, l]) => `<button class="chip ${j.flags[id] ? 'on' : ''}" onclick="toggleBehavior('${id}')">${l}</button>`).join('');
+      renderTrends(all);
+      if (typeof refreshSwiperHeight === 'function') refreshSwiperHeight(80);
+    }
+
+    const _rd = renderDashboard;
+    renderDashboard = function (record, all) { _rd(record, all); try { render(record, all); } catch (e) { console.error('ARGON+', e); } };
+
+    const _sync = syncFromSupabase;
+    syncFromSupabase = async function () {
+      if (typeof supabaseClient === 'undefined' || !supabaseClient) { showToast('Modo local: configura Supabase en ⚙️'); return; }
+      await _sync(); showToast('✓ Datos sincronizados');
+    };
+    const _go = goToArgonTab;
+    goToArgonTab = function (i) { buzz(6); _go(i); };
+
+    // Pull-to-refresh
+    let y0 = null;
+    addEventListener('touchstart', e => { const t = e.target; y0 = (window.scrollY <= 0 && !(t.closest && t.closest('[id$="-modal"], .apexcharts-canvas, input'))) ? e.touches[0].clientY : null; }, { passive: true });
+    addEventListener('touchend', e => { if (y0 !== null && e.changedTouches[0].clientY - y0 > 120) { buzz(12); syncFromSupabase(); } y0 = null; }, { passive: true });
+  })();
+  </script>
 </body>
 </html>

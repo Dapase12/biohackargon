@@ -628,15 +628,18 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       const nightAwakeH = Math.max(0, parseFloat(todayRaw.night_awake_shift_hours) || 0);
 
       // Pasos netos: descuenta pasos de caminata (Zepp walking_steps o estimado 85 pasos/min ejercicio)
-      const walkingSteps = parseInt(todayRaw.walking_steps, 10) || (workoutMin > 0 ? Math.round(workoutMin * 85) : 0);
+      const hz = (todayRaw.hr_zones_minutes && typeof todayRaw.hr_zones_minutes === 'object') ? todayRaw.hr_zones_minutes : null;
+      const zonesReal = todayRaw.hr_zones_real === true || !!(hz && hz.real === true);
+      const explicitWalk = parseInt(todayRaw.walking_steps, 10) || parseInt(hz && hz.walking_steps, 10) || 0;
+      const walkingSteps = explicitWalk || (workoutMin > 0 ? Math.round(workoutMin * 85) : 0);
       const stepsNet = Math.max(0, steps - walkingSteps);
 
       const ambientZ1 = Math.round(Math.max(0, stepsNet - 2000) / 320);
 
       // Zonas dinámicas por RPE cuando no hay hr_zones_real
       let zones;
-      if (todayRaw.hr_zones_real === true && todayRaw.hr_zones_minutes) {
-        zones = todayRaw.hr_zones_minutes;
+      if (zonesReal && hz) {
+        zones = { z1: parseFloat(hz.z1) || 0, z2: parseFloat(hz.z2) || 0, z3: parseFloat(hz.z3) || 0, z4: parseFloat(hz.z4) || 0, z5: parseFloat(hz.z5) || 0 };
       } else {
         // Distribución base: separar ambientZ1 (caminata diaria) de workout Z1
         const workoutZ1 = Math.round(workoutMin * 0.22);
@@ -975,7 +978,7 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
         steps_net: stepsNet,
         pickleball_or_gym_minutes: workoutMin,
         session_rpe: sRpe,
-        hr_zones_minutes: zones,
+        hr_zones_minutes: Object.assign({}, zones, zonesReal ? { real: true } : {}, explicitWalk ? { walking_steps: explicitWalk } : {}),
         z13_minutes: z13Min,
         z45_minutes: z45Min,
         is_hospital_shift: nightAwakeH > 0,
@@ -1205,6 +1208,7 @@ function handleArgonCoachChat_(payload) {
     const todayRaw = rawMap[todayComp.log_date] || {};
 
     const clinicalContext = {
+      diario_hoy: payload.client_context || null,
       perfil_paciente: {
         profesion: 'Médico Cirujano (Guardias / Rural)',
         edad_cronologica: 28.94,
