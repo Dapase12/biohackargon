@@ -782,7 +782,7 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       const cvLnRmssd7 = last7Ln.length >= 3 ? +((sdLn7 / Math.max(0.001, meanLn7)) * 100).toFixed(1) : 0;
 
       // SWC: 0.3 * sdLn_7d
-      const swcLnRmssd = +(0.3 * sdLn7).toFixed(3);
+      const swcLnRmssd = +(0.3 * sdLn).toFixed(3);
 
       const hrvMissing = !(parseFloat(todayRaw.rmssd_ms) > 0) || (parseFloat(todayRaw.rmssd_ms) === 50 && parseFloat(todayRaw.rhr_bpm) === 54.5);
       let hrvZ = hrvMissing ? 0 : Math.max(-3, Math.min(3, (lnRmssdToday - meanLn) / sdLn));
@@ -793,17 +793,13 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       const rhrZ = rhrMissing ? 0 : Math.max(-3, Math.min(3, (rhrToday - meanRhr) / sdRhr));
       const penalty = (spo2Today < 94.0 ? 1.0 : 0.0) + (respToday > 16.8 ? 0.85 : 0.0);
 
-      // ACWR penalty: acute (3d) vs chronic (14d) load ratio, up to -2.0 strain penalty
-      const acuteLoad = historyRawList.slice(0, 3).reduce((s, r) => {
-        const st = parseFloat(r.strain_score) || 0;
-        return s + st;
-      }, 0);
-      const chronicLoad = historyRawList.slice(0, 14).reduce((s, r) => {
-        const st = parseFloat(r.strain_score) || 0;
-        return s + st;
-      }, 0);
-      const acwrRatio = chronicLoad > 0 ? acuteLoad / 3 / (chronicLoad / 14) : 1.0;
-      const acwrPenalty = Math.min(2.0, Math.max(0, (acwrRatio - 1.3) * 5));
+      // ACWR: carga aguda (3d) vs crónica (14d); solo con 14d de historial
+      let acwrPenalty = 0;
+      if (historyRawList.length >= 14) {
+        const acuteAvg = historyRawList.slice(0, 3).reduce((s, r) => s + (parseFloat(r.strain_score) || 0), 0) / 3;
+        const chronicAvg = historyRawList.slice(0, 14).reduce((s, r) => s + (parseFloat(r.strain_score) || 0), 0) / 14;
+        if (chronicAvg > 0) acwrPenalty = Math.min(2.0, Math.max(0, (acuteAvg / chronicAvg - 1.3) * 5));
+      }
 
       // HighSleepStressPct without SWS+REM term
       const highSleepStressPct = Math.min(45, Math.max(0, Math.round(
@@ -876,40 +872,31 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
         realFat = Math.round(targetFat * ratio);
       }
 
-      // TEF exacto: proteína 25%, carbs 8%, grasa 2% (basado en ingesta REAL)
-      tefEstimate = Math.round((realProt * 4 * 0.25) + (realCarbs * 4 * 0.08) + (realFat * 9 * 0.02));
+      
 
-      // Adaptive TDEE: robust empirical blend with oldestWithWeight search in 14-day window
-      const validIntakeDays = historyRawList.slice(0, 14).filter(r => parseInt(r.intake_kcal, 10) >= 1200);
-      let empiricalTdee = dynamicTdee;
+      // TDEE adaptativo: ingesta media vs cambio de peso-tendencia (span por fechas); null si <7d válidos
+      let empiricalTdee = null;
       let meanIntake = 0;
       let deltaTrendW = 0;
-      if (validIntakeDays.length >= 7) {
+      const win14 = historyRawList.slice(0, 14);
+      const validIntakeDays = win14.filter(r => parseInt(r.intake_kcal, 10) >= 1200);
+      if (validIntakeDays.length >= 7 && todayRaw.log_date) {
         meanIntake = validIntakeDays.reduce((s, r) => s + parseInt(r.intake_kcal, 10), 0) / validIntakeDays.length;
-        // Find oldest day with weight in 14-day window for robust spanDays
-        let oldestWithWeight = null;
-        for (let i = historyRawList.length - 1; i >= 0 && i >= historyRawList.length - 14; i--) {
-          const w = parseFloat(historyRawList[i].weight_kg);
-          if (Number.isFinite(w) && w >= 65) { oldestWithWeight = { w, idx: i }; break; }
+        const wOf = (r) => { const t = parseFloat(r.trend_weight_kg), w = parseFloat(r.weight_kg); return t >= 65 ? t : (w >= 65 ? w : NaN); };
+        const oldest = [...win14].reverse().find(r => r.log_date && Number.isFinite(wOf(r)));
+        if (oldest) {
+          const spanDays = Math.max(7, Math.min(14, Math.round((new Date(todayRaw.log_date + 'T12:00:00Z') - new Date(oldest.log_date + 'T12:00:00Z')) / 86400000)));
+          deltaTrendW = trendW - wOf(oldest);
+          empiricalTdee = Math.round(meanIntake - (deltaTrendW * 7700 / spanDays));
+          empiricalTdee = Math.max(Math.round(dynamicTdee * 0.75), Math.min(Math.round(dynamicTdee * 1.25), empiricalTdee));
+          dynamicTdee = Math.round((dynamicTdee + empiricalTdee) / 2);
+          rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
+          targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
+          targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
         }
-        const spanDays = oldestWithWeight ? (validIntakeDays.length - 1 - oldestWithWeight.idx) : validIntakeDays.length;
-        const safeSpan = Math.max(7, Math.min(14, spanDays));
-        const prevTrendW = oldestWithWeight ? oldestWithWeight.w : trendW;
-        deltaTrendW = trendW - prevTrendW;
-        empiricalTdee = Math.round(meanIntake - (deltaTrendW * 7700 / safeSpan));
-        // Safety bounds: empirical TDEE must be within ±25% of theoretical
-        const lowerBound = Math.round(dynamicTdee * 0.75);
-        const upperBound = Math.round(dynamicTdee * 1.25);
-        empiricalTdee = Math.max(lowerBound, Math.min(upperBound, empiricalTdee));
-        // Blend 50/50 theoretical + empirical
-        dynamicTdee = Math.round((dynamicTdee + empiricalTdee) / 2);
-        // Recalculate targets with blended TDEE
-        rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
-        targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
-        targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
-        // Recalculate TEF with final macros
-        tefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
       }
+      // TEF siempre sobre macros meta finales (consistente)
+      tefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
 
       // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO (MBE: clean VO2max, 0.06 deltaRhr, -0.25 deltaLnRmssd separated)
       const hrMax = 208 - (0.7 * chronologicalAge);
@@ -919,7 +906,7 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       const deltaVo2 = +Math.max(-3.2, Math.min(2.5, -0.18 * (vo2Max - 43.0))).toFixed(1);
       // Desacople FC basal: deltaRhr (0.06 * (meanRhr - 60)) SEPARADO de deltaLnRmssd (-0.25 * (meanLn - 3.9))
       const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.06 * (meanRhr - 60.0))).toFixed(1);
-      const deltaLnRmssd = +Math.max(-2.2, Math.min(2.2, -0.25 * (meanLn - 3.9))).toFixed(1);
+      const deltaLnRmssd = +Math.max(-1.5, Math.min(1.5, -0.25 * (meanLn - 3.9))).toFixed(1);
       const deltaFfm = +Math.max(-2.2, Math.min(2.2, -0.16 * (ffmPct - 79.0))).toFixed(1);
       const deltaSleep = +Math.max(-1.5, Math.min(1.8, -0.025 * (sleepRegularityPct - 78) - 0.25 * ((sleepMissing ? 7.2 : tstMin / 60.0) - 7.2))).toFixed(1);
       const avgSteps7d = meanArr([steps, ...historyRawList.slice(0, 6).map(r => parseInt(r.steps_count, 10) || 7500)]);
@@ -1038,6 +1025,24 @@ function computeArgonMbeScore_(todayRaw, historyRawList, prevComputed) {
 }
 // ===ENGINE_END===
 
+// Recalcula al vuelo el motor completo (campos MBE no persistidos en Supabase) para Coach y Drive
+function liveEngineForDate_(compRows, rawRows) {
+  const todayComp = (compRows && compRows[0]) || {};
+  if (!todayComp.log_date) return todayComp;
+  try {
+    const compMap = {};
+    compRows.forEach(c => { compMap[c.log_date] = c; });
+    const merge = (r) => Object.assign({}, compMap[r.log_date] || {}, r);
+    const todayRaw = merge(rawRows.find(r => r.log_date === todayComp.log_date) || { log_date: todayComp.log_date });
+    const hist = rawRows.filter(r => r.log_date < todayComp.log_date).map(merge);
+    const prev = compRows.find(c => c.log_date < todayComp.log_date) || null;
+    return Object.assign({}, todayComp, computeArgonEngine_(todayRaw, hist, prev));
+  } catch (e) {
+    console.error('liveEngineForDate_', e);
+    return todayComp;
+  }
+}
+
 /**
  * ============================================================================
  * 6. CLIENTE REST SUPABASE Y AUDITORÍA
@@ -1112,7 +1117,7 @@ function syncExpedienteToGoogleDrive_(force) {
     const rawMap = {};
     rawRows.forEach(r => { rawMap[r.log_date] = r; });
 
-    const todayComp = compRows[0];
+    const todayComp = liveEngineForDate_(compRows, rawRows);
     const todayRaw = rawMap[todayComp.log_date] || {};
     const nowStr = Utilities.formatDate(new Date(), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
 
@@ -1196,7 +1201,7 @@ function handleArgonCoachChat_(payload) {
     const rawMap = {};
     rawRows.forEach(r => { rawMap[r.log_date] = r; });
 
-    const todayComp = compRows[0] || {};
+    const todayComp = liveEngineForDate_(compRows, rawRows);
     const todayRaw = rawMap[todayComp.log_date] || {};
 
     const clinicalContext = {
