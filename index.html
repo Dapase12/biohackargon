@@ -8,8 +8,6 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>ARGON v6.0 | Biometría Clínica MBE</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="apple-touch-icon" href="icon-180.png" />
-  <link rel="icon" href="icon-192.png" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="icon" type="image/png" href="icon-192.png" />
 
@@ -205,97 +203,72 @@
       #sync-status-text { display: none; }
       header button { font-size: 10px; }
     }
-  
-    input,textarea{-webkit-user-select:text;user-select:text}
-    .tnum{font-variant-numeric:tabular-nums}
-    .jchip{padding:5px 10px;border-radius:12px;font-size:11px;font-weight:600;border:1px solid rgba(255,255,255,.1);background:rgba(15,23,42,.8);color:#94A3B8;transition:all .15s}
-    .jchip:active{transform:scale(.94)}
-    .jchip.on{background:rgba(6,182,212,.2);border-color:rgba(6,182,212,.55);color:#67E8F9}
-    .argon-toast{position:fixed;left:50%;transform:translateX(-50%) translateY(20px);bottom:calc(130px + env(safe-area-inset-bottom));z-index:60;background:rgba(15,23,42,.96);border:1px solid rgba(6,182,212,.4);color:#E2E8F0;font-size:12px;font-weight:600;padding:8px 14px;border-radius:14px;opacity:0;pointer-events:none;transition:all .25s}
-    .argon-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-    .trend-card{background:rgba(2,6,23,.7);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:10px}
-
-    .drawer-sec{padding:12px 12px 4px;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#64748B}
-    .drawer-item{width:100%;display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:14px;text-align:left;color:#E2E8F0;transition:background .15s,transform .1s}
-    .drawer-item:active{background:rgba(6,182,212,.12);transform:scale(.98)}
-    .drawer-item>span{font-size:18px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:rgba(15,23,42,.9);border:1px solid rgba(255,255,255,.06);flex-shrink:0}
-    .drawer-item b{display:block;font-size:13px;font-weight:700}
-    .drawer-item small{display:block;font-size:10px;color:#94A3B8;margin-top:1px}
-    body.drawer-open #argon-drawer{transform:translateX(0)!important}
-    body.drawer-open #drawer-backdrop{opacity:1;pointer-events:auto}
-    .sd-item{display:flex;align-items:center;gap:10px;opacity:0;transform:translateY(14px) scale(.92);pointer-events:none;transition:opacity .2s,transform .25s cubic-bezier(.16,1,.3,1);transition-delay:calc(var(--i)*28ms)}
-    .sd-label{background:rgba(15,23,42,.96);border:1px solid rgba(255,255,255,.1);color:#E2E8F0;font-size:12px;font-weight:700;padding:6px 11px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.45)}
-    .sd-ico{width:44px;height:44px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 6px 18px rgba(0,0,0,.45)}
-    #speed-dial.open .sd-item{opacity:1;transform:none;pointer-events:auto}
-    #sd-main{transition:transform .25s cubic-bezier(.16,1,.3,1)}
-    #speed-dial.open #sd-main{transform:rotate(45deg)}
-    body.dial-open #sd-backdrop{opacity:1;pointer-events:auto}
-    @keyframes argspin{to{transform:rotate(360deg)}}
-    #sync-btn.spin svg{animation:argspin .8s linear infinite}
-  
-    /* ===== PAQUETE B ===== */
-    #ring-strain{stroke:url(#grad-strain)} #ring-sleep{stroke:url(#grad-sleep)}
-    #ring-recovery{filter:drop-shadow(0 0 3px rgba(16,185,129,.45))}
-    #ring-strain{filter:drop-shadow(0 0 3px rgba(34,211,238,.45))}
-    #ring-sleep{filter:drop-shadow(0 0 3px rgba(167,139,250,.45))}
-    .tap-detail{cursor:pointer;transition:transform .12s ease}
-    .tap-detail:active{transform:scale(.97)}
-    @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-    body.loading #val-recovery,body.loading #val-strain,body.loading #val-sleep,body.loading #weight-trend,body.loading #bf-trend,
-    body.loading #metric-rmssd-ms,body.loading #metric-rhr,body.loading #clinical-coach-notes,body.loading #argon-age-val,body.loading #nutri-target-kcal,body.loading #sleep-tst{
-      color:transparent!important;border-radius:8px;background:linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.14) 50%,rgba(255,255,255,.04) 75%);background-size:200% 100%;animation:shimmer 1.3s linear infinite}
-    @keyframes dayFade{from{opacity:0;transform:translateX(var(--dx,0)) translateY(6px)}to{opacity:1;transform:none}}
-    .day-swap .swiper-slide-active>*{animation:dayFade .34s cubic-bezier(.16,1,.3,1) both}
-    #detail-body .d-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;border-radius:14px;background:rgba(2,6,23,.65);border:1px solid rgba(255,255,255,.06);font-size:12px}
-    #argon-confetti{position:fixed;inset:0;z-index:70;pointer-events:none}
   </style>
 </head>
 
 <body class="min-h-screen antialiased">
-  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
-    <linearGradient id="grad-rec-ok" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#06B6D4"/></linearGradient>
-    <linearGradient id="grad-rec-mid" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FDE047"/><stop offset="1" stop-color="#F59E0B"/></linearGradient>
-    <linearGradient id="grad-rec-low" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FB7185"/><stop offset="1" stop-color="#DC2626"/></linearGradient>
-    <linearGradient id="grad-strain" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22D3EE"/><stop offset="1" stop-color="#3B82F6"/></linearGradient>
-    <linearGradient id="grad-sleep" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#C4B5FD"/><stop offset="1" stop-color="#6366F1"/></linearGradient>
-  </defs></svg>
-
 
   <!-- ========================================================================
        1. TOP APP BAR FIJA (ESTILO WHOOP 4.0 + SELECTOR DE FECHA)
        ======================================================================== -->
-  <header class="sticky top-0 z-30 bg-[#05080F]/85 backdrop-blur-xl border-b border-white/[0.06] px-3.5 pb-2" style="padding-top:max(10px,env(safe-area-inset-top))">
-    <div class="max-w-lg mx-auto flex items-center justify-between gap-2">
-      <div class="flex items-center gap-2.5 min-w-0">
-        <button onclick="openDrawer()" aria-label="Abrir menú" class="w-9 h-9 shrink-0 rounded-xl bg-slate-900 border border-slate-800 text-slate-200 flex items-center justify-center active:scale-90 transition">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h10M4 17h16"/></svg>
-        </button>
-        <div class="min-w-0">
-          <div class="flex items-center gap-1.5">
-            <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+  <header class="sticky top-0 z-30 bg-[#05080F]/85 backdrop-blur-xl border-b border-white/[0.06] px-3.5 py-2.5">
+    <div class="max-w-lg mx-auto flex flex-wrap items-center justify-between gap-y-2">
+      <!-- Identidad + Estado Cloud -->
+      <div class="flex items-center space-x-2.5 min-w-0">
+        <div class="relative flex items-center justify-center w-8 h-8 shrink-0 rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-cyan-500/30">
+          <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+        </div>
+        <div>
+          <div class="flex items-center space-x-1.5">
             <span class="text-sm font-black tracking-tight text-white">ARGON</span>
             <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">v6.0 PRO</span>
           </div>
-          <p id="sync-status-text" class="text-[10px] text-slate-400 font-medium leading-none mt-1 truncate max-w-[170px]">Inicializando DAG...</p>
+          <p id="sync-status-text" class="text-[10px] text-slate-400 font-medium leading-none mt-0.5">Inicializando DAG...</p>
         </div>
       </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <div class="hidden min-[380px]:flex flex-col items-center px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-800">
-          <span id="goal-date-label" class="text-[8px] uppercase tracking-widest text-slate-400 font-semibold">Meta 7 Dic</span>
-          <span id="countdown-timer" class="text-[11px] font-mono font-bold text-cyan-400">--d --h</span>
-        </div>
-        <button id="sync-btn" onclick="syncFromSupabase()" aria-label="Sincronizar" class="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 flex items-center justify-center active:scale-90 transition">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
+
+      <!-- Meta 7 Dic Countdown Pill -->
+      <div class="hidden min-[400px]:flex flex-col items-center px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-800">
+        <span id="goal-date-label" class="text-[8px] uppercase tracking-widest text-slate-400 font-semibold">Meta 7 Dic</span>
+        <span id="countdown-timer" class="text-[11px] font-mono font-bold text-cyan-400">--d --h</span>
+      </div>
+
+      <!-- Acciones Rápidas (QA, +Día, Ajustes) -->
+      <div class="flex items-center space-x-1.5">
+        <button onclick="runQualityAuditModal()" title="Auditoría QA"
+          class="chip flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 text-[11px] font-bold transition">
+          <span>✓ QA</span>
+        </button>
+        <button onclick="openModal('log-modal')" title="Cargar Biomarcadores"
+          class="chip flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25 text-[11px] font-bold transition">
+          <span>+ Día</span>
+        </button>
+        <button onclick="openModal('settings-modal')" title="Configuración"
+          class="icon-btn p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition">
+          ⚙️
         </button>
       </div>
     </div>
-    <div class="max-w-lg mx-auto mt-2 flex items-center justify-center gap-2">
+
+    <!-- Barra Sub-Header: Selector Deslizable de Fecha + Sincronización -->
+    <div class="max-w-lg mx-auto mt-2 pt-2 border-t border-white/[0.04] flex flex-wrap items-center justify-between gap-2">
       <div class="flex items-center bg-slate-900/90 border border-slate-800 rounded-xl px-1 py-0.5 min-w-0">
-        <button onclick="stepArgonDate(-1)" aria-label="Día anterior" class="icon-btn px-2 text-slate-400 hover:text-white text-xs font-bold">◀</button>
-        <input id="selected-date" type="date" onchange="loadDayData(this.value)" class="bg-transparent text-white text-xs font-semibold focus:outline-none text-center w-[112px] min-w-0" />
-        <button onclick="stepArgonDate(1)" aria-label="Día siguiente" class="icon-btn px-2 text-slate-400 hover:text-white text-xs font-bold">▶</button>
+        <button onclick="stepArgonDate(-1)" aria-label="Día anterior" class="icon-btn px-1.5 text-slate-400 hover:text-white text-xs font-bold">◀</button>
+        <input id="selected-date" type="date" onchange="loadDayData(this.value)"
+          class="bg-transparent text-white text-xs font-semibold focus:outline-none text-center w-[112px] min-w-0" />
+        <button onclick="stepArgonDate(1)" aria-label="Día siguiente" class="icon-btn px-1.5 text-slate-400 hover:text-white text-xs font-bold">▶</button>
       </div>
-      <button id="btn-today" onclick="loadDayData(getLocalTodayIso())" class="hidden jchip on">Hoy</button>
+
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button onclick="if(confirm('Esto agrega datos DEMO solo en dias vacios (solo local). Continuar?')) seedCalibratedFeelfitHistory(false)"
+          class="chip px-2.5 py-1 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] font-semibold">
+          Base 14d
+        </button>
+        <button onclick="syncFromSupabase()"
+          class="chip flex items-center space-x-1 px-3 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold active:scale-95 transition">
+          <span>↻ Sincronizar</span>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -392,35 +365,6 @@
           </section>
 
           <section id="goal-card" class="native-card p-4 space-y-2.5"></section>
-
-          <!-- ARGON+: Insights, Hidratación, Diario -->
-          <section class="native-card p-4 space-y-2.5">
-            <div class="flex items-start justify-between gap-2">
-              <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">✨ Insights de Hoy</h2>
-              <div id="streak-chips" class="flex gap-1 flex-wrap justify-end"></div>
-            </div>
-            <div id="insights-list" class="space-y-2"></div>
-          </section>
-          <section class="native-card p-4 space-y-3">
-            <div class="flex items-center justify-between">
-              <h2 class="text-xs font-extrabold uppercase tracking-wider text-sky-300">💧 Hidratación</h2>
-              <span id="water-text" class="text-xs font-mono font-bold text-sky-300 tnum">0 / -- ml</span>
-            </div>
-            <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden"><div id="water-bar" class="h-full bg-sky-400 rounded-full transition-all duration-500" style="width:0%"></div></div>
-            <div class="flex gap-1.5">
-              <button class="jchip" onclick="addWater(250)">+250 ml</button>
-              <button class="jchip" onclick="addWater(500)">+500 ml</button>
-              <button class="jchip" onclick="addWater(750)">+750 ml</button>
-              <button class="jchip" onclick="addWater(-250)">↩ −250</button>
-            </div>
-          </section>
-          <section class="native-card p-4 space-y-2.5">
-            <div class="flex items-center justify-between">
-              <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">📓 Diario del Día</h2>
-              <span class="text-[10px] text-slate-400">Se cruza con tu recuperación de mañana</span>
-            </div>
-            <div id="journal-chips" class="flex flex-wrap gap-1.5"></div>
-          </section>
 
           <!-- Acordeón Desplegable 1: Monitor de Signos Vitales 4D (Estilo Whoop Health Monitor) -->
           <details class="native-card native-accordion group overflow-hidden" open>
@@ -853,29 +797,6 @@
 
         </div>
 
-        <!-- PESTAÑA 5: TENDENCIAS -->
-        <div class="swiper-slide space-y-3.5">
-          <section class="native-card p-4 space-y-3">
-            <div class="flex items-center justify-between">
-              <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">📈 Tendencias</h2>
-              <div class="flex bg-slate-950 p-0.5 rounded-xl border border-slate-800">
-                <button id="tr-7" onclick="setTrendRange(7)" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-transparent text-slate-400">7d</button>
-                <button id="tr-14" onclick="setTrendRange(14)" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-transparent text-slate-400">14d</button>
-                <button id="tr-30" onclick="setTrendRange(30)" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-transparent text-slate-400">30d</button>
-              </div>
-            </div>
-            <p id="trend-summary" class="text-[11px] text-slate-300 leading-relaxed"></p>
-            <div id="trend-cards" class="grid grid-cols-2 gap-2"></div>
-          </section>
-          <section class="native-card p-4 space-y-2.5">
-            <div>
-              <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">🔬 Impacto del Diario en tu Recuperación</h2>
-              <p class="text-[10px] text-slate-400">Recuperación del día siguiente con vs. sin cada hábito (mín. 2 y 3 días).</p>
-            </div>
-            <div id="journal-corr" class="space-y-1.5"></div>
-          </section>
-        </div>
-
       </div>
     </div>
   </main>
@@ -883,73 +804,44 @@
   <!-- ========================================================================
        3. BARRA DE NAVEGACIÓN INFERIOR NATIVA (GLASSMORPHISM DOCK + COACH IA)
        ======================================================================== -->
-  <nav id="argon-nav-dock" class="fixed bottom-0 inset-x-0 z-40 bg-[#05080F]/90 backdrop-blur-2xl border-t border-white/[0.08] px-2 py-1.5" style="padding-bottom:max(6px,env(safe-area-inset-bottom))">
+  <nav id="argon-nav-dock" class="fixed bottom-0 inset-x-0 z-40 bg-[#05080F]/90 backdrop-blur-2xl border-t border-white/[0.08] px-2 py-1.5">
     <div class="max-w-lg mx-auto grid grid-cols-5 items-center text-center">
-      <button onclick="goToArgonTab(0)" id="nav-btn-0" class="flex flex-col items-center justify-center py-1 text-cyan-400 transition"><span class="text-base leading-none">🏠</span><span class="text-[10px] font-bold mt-1">Hoy</span></button>
-      <button onclick="goToArgonTab(1)" id="nav-btn-1" class="flex flex-col items-center justify-center py-1 text-slate-400 transition"><span class="text-base leading-none">🌙</span><span class="text-[10px] font-semibold mt-1">Sueño</span></button>
-      <button onclick="goToArgonTab(2)" id="nav-btn-2" class="flex flex-col items-center justify-center py-1 text-slate-400 transition"><span class="text-base leading-none">⚖️</span><span class="text-[10px] font-semibold mt-1">Cuerpo</span></button>
-      <button onclick="goToArgonTab(3)" id="nav-btn-3" class="flex flex-col items-center justify-center py-1 text-slate-400 transition"><span class="text-base leading-none">🥩</span><span class="text-[10px] font-semibold mt-1">Macros</span></button>
-      <button onclick="goToArgonTab(4)" id="nav-btn-4" class="flex flex-col items-center justify-center py-1 text-slate-400 transition"><span class="text-base leading-none">📈</span><span class="text-[10px] font-semibold mt-1">Tendencias</span></button>
+      <button onclick="goToArgonTab(0)" id="nav-btn-0" class="flex flex-col items-center justify-center py-1 text-cyan-400 transition">
+        <span class="text-base leading-none">🏠</span>
+        <span class="text-[10px] font-bold mt-1">Hoy</span>
+      </button>
+
+      <button onclick="goToArgonTab(1)" id="nav-btn-1" class="flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-200 transition">
+        <span class="text-base leading-none">🌙</span>
+        <span class="text-[10px] font-semibold mt-1">Sueño</span>
+      </button>
+
+      <!-- Botón Central Elevado: Coach Clínico MBE -->
+      <div class="flex justify-center">
+        <button onclick="openArgonCoachModal()"
+          class="coach-fab -mt-5 flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/30 active:scale-95 transition border-2 border-[#05080F]">
+          <span class="text-lg leading-none">🧠</span>
+          <span class="text-[9px] font-black uppercase tracking-tighter mt-0.5">Coach</span>
+        </button>
+      </div>
+
+      <button onclick="goToArgonTab(2)" id="nav-btn-2" class="flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-200 transition">
+        <span class="text-base leading-none">⚖️</span>
+        <span class="text-[10px] font-semibold mt-1">Cuerpo</span>
+      </button>
+
+      <button onclick="goToArgonTab(3)" id="nav-btn-3" class="flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-200 transition">
+        <span class="text-base leading-none">🥩</span>
+        <span class="text-[10px] font-semibold mt-1">Macros</span>
+      </button>
     </div>
   </nav>
-  <div id="drawer-backdrop" class="fixed inset-0 z-[55] bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-200" onclick="closeDrawer()"></div>
-  <aside id="argon-drawer" class="fixed top-0 bottom-0 left-0 z-[56] w-[84%] max-w-[320px] bg-[#0A0F1C] border-r border-white/[0.08] flex flex-col overflow-y-auto" style="transform:translateX(-102%);transition:transform .3s cubic-bezier(.16,1,.3,1);padding-top:max(14px,env(safe-area-inset-top));padding-bottom:max(14px,env(safe-area-inset-bottom))">
-    <div class="px-4 pb-3 border-b border-white/[0.06]">
-      <div class="flex items-center gap-3">
-        <img src="icon-192.png" alt="" class="w-11 h-11 rounded-2xl" />
-        <div class="min-w-0">
-          <div class="text-base font-black text-white leading-tight">ARGON</div>
-          <div id="drawer-sync" class="text-[10px] text-slate-400 truncate">--</div>
-        </div>
-        <button onclick="closeDrawer()" aria-label="Cerrar" class="ml-auto text-slate-400 text-lg px-1">✕</button>
-      </div>
-      <div class="mt-3 flex items-center justify-between p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
-        <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Cuenta regresiva meta</span>
-        <span id="drawer-countdown" class="text-xs font-mono font-bold text-cyan-400">--</span>
-      </div>
-    </div>
-    <div class="px-2 py-2 space-y-0.5 flex-1">
-      <div class="drawer-sec">Registrar</div>
-      <button class="drawer-item" onclick="drawerGo('log')"><span>📋</span><div><b>Cargar día</b><small>Biomarcadores, sueño, zonas FC</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('meal')"><span>🍽️</span><div><b>Registrar comida</b><small>Macros y bitácora</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('water')"><span>💧</span><div><b>+250 ml de agua</b><small>Hidratación de hoy</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('journal')"><span>📓</span><div><b>Diario del día</b><small>Hábitos que afectan tu recuperación</small></div></button>
-      <div class="drawer-sec">Datos</div>
-      <button class="drawer-item" onclick="drawerGo('sync')"><span>🔄</span><div><b>Sincronizar ahora</b><small>Supabase ↔ dispositivo</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('export')"><span>📤</span><div><b>Exportar copia (JSON)</b><small>Historial + diario</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('demo')"><span>🧪</span><div><b>Datos demo</b><small>Solo en días vacíos (local)</small></div></button>
-      <div class="drawer-sec">Sistema</div>
-      <button class="drawer-item" onclick="drawerGo('coach')"><span>🧠</span><div><b>Coach IA</b><small>Gemini · MBE</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('profile')"><span>👤</span><div><b>Perfil y metas</b><small>Nacimiento, altura, meta de peso, déficit</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('settings')"><span>⚙️</span><div><b>Ajustes y conexiones</b><small>Supabase, peso meta, despertar</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('qa')"><span>✅</span><div><b>Auditoría QA</b><small>Integridad del motor y webhook</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('install')"><span>📲</span><div><b>Instalar app</b><small>Pantalla de inicio, modo offline</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('about')"><span>ℹ️</span><div><b>Acerca de</b><small>ARGON v6.0 PRO</small></div></button>
-    </div>
-  </aside>
-
-  <div id="sd-backdrop" class="fixed inset-0 z-[44] bg-black/55 backdrop-blur-[2px] opacity-0 pointer-events-none transition-opacity duration-200" onclick="toggleDial(false)"></div>
-  <div id="speed-dial" class="fixed right-4 z-[45] flex flex-col items-end gap-2.5" style="bottom:calc(76px + env(safe-area-inset-bottom))">
-    <button class="sd-item" style="--i:5" onclick="dialAction('coach')"><span class="sd-label">Coach IA</span><span class="sd-ico" style="background:linear-gradient(135deg,#10B981,#22D3EE)">🧠</span></button>
-    <button class="sd-item" style="--i:4" onclick="dialAction('workout')"><span class="sd-label">Entrenamiento</span><span class="sd-ico" style="background:#0E7490">🏋️</span></button>
-    <button class="sd-item" style="--i:3" onclick="dialAction('journal')"><span class="sd-label">Diario</span><span class="sd-ico" style="background:#6D28D9">📓</span></button>
-    <button class="sd-item" style="--i:2" onclick="dialAction('water')"><span class="sd-label">+250 ml agua</span><span class="sd-ico" style="background:#0369A1">💧</span></button>
-    <button class="sd-item" style="--i:1" onclick="dialAction('meal')"><span class="sd-label">Comida</span><span class="sd-ico" style="background:#B45309">🍽️</span></button>
-    <button class="sd-item" style="--i:0" onclick="dialAction('log')"><span class="sd-label">Registrar día</span><span class="sd-ico" style="background:#047857">📋</span></button>
-    <button id="sd-main" onclick="toggleDial()" aria-label="Acciones rápidas" class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/30 flex items-center justify-center text-3xl font-light leading-none">+</button>
-  </div>
 
   <!-- ========================================================================
        4. MODALES TIPO BOTTOM SHEET NATIVO (+ DÍA, AUDITORÍA QA, AJUSTES ⚙️)
        ======================================================================== -->
 
   <!-- Bottom Sheet 1: Registro Manual (+ Día) -->
-  <div id="detail-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center">
-    <div id="detail-panel" class="bottom-sheet-panel bg-slate-900 border-t sm:border border-slate-700/80 rounded-t-3xl sm:rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 space-y-4">
-      <div class="w-12 h-1.5 bg-slate-700 rounded-full mx-auto -mt-1"></div>
-      <div id="detail-body"></div>
-    </div>
-  </div>
   <div id="log-modal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center">
     <div class="bottom-sheet-panel bg-slate-900 border-t sm:border border-slate-700/80 rounded-t-3xl sm:rounded-3xl max-w-lg w-full max-h-[88vh] overflow-y-auto p-5 space-y-4">
       <div class="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-1 sm:hidden"></div>
@@ -974,15 +866,6 @@
         <div><label class="text-slate-400 block mb-1">RPE Sesión (1-10)</label><input id="in-rpe" type="number" step="0.5" placeholder="7.5" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
         <div><label class="text-slate-400 block mb-1">Kcal Ingeridas Hoy</label><input id="in-kcal" type="number" placeholder="1650" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
         <div><label class="text-slate-400 block mb-1">Horas Guardia Nocturna</label><input id="in-shift-hours" type="number" step="0.5" placeholder="0" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
-        <div class="col-span-2 pt-1 text-[10px] font-bold uppercase tracking-wider text-cyan-400">Opcional · Zonas FC reales (min) y caminata</div>
-        <div><label class="text-slate-400 block mb-1">Pasos de caminata</label><input id="in-walking-steps" type="number" placeholder="3000" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
-        <div class="grid grid-cols-5 gap-1 col-span-2">
-          <input id="in-z1" type="number" placeholder="Z1" class="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-white text-center" />
-          <input id="in-z2" type="number" placeholder="Z2" class="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-white text-center" />
-          <input id="in-z3" type="number" placeholder="Z3" class="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-white text-center" />
-          <input id="in-z4" type="number" placeholder="Z4" class="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-white text-center" />
-          <input id="in-z5" type="number" placeholder="Z5" class="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-white text-center" />
-        </div>
       </div>
       <button onclick="saveAndComputeManualEntry()" class="action-btn w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase tracking-wider">
         Guardar y Recalcular Grafo MBE
@@ -1072,7 +955,7 @@
     }
 
     function updateBottomNavActiveState(activeIdx) {
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 4; i++) {
         const btn = document.getElementById('nav-btn-' + i);
         if (!btn) continue;
         btn.className = (i === activeIdx)
@@ -1259,8 +1142,7 @@
         { id: 'nav-btn-0', icon: 'activity', label: 'Hoy' },
         { id: 'nav-btn-1', icon: 'moon', label: 'Sueño' },
         { id: 'nav-btn-2', icon: 'scale', label: 'Cuerpo' },
-        { id: 'nav-btn-3', icon: 'flame', label: 'Macros' },
-        { id: 'nav-btn-4', icon: 'trending-up', label: 'Tendencias' }
+        { id: 'nav-btn-3', icon: 'flame', label: 'Macros' }
       ];
       if (window.lucide) {
         navIcons.forEach(item => {
@@ -1443,16 +1325,15 @@
     // 5. MOTOR MATEMÁTICO MBE v6.0 (FEELFIT + DEUDA SUEÑO 7.5H + ATWATER 0 KCAL)
     // ========================================================================
     function computeArgonDayScore(todayRaw, historyRawList, prevComputed) {
-      const PROF = argonProfile_();
-      const wakeTimeStr = PROF.wake;
+      const wakeTimeStr = localStorage.getItem('argon_wake_time') || '06:00';
       const MIN_BASELINE_DAYS = 7;
       const basalNeedH = 7.50; // Calibrado a 7h 30m de sueño neto efectivo
 
       // Edad cronológica exacta (Nacido: 12 Nov 1997)
-      const birthDate = new Date(PROF.birth + 'T00:00:00-04:00');
+      const birthDate = new Date('1997-11-12T00:00:00-04:00');
       const refDate = todayRaw.log_date ? new Date(todayRaw.log_date + 'T12:00:00-04:00') : new Date();
       const chronologicalAge = +((refDate.getTime() - birthDate.getTime()) / (365.2425 * 86400000)).toFixed(2);
-      const heightM = PROF.height_m;
+      const heightM = 1.73;
 
       // A. BIOIMPEDANCIA FEELFIT
       const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.weight_kg : 86.80);
@@ -1483,18 +1364,15 @@
       const nightAwakeH = Math.max(0, parseFloat(todayRaw.night_awake_shift_hours) || 0);
 
       // Pasos netos: descuenta pasos de caminata (Zepp walking_steps o estimado 85 pasos/min ejercicio)
-      const hz = (todayRaw.hr_zones_minutes && typeof todayRaw.hr_zones_minutes === 'object') ? todayRaw.hr_zones_minutes : null;
-      const zonesReal = todayRaw.hr_zones_real === true || !!(hz && hz.real === true);
-      const explicitWalk = parseInt(todayRaw.walking_steps, 10) || parseInt(hz && hz.walking_steps, 10) || 0;
-      const walkingSteps = explicitWalk || (workoutMin > 0 ? Math.round(workoutMin * 85) : 0);
+      const walkingSteps = parseInt(todayRaw.walking_steps, 10) || (workoutMin > 0 ? Math.round(workoutMin * 85) : 0);
       const stepsNet = Math.max(0, steps - walkingSteps);
 
       const ambientZ1 = Math.round(Math.max(0, stepsNet - 2000) / 320);
 
       // Zonas dinámicas por RPE cuando no hay hr_zones_real
       let zones;
-      if (zonesReal && hz) {
-        zones = { z1: parseFloat(hz.z1) || 0, z2: parseFloat(hz.z2) || 0, z3: parseFloat(hz.z3) || 0, z4: parseFloat(hz.z4) || 0, z5: parseFloat(hz.z5) || 0 };
+      if (todayRaw.hr_zones_real === true && todayRaw.hr_zones_minutes) {
+        zones = todayRaw.hr_zones_minutes;
       } else {
         // Distribución base: separar ambientZ1 (caminata diaria) de workout Z1
         const workoutZ1 = Math.round(workoutMin * 0.22);
@@ -1693,7 +1571,7 @@
       const prelimTdee = Math.round(prelimRmrActive + neatStepsKcal + netExerciseKcal);
 
       // Step 2: Target macros from preliminary TDEE -> TEF estimate
-      const desiredDeficit = strainScore >= 14.0 ? Math.max(250, PROF.deficit - 50) : PROF.deficit;
+      const desiredDeficit = strainScore >= 14.0 ? 500 : 550;
       let rawTargetKcal = Math.min(2450, Math.max(1650, prelimTdee - desiredDeficit));
       const targetProt = Math.round(2.35 * ffmKg);
       const targetFat = Math.round(0.72 * rawW);
@@ -1833,7 +1711,7 @@
         steps_net: stepsNet,
         pickleball_or_gym_minutes: workoutMin,
         session_rpe: sRpe,
-        hr_zones_minutes: Object.assign({}, zones, zonesReal ? { real: true } : {}, explicitWalk ? { walking_steps: explicitWalk } : {}),
+        hr_zones_minutes: zones,
         z13_minutes: z13Min,
         z45_minutes: z45Min,
         is_hospital_shift: nightAwakeH > 0,
@@ -2009,7 +1887,7 @@
           mealsContainer.innerHTML = meals.map((m, idx) => `
             <span class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-slate-800/90 border border-slate-700 text-slate-200">
               <span><strong>${esc(m.name || 'Comida')}:</strong> ${m.kcal}kcal (${m.prot}P/${m.carbs}C/${m.fat}G)</span>
-              <button onclick="favMealByIndex(${idx})" class="link-btn text-amber-300 font-bold px-1" aria-label="Favorito">⭐</button><button onclick="removeMealByIndex(${idx})" class="link-btn text-rose-400 hover:text-rose-300 font-bold ml-1 px-1.5">✕</button>
+              <button onclick="removeMealByIndex(${idx})" class="link-btn text-rose-400 hover:text-rose-300 font-bold ml-1 px-1.5">✕</button>
             </span>
           `).join('');
         }
@@ -2369,15 +2247,6 @@
         night_awake_shift_hours: valOrKeep('in-shift-hours', existing.night_awake_shift_hours || 0, true)
       };
 
-      const zv = (id) => { const el = document.getElementById(id); return el && el.value !== '' ? parseFloat(el.value) : null; };
-      const zs = ['z1','z2','z3','z4','z5'].map(z => zv('in-' + z));
-      const ws = zv('in-walking-steps');
-      if (zs.some(v => v !== null) || ws !== null) {
-        const pz = existing.hr_zones_minutes || {};
-        const zo = { real: zs.some(v => v !== null) || pz.real === true, walking_steps: ws !== null ? ws : (pz.walking_steps || 0) };
-        ['z1','z2','z3','z4','z5'].forEach((k, i) => { zo[k] = zs[i] !== null ? zs[i] : (parseFloat(pz[k]) || 0); });
-        rawInput.hr_zones_minutes = zo;
-      }
       const computed = computeArgonDayScore(rawInput, pastList, pastList[0] || null);
       store[dateStr] = computed;
       saveLocalStore(store);
@@ -2393,8 +2262,6 @@
     }
 
     async function seedCalibratedFeelfitHistory(pushCloud = false) {
-      if (Object.keys(getLocalStore()).length > 0 && !confirm('Esto reemplaza tu historial local por datos simulados de calibración. ¿Continuar?')) return;
-      pushCloud = false;
       const existingStore = getLocalStore();
       const todayIso = getLocalTodayIso();
       const existingToday = existingStore[todayIso] || {};
@@ -2536,8 +2403,8 @@
       try {
         document.getElementById('sync-status-text').textContent = 'Sincronizando DAG...';
         const [rawRes, compRes] = await Promise.all([
-          supabaseClient.from('daily_raw_biometrics').select('*').order('log_date', { ascending: false }).limit(30),
-          supabaseClient.from('computed_daily_scores').select('*').order('log_date', { ascending: false }).limit(30)
+          supabaseClient.from('daily_raw_biometrics').select('*').order('log_date', { ascending: true }).limit(30),
+          supabaseClient.from('computed_daily_scores').select('*').order('log_date', { ascending: true }).limit(30)
         ]);
 
         const rawMap = {};
@@ -2819,7 +2686,6 @@
           body: JSON.stringify({
             action: 'ask_coach',
             question: question,
-            client_context: window.argonJournalContext ? window.argonJournalContext() : null,
             history: argonCoachHistory.slice(-6)
           })
         });
@@ -2840,756 +2706,5 @@
     }
   </script>
   <script src="argon-patch.js"></script>
-
-  <script>
-  /* ARGON+ : Tendencias, Insights, Diario, Hidratación, PTR, Toast */
-  (function () {
-    const JKEY = 'argon_journal_v1';
-    const BEH = [
-      ['caffeine','☕ Cafeína tarde'],['alcohol','🍷 Alcohol'],['late_meal','🍽️ Cena tardía'],['stress','😣 Estrés alto'],
-      ['sauna','🔥 Sauna'],['cold','🧊 Frío'],['meditation','🧘 Meditación'],['supplements','💊 Suplementos'],
-      ['screens','📱 Pantallas tarde'],['nap','😴 Siesta']
-    ];
-    let range = 14, lastAll = [], lastRec = null;
-    const $ = (id) => document.getElementById(id);
-    const jStore = () => { try { return JSON.parse(localStorage.getItem(JKEY) || '{}'); } catch (_) { return {}; } };
-    const curDate = () => ($('selected-date') && $('selected-date').value) || getLocalTodayIso();
-    const jDay = (d) => { const e = jStore()[d] || {}; return { water_ml: e.water_ml || 0, flags: e.flags || {} }; };
-    const avg = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
-    const nextDay = (d) => { const t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + 1); return t.toISOString().slice(0, 10); };
-    const caracasHour = () => { try { return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Caracas', hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (_) { return new Date().getHours(); } };
-
-    window.showToast = (msg) => {
-      let t = $('argon-toast');
-      if (!t) { t = document.createElement('div'); t.id = 'argon-toast'; t.className = 'argon-toast'; document.body.appendChild(t); }
-      t.textContent = msg; t.classList.add('show');
-      clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2200);
-    };
-    const buzz = (ms) => { try { navigator.vibrate && navigator.vibrate(ms || 8); } catch (_) {} };
-
-    function jUpdate(fn) {
-      const d = curDate(), s = jStore(), e = s[d] || { water_ml: 0, flags: {} };
-      fn(e); s[d] = e; localStorage.setItem(JKEY, JSON.stringify(s));
-      if (typeof supabaseClient !== 'undefined' && supabaseClient) {
-        supabaseClient.from('daily_journal').upsert({ log_date: d, water_ml: e.water_ml, flags: e.flags }).then(() => {}, () => {});
-      }
-      if (lastRec) render(lastRec, lastAll);
-    }
-    window.addWater = (ml) => { buzz(); jUpdate(e => { e.water_ml = Math.max(0, (e.water_ml || 0) + ml); }); };
-    window.toggleBehavior = (id) => { buzz(); jUpdate(e => { e.flags[id] = !e.flags[id]; }); };
-    window.setTrendRange = (n) => { range = n; if (lastRec) renderTrends(lastAll); };
-    window.argonJournalContext = () => { const j = jDay(curDate()); return { agua_ml: j.water_ml, habitos_activos: BEH.filter(b => j.flags[b[0]]).map(b => b[1]) }; };
-
-    function spark(vals, color) {
-      if (vals.length < 2) return '<div class="h-7"></div>';
-      const mn = Math.min(...vals), mx = Math.max(...vals), rg = mx - mn || 1;
-      const pts = vals.map((v, i) => `${(i / (vals.length - 1) * 100).toFixed(1)},${(25 - ((v - mn) / rg) * 22).toFixed(1)}`).join(' ');
-      return `<svg viewBox="0 0 100 28" preserveAspectRatio="none" class="w-full h-7"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
-    }
-    const METRICS = [
-      { k: 'recovery_score', l: 'Recuperación', f: v => v.toFixed(0) + '%', c: '#10B981', g: 1 },
-      { k: 'rmssd_ms', l: 'VFC (RMSSD)', f: v => v.toFixed(1) + ' ms', c: '#22D3EE', g: 1, pos: 1 },
-      { k: 'rhr_bpm', l: 'FC reposo', f: v => v.toFixed(1) + ' lpm', c: '#F43F5E', g: -1, pos: 1 },
-      { k: 'total_sleep_min', l: 'Sueño', f: v => (v / 60).toFixed(1) + ' h', c: '#A78BFA', g: 1, pos: 1 },
-      { k: 'strain_score', l: 'Strain', f: v => v.toFixed(1), c: '#06B6D4', g: 0 },
-      { k: 'weight_kg', l: 'Peso', f: v => v.toFixed(1) + ' kg', c: '#38BDF8', g: -1, pos: 1 },
-      { k: 'body_fat_pct', l: '% Grasa', f: v => v.toFixed(1) + '%', c: '#F59E0B', g: -1, pos: 1 },
-      { k: 'intake_kcal', l: 'Kcal ingeridas', f: v => v.toFixed(0), c: '#34D399', g: 0, pos: 1 }
-    ];
-    const series = (arr, m) => arr.map(r => parseFloat(r[m.k])).filter(v => isFinite(v) && (!m.pos || v > 0));
-
-    function renderTrends(all) {
-      [7, 14, 30].forEach(n => { const b = $('tr-' + n); if (b) b.className = (n === range ? 'tab-btn-active ' : 'text-slate-400 border-transparent ') + 'text-[10px] font-semibold px-2.5 py-1 rounded-lg border'; });
-      const cur = all.slice(-range), prev = all.slice(-2 * range, -range);
-      const box = $('trend-cards'); if (!box) return;
-      box.innerHTML = METRICS.map(m => {
-        const a = series(cur, m), p = series(prev, m), ma = avg(a), mp = avg(p);
-        let d = '<span class="text-slate-500">—</span>';
-        if (isFinite(ma) && isFinite(mp)) {
-          const dv = ma - mp, good = m.g === 0 ? 0 : (dv * m.g > 0 ? 1 : -1);
-          const col = Math.abs(dv) < 1e-6 || m.g === 0 ? 'text-slate-400' : (good > 0 ? 'text-emerald-400' : 'text-amber-400');
-          const txt = m.k === 'total_sleep_min' ? (dv / 60).toFixed(1) + ' h' : Math.abs(dv) >= 10 ? dv.toFixed(0) : dv.toFixed(1);
-          d = `<span class="${col}">${dv >= 0 ? '▲' : '▼'} ${txt}</span>`;
-        }
-        return `<div class="trend-card"><div class="text-[10px] text-slate-400">${m.l} · prom.</div><div class="flex items-baseline justify-between"><span class="text-base font-black text-white font-mono tnum">${isFinite(ma) ? m.f(ma) : '--'}</span><span class="text-[10px] font-mono">${d}</span></div>${spark(a, m.c)}</div>`;
-      }).join('');
-      const rec = avg(series(cur, METRICS[0])), slp = avg(series(cur, METRICS[3])), st = avg(series(cur, METRICS[4]));
-      const w = series(cur, METRICS[5]);
-      const dw = w.length > 1 ? w[w.length - 1] - w[0] : NaN;
-      $('trend-summary').textContent = cur.length < 3 ? 'Aún hay pocos días registrados para mostrar tendencias.' :
-        `Últimos ${cur.length} días: recuperación media ${isFinite(rec) ? rec.toFixed(0) : '--'}%, sueño ${isFinite(slp) ? slp.toFixed(1) / 1 : '--'}${isFinite(slp) ? '' : ''} ${isFinite(slp) ? 'h' : ''}, strain medio ${isFinite(st) ? st.toFixed(1) : '--'}` + (isFinite(dw) ? `, peso ${dw >= 0 ? '+' : ''}${dw.toFixed(1)} kg.` : '.');
-      renderCorr(all);
-    }
-    function renderCorr(all) {
-      const J = jStore(), by = {}; all.forEach(r => { by[r.log_date] = r; });
-      const rows = BEH.map(([id, label]) => {
-        const w = [], wo = [];
-        Object.keys(J).forEach(d => {
-          const nx = by[nextDay(d)]; if (!nx || !(nx.recovery_score > 0) || nx.hrv_missing) return;
-          ((J[d].flags || {})[id] ? w : wo).push(nx.recovery_score);
-        });
-        return { label, nw: w.length, nwo: wo.length, d: (w.length >= 2 && wo.length >= 3) ? avg(w) - avg(wo) : NaN };
-      }).sort((a, b) => (isFinite(b.d) ? Math.abs(b.d) : -1) - (isFinite(a.d) ? Math.abs(a.d) : -1));
-      $('journal-corr').innerHTML = rows.map(r => {
-        const v = isFinite(r.d) ? `<span class="${r.d >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-mono font-bold">${r.d >= 0 ? '+' : ''}${r.d.toFixed(1)} pts</span>` : '<span class="text-slate-500 text-[10px]">sin datos</span>';
-        return `<div class="flex items-center justify-between p-2 rounded-xl bg-slate-950/60 border border-slate-800/70 text-xs"><span class="text-slate-200">${r.label}</span><span class="flex items-center gap-2">${v}<span class="text-[9px] text-slate-500">n=${r.nw}/${r.nwo}</span></span></div>`;
-      }).join('');
-    }
-
-    function streak(upto, pred) { let n = 0; for (let i = upto.length - 1; i >= 0 && pred(upto[i]); i--) n++; return n; }
-    function insights(r, upto) {
-      const o = [], isToday = r.log_date === getLocalTodayIso(), hr = caracasHour();
-      const gap = r.recommended_max_strain - r.strain_score;
-      if (r.calibrating) o.push(['🧪', 'Calibrando tu línea base (necesita 7 días con VFC y FC). Las puntuaciones son aproximadas.', 'sky']);
-      if (isToday && gap >= 3) o.push(['⚡', `Tienes margen para ~${gap.toFixed(1)} de strain más hoy (meta ${r.recommended_max_strain}).`, 'cyan']);
-      else if (gap < -1) o.push(['⚠️', `Superaste tu meta de strain por ${(-gap).toFixed(1)}. Prioriza sueño y proteína esta noche.`, 'amber']);
-      if (r.cumulative_sleep_debt_hours >= 2) o.push(['🌙', `Deuda de sueño de ${r.cumulative_sleep_debt_hours} h. Acuéstate entre ${r.optimal_bedtime_start || '--'} y ${r.optimal_bedtime_end || '--'}.`, 'purple']);
-      const rm = upto.slice(-3).map(x => x.rmssd_ms).filter(v => v > 0);
-      if (rm.length === 3 && r.rmssd_14d_mean_ms > 0) {
-        const dv = (avg(rm) / r.rmssd_14d_mean_ms - 1) * 100;
-        if (dv <= -8) o.push(['📉', `Tu VFC de 3 días está ${Math.abs(dv).toFixed(0)}% bajo tu línea base: reduce intensidad y vigila el estrés.`, 'amber']);
-        else if (dv >= 8) o.push(['📈', `Tu VFC de 3 días está ${dv.toFixed(0)}% sobre tu línea base: buena adaptación.`, 'emerald']);
-      }
-      const protLeft = r.target_protein_g - r.intake_protein_g;
-      if (isToday && hr >= 17 && protLeft > 25) o.push(['🥩', `Te faltan ${protLeft} g de proteína; cúbrelos en la cena o con whey.`, 'emerald']);
-      const j = jDay(r.log_date), goal = Math.round(r.weight_kg * 35 / 50) * 50;
-      if (isToday && hr >= 15 && j.water_ml < goal * 0.5) o.push(['💧', `Vas en ${j.water_ml} de ${goal} ml de agua.`, 'sky']);
-      const old = upto.length > 7 ? upto[upto.length - 8] : null;
-      if (old && old.trend_weight_kg > 0) {
-        const rate = (r.trend_weight_kg - old.trend_weight_kg) / 7 * 7;
-        o.push(['⚖️', `Peso tendencia: ${rate >= 0 ? '+' : ''}${rate.toFixed(2)} kg en 7 días (objetivo ≈ −0.5 kg/sem).`, rate <= -0.2 && rate >= -1 ? 'emerald' : 'amber']);
-      }
-      return o.slice(0, 5);
-    }
-    const TONE = { cyan: 'border-cyan-500/30 bg-cyan-500/5', amber: 'border-amber-500/30 bg-amber-500/5', purple: 'border-purple-500/30 bg-purple-500/5', emerald: 'border-emerald-500/30 bg-emerald-500/5', sky: 'border-sky-500/30 bg-sky-500/5' };
-
-    function render(r, all) {
-      lastRec = r; lastAll = all;
-      const upto = all.filter(x => x.log_date <= r.log_date);
-      const list = $('insights-list');
-      if (list) {
-        const ins = insights(r, upto);
-        list.innerHTML = ins.length ? ins.map(([i, t, c]) => `<div class="flex gap-2 p-2.5 rounded-xl border ${TONE[c] || TONE.sky} text-[11px] text-slate-200 leading-snug"><span>${i}</span><span>${t}</span></div>`).join('') : '<div class="text-[11px] text-slate-400">Sin alertas: todo en rango.</div>';
-      }
-      const sc = $('streak-chips');
-      if (sc) {
-        const fs = streak(upto, x => x.intake_kcal > 0), ss = streak(upto, x => x.total_sleep_min >= 420), tr = upto.slice(-7).filter(x => x.pickleball_or_gym_minutes > 0).length;
-        sc.innerHTML = [`🔥 Comidas ${fs}d`, `🌙 ≥7h ${ss}d`, `🏋️ ${tr}/7`].map(t => `<span class="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] text-slate-300 tnum">${t}</span>`).join('');
-      }
-      const j = jDay(r.log_date), goal = Math.round(r.weight_kg * 35 / 50) * 50;
-      if ($('water-text')) { $('water-text').textContent = `${j.water_ml} / ${goal} ml`; $('water-bar').style.width = Math.min(100, j.water_ml / goal * 100) + '%'; }
-      const jc = $('journal-chips');
-      if (jc) jc.innerHTML = BEH.map(([id, l]) => `<button class="jchip ${j.flags[id] ? 'on' : ''}" onclick="toggleBehavior('${id}')">${l}</button>`).join('');
-      renderTrends(all);
-      if (typeof refreshSwiperHeight === 'function') refreshSwiperHeight(80);
-    }
-
-    const _rd = renderDashboard;
-    renderDashboard = function (record, all) { _rd(record, all); try { render(record, all); } catch (e) { console.error('ARGON+', e); } };
-
-    const _sync = syncFromSupabase;
-    syncFromSupabase = async function () {
-      if (typeof supabaseClient === 'undefined' || !supabaseClient) { showToast('Modo local: configura Supabase en ⚙️'); return; }
-      await _sync(); showToast('✓ Datos sincronizados');
-    };
-    const _go = goToArgonTab;
-    goToArgonTab = function (i) { buzz(6); _go(i); };
-
-    // Pull-to-refresh
-    let y0 = null;
-    addEventListener('touchstart', e => { const t = e.target; y0 = (window.scrollY <= 0 && !(t.closest && t.closest('[id$="-modal"], .apexcharts-canvas, input'))) ? e.touches[0].clientY : null; }, { passive: true });
-    addEventListener('touchend', e => { if (y0 !== null && e.changedTouches[0].clientY - y0 > 120) { buzz(12); syncFromSupabase(); } y0 = null; }, { passive: true });
-  })();
-  </script>
-
-  <script>
-  /* ARGON+ Paquete A: menú lateral + speed-dial + header */
-  (function () {
-    const $ = (id) => document.getElementById(id);
-    const buzz = () => { try { navigator.vibrate && navigator.vibrate(8); } catch (_) {} };
-    let deferredInstall = null;
-    addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; });
-
-    window.openDrawer = () => { buzz(); document.body.classList.add('drawer-open'); toggleDial(false); };
-    window.closeDrawer = () => document.body.classList.remove('drawer-open');
-    window.toggleDial = (force) => {
-      const dial = $('speed-dial'); if (!dial) return;
-      const open = typeof force === 'boolean' ? force : !dial.classList.contains('open');
-      dial.classList.toggle('open', open); document.body.classList.toggle('dial-open', open); if (open) buzz();
-    };
-    const toMeal = () => {
-      goToArgonTab(3);
-      setTimeout(() => { const f = $('custom-meal-form'); if (f) { f.classList.remove('hidden'); f.scrollIntoView({ behavior: 'smooth', block: 'center' }); const n = $('cm-name'); n && n.focus({ preventScroll: true }); } if (typeof refreshSwiperHeight === 'function') refreshSwiperHeight(60); }, 380);
-    };
-    const toJournal = () => {
-      goToArgonTab(0);
-      setTimeout(() => { const j = $('journal-chips'); j && j.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 380);
-    };
-    const act = {
-      coach: () => openArgonCoachModal(),
-      log: () => openModal('log-modal'),
-      workout: () => openWorkoutModal(),
-      meal: () => openMealModal(),
-      journal: toJournal,
-      water: () => { addWater(250); showToast('💧 +250 ml registrados'); },
-      sync: () => syncFromSupabase(),
-      settings: () => openModal('settings-modal'),
-      qa: () => runQualityAuditModal(),
-      demo: () => { if (confirm('Esto agrega datos DEMO solo en días vacíos (solo local). ¿Continuar?')) seedCalibratedFeelfitHistory(false); },
-      export: () => {
-        try {
-          const payload = { exported_at: new Date().toISOString(), records: getLocalStore(), journal: JSON.parse(localStorage.getItem('argon_journal_v1') || '{}') };
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
-          a.download = `argon-backup-${getLocalTodayIso()}.json`; document.body.appendChild(a); a.click(); a.remove();
-          showToast('📤 Copia exportada');
-        } catch (e) { showToast('No se pudo exportar'); }
-      },
-      install: async () => {
-        if (deferredInstall) { deferredInstall.prompt(); deferredInstall = null; }
-        else showToast('iOS: Compartir → "Añadir a pantalla de inicio"');
-      },
-      profile: () => openProfile(),
-      about: () => showToast('ARGON v6.0 PRO · Motor MBE · Local + Supabase')
-    };
-    window.drawerGo = (a) => { closeDrawer(); setTimeout(() => act[a] && act[a](), 220); };
-    window.dialAction = (a) => { toggleDial(false); setTimeout(() => act[a] && act[a](), 120); };
-
-    addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeDrawer(); toggleDial(false); } });
-    const dr = $('argon-drawer'); let x0 = null;
-    dr.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
-    dr.addEventListener('touchend', (e) => { if (x0 !== null && e.changedTouches[0].clientX - x0 < -60) closeDrawer(); x0 = null; }, { passive: true });
-    // swipe desde el borde izquierdo abre el menú
-    let ex = null;
-    addEventListener('touchstart', (e) => { const t = e.touches[0]; ex = (t.clientX < 18 && !document.body.classList.contains('drawer-open')) ? t.clientX : null; }, { passive: true });
-    addEventListener('touchend', (e) => { if (ex !== null && e.changedTouches[0].clientX - ex > 70) openDrawer(); ex = null; }, { passive: true });
-
-    // espejo de estado de sync y cuenta regresiva dentro del menú
-    const st = $('sync-status-text'), ds = $('drawer-sync');
-    const mirror = () => { if (ds && st) ds.textContent = st.textContent; const c = $('countdown-timer'), dc = $('drawer-countdown'); if (c && dc) dc.textContent = c.textContent; };
-    if (st) new MutationObserver(mirror).observe(st, { childList: true, characterData: true, subtree: true });
-    const ct = $('countdown-timer'); if (ct) new MutationObserver(mirror).observe(ct, { childList: true, characterData: true, subtree: true });
-    mirror();
-
-    // spinner en el botón de sync + botón "Hoy"
-    const _s = syncFromSupabase;
-    syncFromSupabase = async function () {
-      const b = $('sync-btn'); b && b.classList.add('spin');
-      try { await _s(); } finally { b && b.classList.remove('spin'); }
-    };
-    const _r = renderDashboard;
-    renderDashboard = function (rec, all) {
-      _r(rec, all);
-      const b = $('btn-today'); if (b) b.classList.toggle('hidden', rec.log_date === getLocalTodayIso());
-    };
-  })();
-  </script>
-
-  <script>
-  /* ARGON+ Paquete B: ventanas de detalle, anillos con gradiente, números animados, skeleton, confeti */
-  (function () {
-    const $ = (id) => document.getElementById(id);
-    const reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    document.body.classList.add('loading');
-    setTimeout(() => document.body.classList.remove('loading'), 7000);
-
-    //BEGIN_PURE
-    const nf = (x, d) => (x === undefined || x === null || !isFinite(x)) ? '--' : (+x).toFixed(d === undefined ? 1 : d);
-    const sg = (x) => (x === undefined || x === null || !isFinite(x)) ? '--' : ((x >= 0 ? '+' : '') + (+x).toFixed(2));
-    const avgA = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
-    const CLS = { good: 'text-emerald-400', warn: 'text-amber-400', bad: 'text-rose-400', neutral: 'text-slate-400' };
-    const row = (ico, label, val, st, note) => `<div class="d-row"><span class="flex items-center gap-2 text-slate-300"><span>${ico}</span>${label}</span><span class="text-right"><span class="font-mono font-bold ${CLS[st || 'neutral']}">${val}</span>${note ? `<span class="block text-[10px] text-slate-500">${note}</span>` : ''}</span></div>`;
-    const stat = (r) => r.recovery_status === 'OPTIMAL' ? ['Óptima', 'good'] : r.recovery_status === 'COMPROMISED' ? ['Comprometida', 'bad'] : ['Moderada', 'warn'];
-    const SPEC = {
-      recovery: { t: 'Recuperación', ico: '💚', col: '#10B981', get: r => r.recovery_score, fmt: v => nf(v, 0) + '%', type: 'area', min: 0, max: 100, tab: null,
-        big: r => nf(r.recovery_score, 0) + '%', chip: r => stat(r),
-        what: 'Qué tan listo está tu sistema nervioso para absorber carga. Combina tu VFC (lnRMSSD) frente a tu base de 14 días, la FC en reposo, la calidad del sueño y alertas de SpO₂ / frecuencia respiratoria.',
-        factors: r => [
-          row('💓', 'VFC nocturna', `${nf(r.rmssd_ms)} ms`, r.hrv_missing ? 'neutral' : (r.hrv_z_score >= 0.3 ? 'good' : r.hrv_z_score <= -0.8 ? 'bad' : 'warn'), `base ${nf(r.rmssd_14d_mean_ms)} · z ${sg(r.hrv_z_score)}`),
-          row('❤️', 'FC en reposo', `${nf(r.rhr_bpm)} lpm`, r.rhr_z_score <= 0 ? 'good' : r.rhr_z_score >= 1 ? 'bad' : 'warn', `base ${nf(r.rhr_14d_mean_bpm)} · z ${sg(r.rhr_z_score)}`),
-          row('🌙', 'Calidad de sueño', `${nf(r.sleep_architecture_score, 0)}/100`, r.sleep_missing ? 'neutral' : (r.sleep_architecture_score >= 80 ? 'good' : r.sleep_architecture_score >= 65 ? 'warn' : 'bad')),
-          row('🫁', 'FR / SpO₂', `${nf(r.resp_rate_brpm)} rpm · ${nf(r.spo2_pct)}%`, (r.spo2_pct < 94 || r.resp_rate_brpm > 16.8) ? 'bad' : 'good')],
-        reco: r => (r.recovery_status === 'OPTIMAL' ? `Sistema listo: puedes buscar hasta ${nf(r.recommended_max_strain)} de strain (pesas pesadas o pickleball competitivo).`
-          : r.recovery_status === 'COMPROMISED' ? `Fatiga autonómica: limita el strain a ${nf(r.recommended_max_strain)}, prioriza movilidad/caminata y acuéstate entre ${r.optimal_bedtime_start || '--'} y ${r.optimal_bedtime_end || '--'}.`
-          : `Carga moderada: techo de strain ${nf(r.recommended_max_strain)}. Prioriza técnica y volumen controlado.`) + (r.hrv_missing || r.sleep_missing ? ' ⚠ Faltan datos de VFC o sueño: la puntuación es menos fiable.' : '') + (r.calibrating ? ' 🧪 Aún calibrando tu línea base.' : '') },
-      strain: { t: 'Esfuerzo (Strain)', ico: '⚡', col: '#06B6D4', get: r => r.strain_score, fmt: v => nf(v, 1), type: 'column', min: 0, max: 21, tab: 2,
-        big: r => nf(r.strain_score, 1) + ' / 21', chip: r => r.strain_score <= r.recommended_max_strain ? ['Dentro de meta', 'good'] : r.strain_score <= r.recommended_max_strain + 1.5 ? ['Sobre meta', 'warn'] : ['Muy sobre meta', 'bad'],
-        line: r => ({ y: r.recommended_max_strain, label: 'Meta ' + nf(r.recommended_max_strain) }),
-        what: 'Carga total del día en escala logarítmica 0–21: cardio por zonas (TRIMP), carga neuromuscular (RPE × minutos), pasos netos y carga de guardia nocturna.',
-        factors: r => [
-          row('🎯', 'Strain vs meta', `${nf(r.strain_score)} / ${nf(r.recommended_max_strain)}`, r.strain_score <= r.recommended_max_strain ? 'good' : r.strain_score <= r.recommended_max_strain + 1.5 ? 'warn' : 'bad'),
-          row('❤️‍🔥', 'Cardio TRIMP', `${nf(r.cardio_trimp_load)} AU`, 'neutral', `Z1–3 ${nf(r.z13_minutes, 0)} min · Z4–5 ${nf(r.z45_minutes, 0)} min`),
-          row('🏋️', 'Neuromuscular', `${nf(r.neuromuscular_load)} AU`, 'neutral', `${nf(r.pickleball_or_gym_minutes, 0)} min · RPE ${nf(r.session_rpe)}`),
-          row('🏥', 'Guardia nocturna', `${nf(r.shift_orthostatic_load)} AU`, r.shift_orthostatic_load > 0 ? 'warn' : 'neutral'),
-          row('👟', 'Pasos netos (NEAT)', `${(r.steps_net || 0).toLocaleString()}`, 'neutral', `de ${(r.steps_count || 0).toLocaleString()} totales`),
-          ...(r.acwr_penalty_strain > 0 ? [row('📈', 'ACWR elevado', `−${nf(r.acwr_penalty_strain)} meta`, 'warn', 'Carga aguda > 1.3× crónica')] : [])],
-        reco: r => r.strain_score < r.recommended_max_strain - 3 ? `Tienes margen de ~${nf(r.recommended_max_strain - r.strain_score)} de strain si te sientes bien.`
-          : r.strain_score > r.recommended_max_strain + 1 ? 'Superaste tu meta: prioriza proteína, hidratación y dormir en tu ventana óptima.' : 'Estás en el rango objetivo de carga para tu recuperación de hoy.' },
-      sleep: { t: 'Sueño', ico: '🌙', col: '#A78BFA', get: r => r.total_sleep_min > 0 ? r.total_sleep_min / 60 : null, fmt: v => nf(v, 1) + ' h', type: 'column', min: 0, tab: 1,
-        big: r => r.total_sleep_min > 0 ? `${Math.floor(r.total_sleep_min / 60)}h ${r.total_sleep_min % 60}m` : '--', chip: r => r.sleep_missing ? ['Sin datos', 'neutral'] : (r.sleep_architecture_score >= 80 ? ['Reparador', 'good'] : r.sleep_architecture_score >= 65 ? ['Aceptable', 'warn'] : ['Insuficiente', 'bad']),
-        line: r => ({ y: r.dynamic_sleep_need_hours, label: 'Necesitas ' + nf(r.dynamic_sleep_need_hours) + ' h' }),
-        what: 'Puntuación de 4 pilares: horas frente a tu necesidad dinámica, regularidad circadiana, eficiencia en cama y proporción de sueño profundo + REM. La deuda se amortiza con noches largas.',
-        factors: r => [
-          row('⏱️', 'Horas vs necesidad', `${nf(r.sleep_hours_vs_needed_pct, 0)}%`, r.sleep_hours_vs_needed_pct >= 95 ? 'good' : r.sleep_hours_vs_needed_pct >= 80 ? 'warn' : 'bad', `necesidad ${nf(r.dynamic_sleep_need_hours)} h`),
-          row('🔁', 'Regularidad', `${nf(r.sleep_regularity_pct, 0)}%`, r.sleep_regularity_pct >= 85 ? 'good' : r.sleep_regularity_pct >= 70 ? 'warn' : 'bad'),
-          row('🛏️', 'Eficiencia', `${nf(r.sleep_efficiency_pct, 0)}%`, r.sleep_efficiency_pct >= 88 ? 'good' : r.sleep_efficiency_pct >= 80 ? 'warn' : 'bad'),
-          row('🧠', 'Profundo + REM', `${nf(r.deep_sleep_min + r.rem_sleep_min, 0)} min`, 'neutral', `profundo ${nf(r.deep_sleep_min, 0)} · REM ${nf(r.rem_sleep_min, 0)}`),
-          row('💳', 'Deuda 7 días', `${nf(r.cumulative_sleep_debt_hours)} h`, r.cumulative_sleep_debt_hours < 1 ? 'good' : r.cumulative_sleep_debt_hours < 3 ? 'warn' : 'bad')],
-        reco: r => `Ventana óptima para acostarte: ${r.optimal_bedtime_start || '--'}–${r.optimal_bedtime_end || '--'}.` + (r.cumulative_sleep_debt_hours >= 2 ? ' Tu deuda es alta: adelanta la hora de dormir y evita pantallas/cafeína tarde.' : '') },
-      hrv: { t: 'VFC (RMSSD)', ico: '💓', col: '#22D3EE', get: r => r.rmssd_ms > 0 ? r.rmssd_ms : null, get2: r => r.rmssd_14d_mean_ms > 0 ? r.rmssd_14d_mean_ms : null, name2: 'Base 14d', fmt: v => nf(v) + ' ms', type: 'area', tab: null,
-        big: r => nf(r.rmssd_ms) + ' ms', chip: r => r.hrv_missing ? ['Sin datos', 'neutral'] : (r.hrv_z_score >= 0.3 ? ['Sobre base', 'good'] : r.hrv_z_score <= -0.8 ? ['Bajo base', 'bad'] : ['En rango', 'warn']),
-        what: 'Variabilidad de la frecuencia cardíaca nocturna. Se evalúa en escala logarítmica (lnRMSSD) frente a tu media de 14 días; solo los cambios mayores al SWC se consideran reales.',
-        factors: r => [
-          row('📐', 'lnRMSSD hoy / base', `${nf(r.ln_rmssd, 2)} / ${nf(r.ln_rmssd_14d_mean, 2)}`, 'neutral'),
-          row('📊', 'Z-score', sg(r.hrv_z_score), r.hrv_z_score >= 0.3 ? 'good' : r.hrv_z_score <= -0.8 ? 'bad' : 'warn'),
-          row('〰️', 'CV 7 días', `${nf(r.cv_lnrmssd_7d_pct)}%`, r.cv_lnrmssd_7d_pct >= 1.5 && r.cv_lnrmssd_7d_pct <= 8.5 ? 'good' : 'warn', 'Rango estable 1.5–8.5%'),
-          row('🎚️', 'Cambio mínimo (SWC)', `±${nf(r.swc_lnrmssd, 3)}`, 'neutral'),
-          row('🛡️', 'Tope anti-artefactos', `${nf(r.dynamic_rmssd_cap_ms, 0)} ms`, 'neutral')],
-        reco: r => r.hrv_z_score <= -0.8 ? 'VFC baja: posible estrés, poco sueño, alcohol o sobrecarga. Reduce intensidad y revisa el diario.' : 'VFC dentro o sobre tu base: buena tolerancia a la carga.' },
-      rhr: { t: 'FC en reposo', ico: '❤️', col: '#F43F5E', get: r => r.rhr_bpm > 0 ? r.rhr_bpm : null, get2: r => r.rhr_14d_mean_bpm > 0 ? r.rhr_14d_mean_bpm : null, name2: 'Base 14d', fmt: v => nf(v) + ' lpm', type: 'area', tab: null,
-        big: r => nf(r.rhr_bpm) + ' lpm', chip: r => r.rhr_z_score <= 0 ? ['Bajo base', 'good'] : r.rhr_z_score >= 1 ? ['Alta', 'bad'] : ['Normal', 'warn'],
-        what: 'Pulso más bajo durante el sueño. Un aumento sostenido frente a tu base suele indicar fatiga, enfermedad, deshidratación o estrés.',
-        factors: r => [
-          row('❤️', 'FC reposo / base', `${nf(r.rhr_bpm)} / ${nf(r.rhr_14d_mean_bpm)}`, 'neutral'),
-          row('📊', 'Z-score', sg(r.rhr_z_score), r.rhr_z_score <= 0 ? 'good' : r.rhr_z_score >= 1 ? 'bad' : 'warn'),
-          row('🫁', 'Frec. respiratoria', `${nf(r.resp_rate_brpm)} rpm`, r.resp_rate_brpm > 16.8 ? 'bad' : 'good', `base ${nf(r.resp_14d_mean_brpm)}`),
-          row('🩸', 'SpO₂', `${nf(r.spo2_pct)}%`, r.spo2_pct < 94 ? 'bad' : 'good')],
-        reco: r => r.rhr_z_score >= 1 ? 'FC en reposo elevada: hidrátate, evita carga intensa y vigila síntomas.' : 'FC en reposo estable respecto a tu base.' },
-      weight: { t: 'Peso corporal', ico: '⚖️', col: '#38BDF8', get: r => r.weight_kg > 0 ? r.weight_kg : null, get2: r => r.trend_weight_kg > 0 ? r.trend_weight_kg : null, name2: 'Tendencia', fmt: v => nf(v, 2) + ' kg', type: 'area', tab: 2,
-        big: r => nf(r.weight_kg, 2) + ' kg', chip: r => ['IMC ' + nf(r.bmi), 'neutral'],
-        what: 'Peso de báscula (Feelfit) y tendencia suavizada (EWMA), que filtra el ruido de agua y comida. Decide con la tendencia, no con un día.',
-        factors: r => [
-          row('📉', 'Tendencia', `${nf(r.trend_weight_kg, 2)} kg`, 'neutral'),
-          row('🧈', 'Grasa corporal', `${nf(r.body_fat_pct)}%`, 'neutral', `${nf(r.fat_mass_kg)} kg de grasa`),
-          row('💪', 'Masa libre de grasa', `${nf(r.ffm_kg)} kg`, 'neutral', `músculo esq. ${nf(r.skeletal_muscle_pct)}%`),
-          row('🔥', 'Déficit objetivo', `${nf(Math.max(0, r.dynamic_tdee_kcal - r.target_kcal), 0)} kcal`, 'neutral', `meta ${nf(r.target_kcal, 0)} kcal/día`)],
-        reco: r => 'Una pérdida sostenida de 0.3–0.7 kg/semana en tendencia preserva mejor el músculo. Mantén la proteína y el entrenamiento de fuerza.' }
-    };
-    const D = { key: null, range: 14, chart: null, rec: null, all: [] };
-    function seriesFor(spec, r, all, range) {
-      const upto = all.filter(x => x.log_date <= r.log_date), cur = upto.slice(-range), prev = upto.slice(-2 * range, -range);
-      const num = (rows, f) => rows.map(x => { const v = f(x); return (v === null || v === undefined || !isFinite(v)) ? null : +v; });
-      return { cats: cur.map(x => x.log_date.slice(5)), v: num(cur, spec.get), v2: spec.get2 ? num(cur, spec.get2) : null, prevV: num(prev, spec.get) };
-    }
-    function detailHTML(key, r, all, range) {
-      const s = SPEC[key], sr = seriesFor(s, r, all, range);
-      const ok = sr.v.filter(v => v !== null), pk = sr.prevV.filter(v => v !== null);
-      const a = avgA(ok), pa = avgA(pk), dl = (isFinite(a) && isFinite(pa)) ? a - pa : NaN;
-      const [chipT, chipS] = s.chip(r), tabs = [7, 14, 30].map(n => `<button onclick="setDetailRange(${n})" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border ${n === range ? 'tab-btn-active' : 'text-slate-400 border-transparent'}">${n}d</button>`).join('');
-      const tile = (l, v) => `<div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-center"><div class="text-[9px] text-slate-400">${l}</div><div class="text-sm font-black text-white font-mono">${v}</div></div>`;
-      const dTxt = isFinite(dl) ? `<span class="${Math.abs(dl) < 1e-6 ? 'text-slate-400' : 'text-sky-300'}">${dl >= 0 ? '▲' : '▼'} ${Math.abs(dl) >= 10 ? Math.abs(dl).toFixed(0) : Math.abs(dl).toFixed(1)}</span>` : '--';
-      return `<div class="flex items-start justify-between gap-3">
-        <div class="flex items-center gap-2.5"><div class="w-11 h-11 rounded-2xl flex items-center justify-center text-xl" style="background:${s.col}22;border:1px solid ${s.col}55">${s.ico}</div>
-          <div><div class="text-[11px] font-extrabold uppercase tracking-wider text-slate-300">${s.t}</div><div class="text-2xl font-black font-mono text-white leading-none mt-0.5">${s.big(r)}</div></div></div>
-        <div class="flex flex-col items-end gap-2"><button onclick="closeModal('detail-modal')" aria-label="Cerrar" class="text-slate-400 hover:text-white text-sm px-1">✕</button><span class="text-[10px] font-bold ${CLS[chipS]}">${chipT}</span></div></div>
-      <div class="flex items-center justify-between mt-3"><span class="text-[11px] font-bold text-slate-300">Evolución</span><div class="flex bg-slate-950 p-0.5 rounded-xl border border-slate-800">${tabs}</div></div>
-      <div id="detail-chart" class="w-full min-h-[200px]"></div>
-      <div class="grid grid-cols-4 gap-1.5">${tile('Prom.', isFinite(a) ? s.fmt(a) : '--')}${tile('Mín', ok.length ? s.fmt(Math.min(...ok)) : '--')}${tile('Máx', ok.length ? s.fmt(Math.max(...ok)) : '--')}${tile('vs ant.', dTxt)}</div>
-      <div class="mt-3 p-3 rounded-2xl bg-slate-950/70 border border-slate-800 text-[11px] text-slate-300 leading-relaxed"><b class="text-white">Qué mide.</b> ${s.what}</div>
-      <div class="mt-3 space-y-1.5"><div class="text-[11px] font-bold text-slate-300">Factores de hoy</div>${s.factors(r).join('')}</div>
-      <div class="mt-3 p-3 rounded-2xl border text-[11px] leading-relaxed text-slate-100" style="background:${s.col}12;border-color:${s.col}44"><b>🩺 Recomendación.</b> ${s.reco(r)}</div>
-      ${s.tab !== null && s.tab !== undefined ? `<button onclick="closeModal('detail-modal');goToArgonTab(${s.tab})" class="w-full mt-3 py-2.5 rounded-2xl bg-slate-800 text-slate-200 font-bold text-xs">Ver pestaña completa →</button>` : ''}`;
-    }
-    //END_PURE
-
-    function drawChart() {
-      if (!window.ApexCharts || !D.key) return;
-      const s = SPEC[D.key], sr = seriesFor(s, D.rec, D.all, D.range), box = $('detail-chart'); if (!box) return;
-      if (D.chart) { D.chart.destroy(); D.chart = null; }
-      const series = [{ name: s.t, type: s.type === 'column' ? 'column' : 'area', data: sr.v }];
-      if (sr.v2) series.push({ name: s.name2, type: 'line', data: sr.v2 });
-      const ln = s.line ? s.line(D.rec) : null;
-      D.chart = new ApexCharts(box, {
-        chart: { height: 210, type: 'line', background: 'transparent', toolbar: { show: false }, animations: { enabled: !reduced, speed: 400 } },
-        theme: { mode: 'dark' }, colors: [s.col, '#94A3B8'], dataLabels: { enabled: false },
-        stroke: { width: s.type === 'column' ? [0, 2] : [3, 2], curve: 'smooth', dashArray: [0, 4] },
-        fill: { type: s.type === 'column' ? ['solid', 'solid'] : ['gradient', 'solid'], gradient: { shadeIntensity: 1, opacityFrom: 0.38, opacityTo: 0.02 } },
-        plotOptions: { bar: { columnWidth: '55%', borderRadius: 4 } },
-        series, markers: { size: 0, hover: { size: 4 } },
-        grid: { borderColor: 'rgba(255,255,255,0.06)', strokeDashArray: 3 },
-        xaxis: { categories: sr.cats, tickAmount: Math.min(7, sr.cats.length), labels: { style: { colors: '#94A3B8', fontSize: '10px' } }, axisBorder: { show: false } },
-        yaxis: { min: s.min, max: s.max, forceNiceScale: true, labels: { style: { colors: '#94A3B8', fontSize: '10px' }, formatter: v => (v === null || v === undefined) ? '' : (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)) } },
-        annotations: ln ? { yaxis: [{ y: ln.y, borderColor: s.col, strokeDashArray: 4, label: { text: ln.label, style: { color: '#0B1220', background: s.col, fontSize: '10px' } } }] } : {},
-        legend: { show: !!sr.v2, labels: { colors: '#CBD5E1' }, fontSize: '11px' }, tooltip: { theme: 'dark' }
-      });
-      D.chart.render();
-    }
-    function paint() {
-      $('detail-body').innerHTML = detailHTML(D.key, D.rec, D.all, D.range);
-      setTimeout(drawChart, 60);
-    }
-    window.openMetricDetail = (key) => {
-      if (!D.rec || !SPEC[key]) { showToast('Aún no hay datos cargados'); return; }
-      D.key = key; try { navigator.vibrate && navigator.vibrate(8); } catch (_) {}
-      paint(); openModal('detail-modal');
-      $('detail-panel').scrollTop = 0;
-    };
-    window.setDetailRange = (n) => { D.range = n; paint(); };
-    const _cm = closeModal;
-    closeModal = function (id) { _cm(id); if (id === 'detail-modal' && D.chart) { D.chart.destroy(); D.chart = null; } };
-
-    // backdrop + arrastrar para cerrar
-    (function () {
-      const m = $('detail-modal'), p = $('detail-panel'); let y0 = null, dy = 0;
-      m.addEventListener('click', (e) => { if (e.target === m) closeModal('detail-modal'); });
-      p.addEventListener('touchstart', (e) => { if (p.scrollTop > 5) return; y0 = e.touches[0].clientY; dy = 0; p.style.transition = 'none'; }, { passive: true });
-      p.addEventListener('touchmove', (e) => { if (y0 === null) return; dy = e.touches[0].clientY - y0; if (dy > 0) p.style.transform = `translateY(${dy}px)`; }, { passive: true });
-      p.addEventListener('touchend', () => {
-        if (y0 === null) return; y0 = null; p.style.transition = 'transform .22s cubic-bezier(.16,1,.3,1)';
-        if (dy > 95) { p.style.transform = 'translateY(100%)'; setTimeout(() => closeModal('detail-modal'), 200); } else p.style.transform = 'translateY(0)';
-      });
-    })();
-
-    // vincular tarjetas / anillos
-    const bind = (el, key) => { if (!el) return; el.removeAttribute('onclick'); el.classList.add('tap-detail'); el.addEventListener('click', () => openMetricDetail(key)); };
-    bind($('ring-recovery') && $('ring-recovery').closest('[onclick]'), 'recovery');
-    bind($('ring-strain') && $('ring-strain').closest('[onclick]'), 'strain');
-    bind($('ring-sleep') && $('ring-sleep').closest('[onclick]'), 'sleep');
-    bind($('metric-rmssd-ms') && $('metric-rmssd-ms').closest('.p-3'), 'hrv');
-    bind($('metric-rhr') && $('metric-rhr').closest('.p-3'), 'rhr');
-    bind($('weight-trend') && $('weight-trend').parentElement, 'weight');
-
-    // números animados
-    const COUNT = ['val-recovery', 'val-strain', 'val-sleep', 'weight-trend', 'bf-trend', 'argon-age-val', 'nutri-target-kcal', 'metric-rmssd-ms', 'metric-rhr'];
-    function countTo(el) {
-      if (!el) return; const txt = el.textContent, m = txt.match(/-?\d+(?:\.\d+)?/);
-      if (!m) { el._v = undefined; return; }
-      const to = parseFloat(m[0]), dec = (m[0].split('.')[1] || '').length, from = el._v === undefined ? 0 : el._v; el._v = to;
-      if (reduced || from === to) return;
-      const pre = txt.slice(0, m.index), post = txt.slice(m.index + m[0].length), t0 = performance.now();
-      cancelAnimationFrame(el._raf);
-      const step = (t) => { const p = Math.min(1, (t - t0) / 650), e = 1 - Math.pow(1 - p, 3); el.textContent = pre + (from + (to - from) * e).toFixed(dec) + post; if (p < 1) el._raf = requestAnimationFrame(step); else el.textContent = txt; };
-      el._raf = requestAnimationFrame(step);
-    }
-
-    // confeti
-    function confetti() {
-      if (reduced) return;
-      const c = document.createElement('canvas'); c.id = 'argon-confetti'; c.width = innerWidth; c.height = innerHeight; document.body.appendChild(c);
-      const g = c.getContext('2d'), cols = ['#10B981', '#06B6D4', '#A78BFA', '#F59E0B', '#F43F5E'];
-      const P = Array.from({ length: 70 }, () => ({ x: c.width / 2, y: c.height * 0.72, vx: (Math.random() - 0.5) * 11, vy: -Math.random() * 13 - 5, s: 4 + Math.random() * 5, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.4, c: cols[(Math.random() * cols.length) | 0] }));
-      const t0 = performance.now();
-      (function f(t) {
-        g.clearRect(0, 0, c.width, c.height);
-        P.forEach(p => { p.vy += 0.38; p.x += p.vx; p.y += p.vy; p.r += p.vr; g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.fillStyle = p.c; g.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * 0.6); g.restore(); });
-        if (t - t0 < 1500) requestAnimationFrame(f); else c.remove();
-      })(t0);
-    }
-    const CKEY = 'argon_cel_v1'; let primed = false;
-    const celStore = () => { try { return JSON.parse(localStorage.getItem(CKEY) || '{}'); } catch (_) { return {}; } };
-    function celebrate() {
-      const r = D.rec; if (!r || r.log_date !== getLocalTodayIso()) return;
-      let water = 0; try { water = ((JSON.parse(localStorage.getItem('argon_journal_v1') || '{}')[r.log_date]) || {}).water_ml || 0; } catch (_) {}
-      const goals = { prot: [r.target_protein_g > 0 && r.intake_protein_g >= r.target_protein_g, '🥩 ¡Meta de proteína cumplida!'], water: [water >= Math.round(r.weight_kg * 35 / 50) * 50, '💧 ¡Meta de hidratación cumplida!'] };
-      const st = celStore(), day = st[r.log_date] || {}; let fired = false;
-      Object.keys(goals).forEach(k => { if (goals[k][0] && !day[k]) { day[k] = 1; if (primed) { fired = true; showToast(goals[k][1]); } } });
-      st[r.log_date] = day; const ks = Object.keys(st).sort(); while (ks.length > 14) delete st[ks.shift()];
-      localStorage.setItem(CKEY, JSON.stringify(st)); primed = true;
-      if (fired) confetti();
-    }
-    const _aw = window.addWater; if (_aw) window.addWater = function (ml) { _aw(ml); setTimeout(celebrate, 80); };
-
-    // hook de render
-    let lastDate = null;
-    const _rd = renderDashboard;
-    renderDashboard = function (rec, all) {
-      _rd(rec, all); D.rec = rec; D.all = all;
-      try {
-        document.body.classList.remove('loading');
-        const rr = $('ring-recovery'); if (rr) rr.style.stroke = `url(#grad-rec-${rec.recovery_score >= 67 ? 'ok' : rec.recovery_score >= 34 ? 'mid' : 'low'})`;
-        COUNT.forEach(id => countTo($(id)));
-        if (lastDate && lastDate !== rec.log_date) {
-          const sw = document.querySelector('.argon-main-swiper'); if (sw) { sw.style.setProperty('--dx', rec.log_date > lastDate ? '16px' : '-16px'); sw.classList.remove('day-swap'); void sw.offsetWidth; sw.classList.add('day-swap'); setTimeout(() => sw.classList.remove('day-swap'), 420); }
-        }
-        lastDate = rec.log_date;
-        if (D.key && !$('detail-modal').classList.contains('hidden')) paint();
-        celebrate();
-      } catch (e) { console.error('ARGON+B', e); }
-    };
-  })();
-  </script>
-
-  <script>
-  /* ARGON+ Paquete C: perfil/onboarding, entrenamientos, comidas (búsqueda, favoritos, IA) */
-  window.argonProfile_ = function () {
-    let p = {}; try { p = JSON.parse(localStorage.getItem('argon_profile_v1') || '{}'); } catch (_) {}
-    const wake = localStorage.getItem('argon_wake_time') || '06:00', h = parseFloat(p.height_cm), d = parseFloat(p.deficit);
-    return { birth: /^\d{4}-\d{2}-\d{2}$/.test(p.birth || '') ? p.birth : '1997-11-12', height_m: (h >= 120 && h <= 230) ? h / 100 : 1.73, wake: /^\d{2}:\d{2}$/.test(wake) ? wake : '06:00', deficit: (d >= 250 && d <= 900) ? d : 550 };
-  };
-  (function () {
-    const $ = (id) => document.getElementById(id);
-    const E = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const sel = () => ($('selected-date') && $('selected-date').value) || getLocalTodayIso();
-    const gas = () => (localStorage.getItem('argon_gas_url') || '').trim();
-    const rd1 = (x) => Math.round(x * 10) / 10;
-    const lsGet = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || JSON.stringify(d)); } catch (_) { return d; } };
-
-    //BEGIN_PURE_C
-    const WTYPES = [['weights', '🏋️ Pesas', 7], ['pickle', '🏓 Pickleball', 7], ['cardio', '🏃 Cardio', 6], ['hiit', '⚡ HIIT', 9], ['walk', '🚶 Caminata', 3], ['other', '✨ Otro', 5]];
-    const RPE_TXT = ['', 'Muy suave', 'Suave', 'Ligero', 'Moderado', 'Algo duro', 'Duro', 'Muy duro', 'Intenso', 'Casi máximo', 'Máximo'];
-    function aggregateWorkouts(ws, pz) {
-      const min = ws.reduce((s, w) => s + (+w.min || 0), 0);
-      const rpe = min ? ws.reduce((s, w) => s + (+w.min || 0) * (+w.rpe || 0), 0) / min : 0;
-      let zones = null;
-      if (ws.length && ws.every(w => w.z)) {
-        zones = { real: true, walking_steps: (pz && pz.walking_steps) || 0 };
-        ['z1', 'z2', 'z3', 'z4', 'z5'].forEach(k => { zones[k] = Math.round(ws.reduce((s, w) => s + (+(w.z && w.z[k]) || 0), 0)); });
-      }
-      return { min, rpe: +rpe.toFixed(2), zones };
-    }
-    const kcalOf = (p, c, f) => Math.round(4 * p + 4 * c + 9 * f);
-    const FOODS = [
-      ['Huevo entero', '1 grande', 6.3, 0.4, 5], ['Clara de huevo', '1 unidad', 3.6, 0.2, 0.1], ['Pechuga de pollo cocida', '100 g', 31, 0, 3.6],
-      ['Carne molida magra cocida', '100 g', 26, 0, 10], ['Bistec de res magro', '100 g', 27, 0, 8], ['Pescado blanco cocido', '100 g', 22, 0, 2],
-      ['Atún en agua', '100 g escurrido', 25, 0, 1], ['Salmón cocido', '100 g', 25, 0, 12], ['Arroz blanco cocido', '1 taza (160 g)', 4.3, 45, 0.4],
-      ['Pasta cocida', '1 taza (140 g)', 8, 43, 1.3], ['Avena cruda', '40 g', 5, 27, 3], ['Arepa de harina de maíz', '1 mediana (100 g)', 3.5, 29, 1],
-      ['Caraotas negras cocidas', '1/2 taza (90 g)', 7, 20, 0.5], ['Plátano maduro frito', '100 g', 1.2, 37, 10], ['Yuca cocida', '100 g', 1.4, 38, 0.3],
-      ['Papa cocida', '150 g', 3, 31, 0.2], ['Batata cocida', '150 g', 2.4, 30, 0.2], ['Queso blanco', '30 g', 6, 1, 6], ['Aguacate', '1/2 (100 g)', 2, 9, 15],
-      ['Banana', '1 mediana', 1.3, 27, 0.4], ['Manzana', '1 mediana', 0.5, 25, 0.3], ['Leche entera', '1 taza (240 ml)', 8, 12, 8],
-      ['Yogur griego natural', '170 g', 17, 6, 4], ['Whey protein', '1 scoop (30 g)', 24, 3, 1.5], ['Almendras', '28 g', 6, 6, 14],
-      ['Aceite de oliva', '1 cda (14 g)', 0, 0, 14], ['Pan de sándwich', '1 rebanada', 3, 13, 1], ['Empanada de carne frita', '1 unidad', 8, 26, 16],
-      ['Tequeño', '1 unidad', 4, 12, 9], ['Pabellón criollo', '1 plato (aprox.)', 38, 85, 18]
-    ].map(a => ({ name: a[0], serving: a[1], p: a[2], c: a[3], f: a[4] }));
-    const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    //END_PURE_C
-
-    // ---------- util: sheets ----------
-    const sheet = (id, inner) => `<div id="${id}" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center"><div class="bottom-sheet-panel bg-slate-900 border-t sm:border border-slate-700/80 rounded-t-3xl sm:rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 space-y-3"><div class="w-12 h-1.5 bg-slate-700 rounded-full mx-auto -mt-1"></div>${inner}</div></div>`;
-    function wireSheet(id) {
-      const m = $(id), p = m.querySelector('.bottom-sheet-panel'); let y0 = null, dy = 0;
-      m.addEventListener('click', e => { if (e.target === m) closeModal(id); });
-      p.addEventListener('touchstart', e => { if (p.scrollTop > 5 || e.target.closest('input,textarea,select')) return; y0 = e.touches[0].clientY; dy = 0; p.style.transition = 'none'; }, { passive: true });
-      p.addEventListener('touchmove', e => { if (y0 === null) return; dy = e.touches[0].clientY - y0; if (dy > 0) p.style.transform = `translateY(${dy}px)`; }, { passive: true });
-      p.addEventListener('touchend', () => { if (y0 === null) return; y0 = null; p.style.transition = 'transform .22s cubic-bezier(.16,1,.3,1)'; if (dy > 95) { p.style.transform = 'translateY(100%)'; setTimeout(() => closeModal(id), 200); } else p.style.transform = 'translateY(0)'; });
-    }
-    const IN = 'w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs';
-    const LB = 'text-slate-400 block mb-1 text-[11px]';
-    const HEAD = (t, id) => `<div class="flex justify-between items-center"><h3 class="text-sm font-black uppercase tracking-wider text-cyan-400">${t}</h3><button onclick="closeModal('${id}')" class="text-slate-400 hover:text-white text-sm px-2">✕</button></div>`;
-
-    document.body.insertAdjacentHTML('beforeend',
-      sheet('profile-modal', `<div id="pf-head"></div><p id="pf-sub" class="text-[11px] text-slate-400 leading-relaxed"></p>
-        <div class="grid grid-cols-2 gap-2.5">
-          <div><label class="${LB}">Fecha de nacimiento</label><input id="pf-birth" type="date" class="${IN}" /></div>
-          <div><label class="${LB}">Altura (cm)</label><input id="pf-height" type="number" step="0.5" class="${IN}" /></div>
-          <div><label class="${LB}">Peso actual de inicio (kg)</label><input id="pf-start" type="number" step="0.1" class="${IN}" /></div>
-          <div><label class="${LB}">Peso meta (kg)</label><input id="pf-target" type="number" step="0.5" class="${IN}" /></div>
-          <div><label class="${LB}">Fecha objetivo</label><input id="pf-goal" type="date" class="${IN}" /></div>
-          <div><label class="${LB}">Hora de despertar</label><input id="pf-wake" type="time" class="${IN}" /></div>
-          <div class="col-span-2"><label class="${LB}">Déficit calórico base (kcal/día, 250–900)</label><input id="pf-deficit" type="number" step="25" class="${IN}" /></div>
-        </div>
-        <button onclick="saveProfile()" id="pf-save" class="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase tracking-wider">Guardar y recalcular</button>
-        <button onclick="skipOnboarding()" id="pf-skip" class="hidden w-full py-2 text-[11px] text-slate-400">Más tarde</button>`) +
-      sheet('workout-modal', `${HEAD('🏋️ Registrar entrenamiento', 'workout-modal')}
-        <div id="wk-types" class="flex flex-wrap gap-1.5"></div>
-        <div class="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between">
-          <div><div class="text-[10px] text-slate-400">Cronómetro</div><div id="wk-timer" class="text-2xl font-black font-mono text-white tnum">00:00</div></div>
-          <div class="flex gap-1.5"><button id="wk-start" onclick="wkTimerStart()" class="jchip on">▶ Iniciar</button><button onclick="wkTimerStop()" class="jchip">■ Detener</button></div>
-        </div>
-        <div class="grid grid-cols-2 gap-2.5">
-          <div><label class="${LB}">Duración (min)</label><input id="wk-min" type="number" placeholder="60" class="${IN}" /></div>
-          <div><label class="${LB}">Esfuerzo percibido (RPE) <b id="wk-rpe-v" class="text-cyan-300"></b></label><input id="wk-rpe" type="range" min="1" max="10" step="0.5" class="w-full accent-cyan-400" oninput="wkRpeLabel()" /></div>
-        </div>
-        <details class="text-xs"><summary class="text-[11px] text-slate-300 cursor-pointer py-1">Zonas de FC de la sesión (opcional)</summary>
-          <div class="grid grid-cols-5 gap-1 pt-2">${[1, 2, 3, 4, 5].map(i => `<input id="wk-z${i}" type="number" placeholder="Z${i}" class="bg-slate-800 border border-slate-700 rounded-xl px-1 py-2 text-white text-center text-xs" />`).join('')}</div>
-          <p class="text-[10px] text-slate-500 pt-1">Si completas zonas en todas las sesiones del día, el motor las usa en lugar de la estimación por RPE.</p></details>
-        <button onclick="wkSave()" class="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase tracking-wider">Guardar sesión</button>
-        <div id="wk-list" class="space-y-1.5"></div>`) +
-      sheet('meal-modal', `${HEAD('🍴 Registrar comida', 'meal-modal')}
-        <input id="ml-q" type="search" placeholder="Buscar alimento, favorito o reciente…" oninput="mealRender()" class="${IN}" />
-        <div class="p-3 rounded-2xl bg-slate-950/80 border border-purple-500/30 space-y-2">
-          <div class="text-[11px] font-bold text-purple-300">✨ Estimar con IA (texto o foto)</div>
-          <textarea id="ml-ai-text" rows="2" placeholder="Ej: 2 arepas con carne mechada y queso, 1 vaso de jugo" class="${IN}"></textarea>
-          <div class="flex items-center gap-2">
-            <input id="ml-img" type="file" accept="image/*" capture="environment" class="hidden" onchange="mealImagePicked(this)" />
-            <button onclick="document.getElementById('ml-img').click()" class="jchip">📷 Foto</button>
-            <span id="ml-img-name" class="text-[10px] text-slate-500 truncate flex-1"></span>
-            <button onclick="mealEstimate()" id="ml-est" class="jchip on">Estimar</button>
-          </div>
-          <div id="ml-ai-status" class="text-[10px] text-slate-400"></div>
-        </div>
-        <div id="ml-sel" class="hidden p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/40 space-y-2"></div>
-        <div id="ml-list" class="space-y-1.5"></div>
-        <p class="text-[10px] text-slate-500">Valores aproximados: ajusta la porción. Las kcal se calculan con Atwater (4P+4C+9G).</p>`));
-    ['profile-modal', 'workout-modal', 'meal-modal'].forEach(wireSheet);
-    document.head.insertAdjacentHTML('beforeend', '<style>.ml-row{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:9px 10px;border-radius:14px;background:rgba(2,6,23,.65);border:1px solid rgba(255,255,255,.06);font-size:12px;color:#E2E8F0}.ml-row:active{transform:scale(.98)}</style>');
-
-    // ---------- recalcular todo local ----------
-    function recomputeAll() {
-      const st = getLocalStore(), ds = Object.keys(st).sort(); let prev = null; const hist = [], out = {};
-      ds.forEach(d => { const c = computeArgonDayScore(st[d], [...hist].reverse(), prev); out[d] = c; hist.push(c); prev = c; });
-      saveLocalStore(out); loadDayData(sel());
-    }
-
-    // ---------- PERFIL ----------
-    window.openProfile = (welcome) => {
-      const P = lsGet('argon_profile_v1', {}), pr = argonProfile_();
-      $('pf-head').innerHTML = HEAD(welcome === true ? '👋 Bienvenido a ARGON' : '👤 Perfil y metas', 'profile-modal');
-      $('pf-sub').textContent = welcome === true ? 'Confirma tus datos: calibran edad fisiológica, IMC, ventana de sueño y déficit calórico.' : 'Estos datos alimentan el motor (edad fisiológica, IMC, sueño y nutrición).';
-      $('pf-birth').value = pr.birth; $('pf-height').value = Math.round(pr.height_m * 1000) / 10; $('pf-wake').value = pr.wake; $('pf-deficit').value = pr.deficit;
-      $('pf-target').value = localStorage.getItem('argon_target_w') || '80'; $('pf-start').value = localStorage.getItem('argon_start_w') || '';
-      $('pf-goal').value = localStorage.getItem('argon_goal_date') || '2026-12-07';
-      $('pf-skip').classList.toggle('hidden', welcome !== true);
-      openModal('profile-modal');
-    };
-    window.skipOnboarding = () => { localStorage.setItem('argon_onboard_seen', '1'); closeModal('profile-modal'); };
-    window.saveProfile = async () => {
-      const v = (id) => $(id).value, today = getLocalTodayIso();
-      const birth = v('pf-birth'), h = parseFloat(v('pf-height')), tw = parseFloat(v('pf-target')), sw = parseFloat(v('pf-start')), df = parseFloat(v('pf-deficit')), wake = v('pf-wake'), goal = v('pf-goal');
-      const maxBirth = new Date(Date.now() - 14 * 365.25 * 86400000).toISOString().slice(0, 10);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(birth) || birth < '1930-01-01' || birth > maxBirth) return showToast('Fecha de nacimiento inválida');
-      if (!(h >= 120 && h <= 230)) return showToast('Altura entre 120 y 230 cm');
-      if (!(tw >= 40 && tw <= 200)) return showToast('Peso meta entre 40 y 200 kg');
-      if (!(df >= 250 && df <= 900)) return showToast('Déficit entre 250 y 900 kcal');
-      if (!/^\d{2}:\d{2}$/.test(wake)) return showToast('Hora de despertar inválida');
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(goal) || goal < today) return showToast('La fecha objetivo debe ser futura');
-      localStorage.setItem('argon_profile_v1', JSON.stringify({ birth, height_cm: h, deficit: df }));
-      localStorage.setItem('argon_target_w', String(tw)); localStorage.setItem('argon_wake_time', wake); localStorage.setItem('argon_goal_date', goal);
-      if (sw >= 40) localStorage.setItem('argon_start_w', String(sw));
-      const a = $('cfg-target-weight'); if (a) a.value = String(tw); const b = $('cfg-wake-time'); if (b) b.value = wake;
-      closeModal('profile-modal');
-      try { recomputeAll(); updateCountdown(); } catch (e) { console.error(e); }
-      showToast('✓ Perfil guardado y datos recalculados');
-      if (gas()) { try { await fetch(gas(), { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'set_profile', profile: { birth, height_m: h / 100, wake, deficit: df, target_w: tw, goal_date: goal } }) }); } catch (_) { showToast('Perfil guardado local; no se pudo avisar al servidor'); } }
-    };
-    setTimeout(() => { if (!localStorage.getItem('argon_profile_v1') && !localStorage.getItem('argon_onboard_seen')) openProfile(true); }, 1500);
-
-    // ---------- ENTRENAMIENTOS ----------
-    const WKEY = 'argon_workouts_v1', TKEY = 'argon_wk_timer'; let wkType = 'weights', tInt = null;
-    const wkAll = () => lsGet(WKEY, {}), wkDay = (d) => wkAll()[d] || [];
-    function wkSet(d, arr) { const s = wkAll(); s[d] = arr; const ks = Object.keys(s).sort(); while (ks.length > 60) delete s[ks.shift()]; localStorage.setItem(WKEY, JSON.stringify(s)); }
-    async function applyWorkouts(date) {
-      const store = getLocalStore(), cur = store[date]; if (!cur) return;
-      const ag = aggregateWorkouts(wkDay(date), cur.hr_zones_minutes);
-      const raw = Object.assign({}, cur, { pickleball_or_gym_minutes: ag.min, session_rpe: ag.rpe });
-      if (ag.zones) raw.hr_zones_minutes = ag.zones;
-      const past = Object.keys(store).filter(d => d < date).sort().reverse().map(d => store[d]);
-      const comp = computeArgonDayScore(raw, past, past[0] || null);
-      store[date] = comp; saveLocalStore(store); loadDayData(date);
-      if (typeof supabaseClient !== 'undefined' && supabaseClient) await pushDayToSupabase(comp);
-    }
-    function wkTypeButtons() { $('wk-types').innerHTML = WTYPES.map(t => `<button class="jchip ${t[0] === wkType ? 'on' : ''}" onclick="wkPickType('${t[0]}')">${t[1]}</button>`).join(''); }
-    window.wkPickType = (k) => { wkType = k; const t = WTYPES.find(x => x[0] === k); $('wk-rpe').value = t[2]; wkRpeLabel(); wkTypeButtons(); };
-    window.wkRpeLabel = () => { const v = parseFloat($('wk-rpe').value); $('wk-rpe-v').textContent = `${v} · ${RPE_TXT[Math.round(v)]}`; };
-    const fmtT = (ms) => { const s = Math.floor(ms / 1000); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
-    function timerTick() { const t0 = parseInt(localStorage.getItem(TKEY), 10); $('wk-timer').textContent = t0 ? fmtT(Date.now() - t0) : '00:00'; $('wk-start').textContent = t0 ? '⏱ En curso' : '▶ Iniciar'; }
-    window.wkTimerStart = () => { if (!localStorage.getItem(TKEY)) localStorage.setItem(TKEY, String(Date.now())); timerTick(); };
-    window.wkTimerStop = () => { const t0 = parseInt(localStorage.getItem(TKEY), 10); if (!t0) return; $('wk-min').value = Math.max(1, Math.round((Date.now() - t0) / 60000)); localStorage.removeItem(TKEY); timerTick(); };
-    function wkRenderList() {
-      const d = sel(), ws = wkDay(d), lbl = (k) => (WTYPES.find(t => t[0] === k) || ['', '🏷️ ' + k])[1];
-      $('wk-list').innerHTML = `<div class="text-[11px] font-bold text-slate-300 pt-1">Sesiones del ${d}</div>` + (ws.length ? ws.map(w => `<div class="d-row" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:12px;background:rgba(2,6,23,.65);border:1px solid rgba(255,255,255,.06);font-size:12px"><span>${E(lbl(w.type))} · <b class="font-mono">${E(w.min)}</b> min · RPE ${E(w.rpe)}${w.z ? ' · zonas ✓' : ''}</span><button onclick="wkRemove('${E(w.id)}')" class="text-rose-400 font-bold px-1">✕</button></div>`).join('') : '<div class="text-[11px] text-slate-500">Sin sesiones registradas.</div>');
-    }
-    window.openWorkoutModal = () => { wkPickType(wkType); timerTick(); clearInterval(tInt); tInt = setInterval(timerTick, 500); wkRenderList(); openModal('workout-modal'); };
-    window.wkSave = async () => {
-      const min = parseFloat($('wk-min').value), rpe = parseFloat($('wk-rpe').value), d = sel(), cur = getLocalStore()[d];
-      if (!cur) return showToast('No hay registro para esta fecha');
-      if (!(min >= 1 && min <= 600)) return showToast('Duración entre 1 y 600 min');
-      let ws = wkDay(d).slice();
-      if (!ws.length && cur.pickleball_or_gym_minutes > 0) ws.push({ id: 'm' + Date.now(), type: 'other', min: cur.pickleball_or_gym_minutes, rpe: cur.session_rpe || 7, manual: true });
-      const zs = [1, 2, 3, 4, 5].map(i => $('wk-z' + i).value), z = zs.some(v => v !== '') ? { z1: +zs[0] || 0, z2: +zs[1] || 0, z3: +zs[2] || 0, z4: +zs[3] || 0, z5: +zs[4] || 0 } : null;
-      ws.push({ id: 'w' + Date.now(), type: wkType, min, rpe, z, ts: Date.now() });
-      wkSet(d, ws); $('wk-min').value = ''; [1, 2, 3, 4, 5].forEach(i => $('wk-z' + i).value = '');
-      wkRenderList(); await applyWorkouts(d); renderWkCard(); showToast('✓ Sesión guardada');
-    };
-    window.wkRemove = async (id) => { const d = sel(); wkSet(d, wkDay(d).filter(w => w.id !== id)); wkRenderList(); await applyWorkouts(d); renderWkCard(); };
-    const _cm = closeModal; closeModal = function (id) { _cm(id); if (id === 'workout-modal') clearInterval(tInt); };
-
-    // ---------- COMIDAS ----------
-    const FKEY = 'argon_fav_meals_v1'; const M = { list: [], ai: [], sel: null, mult: 1, img: null };
-    const favs = () => lsGet(FKEY, []);
-    const favKey = (n) => norm(n);
-    function recents() {
-      const st = getLocalStore(), seen = {}, out = [];
-      Object.keys(st).sort().reverse().slice(0, 30).forEach(d => (st[d].meals_log_json || []).forEach(m => {
-        const k = favKey(m.name); if (!m.name || seen[k]) return; seen[k] = 1;
-        out.push({ src: 'recent', name: m.name, serving: 'registrado', p: +m.prot || 0, c: +m.carbs || 0, f: +m.fat || 0 });
-      }));
-      return out.slice(0, 12);
-    }
-    window.mealRender = () => {
-      const q = norm($('ml-q').value.trim()), fv = favs().map(f => ({ src: 'fav', name: f.name, serving: f.serving || '1 porción', p: f.p, c: f.c, f: f.f }));
-      const match = (x) => !q || norm(x.name).includes(q);
-      const ai = M.ai.map(x => Object.assign({ src: 'ai' }, x));
-      const groups = [['✨ Estimado por IA', ai], ['⭐ Favoritos', fv.filter(match)], ['🕘 Recientes', q ? recents().filter(match) : recents().slice(0, 6)], ['📚 Base de alimentos', FOODS.filter(match).map(x => Object.assign({ src: 'db' }, x))]];
-      M.list = []; let html = '';
-      groups.forEach(([t, arr]) => {
-        if (!arr.length) return; html += `<div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 pt-1.5">${t}</div>`;
-        arr.slice(0, q ? 25 : 12).forEach(x => { const i = M.list.push(x) - 1; html += `<button class="ml-row" onclick="mealPick(${i})"><span class="min-w-0"><span class="block truncate font-semibold">${E(x.name)}</span><span class="block text-[10px] text-slate-400">${E(x.serving)}</span></span><span class="text-right shrink-0 font-mono text-[11px]"><b class="text-white">${kcalOf(x.p, x.c, x.f)}</b> kcal<span class="block text-[9px] text-slate-400">${rd1(x.p)}P · ${rd1(x.c)}C · ${rd1(x.f)}G</span></span></button>`; });
-      });
-      $('ml-list').innerHTML = html || '<div class="text-[11px] text-slate-500 py-2">Sin resultados. Prueba con la IA o registra una comida manual.</div>';
-    };
-    function selRender() {
-      const x = M.sel, box = $('ml-sel'); if (!x) { box.classList.add('hidden'); return; }
-      const m = M.mult, p = rd1(x.p * m), c = rd1(x.c * m), f = rd1(x.f * m), isFav = favs().some(v => favKey(v.name) === favKey(x.name));
-      box.classList.remove('hidden');
-      box.innerHTML = `<div class="flex items-start justify-between gap-2"><div class="min-w-0"><div class="text-xs font-bold text-white truncate">${E(x.name)}</div><div class="text-[10px] text-slate-400">${E(x.serving)} × ${m}</div></div><button onclick="mealFavToggle()" class="text-lg" aria-label="Favorito">${isFav ? '⭐' : '☆'}</button></div>
-        <div class="flex items-center gap-1.5 flex-wrap"><button class="jchip" onclick="mealStep(-0.25)">−</button><span class="font-mono font-bold text-cyan-300 w-12 text-center">${m}×</span><button class="jchip" onclick="mealStep(0.25)">+</button>${[0.5, 1, 1.5, 2].map(v => `<button class="jchip ${v === m ? 'on' : ''}" onclick="mealPreset(${v})">${v}×</button>`).join('')}</div>
-        <div class="grid grid-cols-4 gap-1.5 text-center text-[10px]"><div class="p-2 rounded-xl bg-slate-950/70"><b class="block text-sm text-white font-mono">${kcalOf(p, c, f)}</b>kcal</div><div class="p-2 rounded-xl bg-slate-950/70"><b class="block text-sm text-emerald-300 font-mono">${p}</b>P</div><div class="p-2 rounded-xl bg-slate-950/70"><b class="block text-sm text-cyan-300 font-mono">${c}</b>C</div><div class="p-2 rounded-xl bg-slate-950/70"><b class="block text-sm text-amber-300 font-mono">${f}</b>G</div></div>
-        <button onclick="mealAdd()" class="w-full py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase">Agregar a hoy</button>`;
-    }
-    window.mealPick = (i) => { M.sel = M.list[i]; M.mult = 1; selRender(); $('ml-sel').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); };
-    window.mealStep = (d) => { M.mult = Math.max(0.25, Math.min(10, rd1((M.mult + d) * 100) / 100)); selRender(); };
-    window.mealPreset = (v) => { M.mult = v; selRender(); };
-    window.mealFavToggle = () => {
-      const x = M.sel; if (!x) return; let fv = favs(); const k = favKey(x.name);
-      if (fv.some(v => favKey(v.name) === k)) fv = fv.filter(v => favKey(v.name) !== k); else fv.unshift({ name: x.name, serving: x.serving, p: x.p, c: x.c, f: x.f });
-      localStorage.setItem(FKEY, JSON.stringify(fv.slice(0, 40))); selRender(); mealRender(); renderMealCard();
-    };
-    window.mealAdd = async () => {
-      const x = M.sel; if (!x) return; const m = M.mult, p = rd1(x.p * m), c = rd1(x.c * m), f = rd1(x.f * m), kcal = kcalOf(p, c, f);
-      closeModal('meal-modal'); M.sel = null;
-      await quickAddMeal(kcal, p, c, f, x.name + (m !== 1 ? ` ×${m}` : '')); showToast(`✓ ${kcal} kcal agregadas`);
-    };
-    window.openMealModal = () => { M.sel = null; selRender(); mealRender(); openModal('meal-modal'); };
-    window.favMealByIndex = (idx) => {
-      const rec = getLocalStore()[sel()], m = rec && (rec.meals_log_json || [])[idx]; if (!m) return;
-      const fv = favs(); if (!fv.some(v => favKey(v.name) === favKey(m.name))) { fv.unshift({ name: m.name, serving: 'guardado', p: +m.prot || 0, c: +m.carbs || 0, f: +m.fat || 0 }); localStorage.setItem(FKEY, JSON.stringify(fv.slice(0, 40))); }
-      showToast('⭐ Guardada en favoritos'); renderMealCard();
-    };
-    window.mealImagePicked = async (inp) => {
-      const f = inp.files && inp.files[0]; if (!f) { M.img = null; $('ml-img-name').textContent = ''; return; }
-      try {
-        const bmp = await createImageBitmap(f), k = Math.min(1, 800 / Math.max(bmp.width, bmp.height)), cv = document.createElement('canvas');
-        cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k); cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
-        M.img = { b64: cv.toDataURL('image/jpeg', 0.72).split(',')[1], mime: 'image/jpeg' }; $('ml-img-name').textContent = '📎 ' + f.name;
-      } catch (e) { M.img = null; showToast('No se pudo leer la imagen'); }
-    };
-    window.mealEstimate = async () => {
-      const text = $('ml-ai-text').value.trim(), st = $('ml-ai-status');
-      if (!text && !M.img) return showToast('Describe la comida o adjunta una foto');
-      if (!gas()) { st.textContent = 'Configura la URL de Apps Script en ⚙️ para usar la IA.'; return; }
-      const btn = $('ml-est'); btn.disabled = true; st.textContent = '🧬 Analizando con Gemini…';
-      try {
-        const res = await fetch(gas(), { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'estimate_meal', text, image_b64: M.img ? M.img.b64 : '', mime: M.img ? M.img.mime : '' }) });
-        const d = await res.json();
-        if (d.status !== 'ok') throw new Error(d.message || 'Error');
-        M.ai = (d.items || []).map(i => ({ name: i.name, serving: i.grams ? `~${i.grams} g (IA)` : 'porción IA', p: i.prot, c: i.carbs, f: i.fat }));
-        st.textContent = M.ai.length ? `✓ ${M.ai.length} alimento(s) estimados. Toca uno para ajustar y agregar.` : 'La IA no reconoció alimentos.'; mealRender();
-      } catch (e) { st.textContent = '⚠️ ' + e.message + ' (revisa la URL /exec y la clave Gemini)'; }
-      btn.disabled = false;
-    };
-
-    // ---------- tarjetas en pestañas ----------
-    const slides = document.querySelectorAll('.argon-main-swiper .swiper-slide');
-    const wkCard = document.createElement('section'); wkCard.className = 'native-card p-4 space-y-2.5'; wkCard.id = 'wk-card';
-    if (slides[2]) slides[2].appendChild(wkCard);
-    const mealCard = document.createElement('section'); mealCard.className = 'native-card p-4 space-y-2.5'; mealCard.id = 'meal-card';
-    if (slides[3]) slides[3].insertBefore(mealCard, slides[3].firstChild);
-    function renderWkCard() {
-      const d = sel(), ws = wkDay(d), rec = getLocalStore()[d], lbl = (k) => (WTYPES.find(t => t[0] === k) || ['', '🏷️'])[1];
-      const wk = Object.keys(getLocalStore()).sort().slice(-7).map(x => getLocalStore()[x]), mins = wk.reduce((s, r) => s + (r.pickleball_or_gym_minutes || 0), 0), n = wk.filter(r => r.pickleball_or_gym_minutes > 0).length;
-      wkCard.innerHTML = `<div class="flex items-center justify-between"><div><h2 class="text-xs font-extrabold uppercase tracking-wider text-white">🏋️ Entrenamientos</h2><p class="text-[10px] text-slate-400">7 días: ${n} sesiones · ${mins} min</p></div><button onclick="openWorkoutModal()" class="jchip on">+ Registrar</button></div>` +
-        (ws.length ? ws.map(w => `<div class="flex justify-between text-xs p-2 rounded-xl bg-slate-950/60 border border-slate-800/70"><span>${E(lbl(w.type))}</span><span class="font-mono text-slate-300">${E(w.min)} min · RPE ${E(w.rpe)}</span></div>`).join('') : `<div class="text-[11px] text-slate-500">${rec && rec.pickleball_or_gym_minutes > 0 ? `Registro manual: ${rec.pickleball_or_gym_minutes} min.` : 'Sin sesiones este día.'}</div>`);
-    }
-    function renderMealCard() {
-      const fv = favs().slice(0, 6);
-      mealCard.innerHTML = `<div class="flex items-center justify-between"><h2 class="text-xs font-extrabold uppercase tracking-wider text-white">🍴 Registrar comida</h2><div class="flex gap-1.5"><button onclick="openMealModal()" class="jchip on">🔎 Buscar</button><button onclick="openMealModal();setTimeout(()=>document.getElementById('ml-ai-text').focus(),350)" class="jchip">✨ IA</button></div></div>` +
-        (fv.length ? `<div class="flex flex-wrap gap-1.5">${fv.map((x, i) => `<button class="jchip" onclick="favQuick(${i})">⭐ ${E(x.name)}</button>`).join('')}</div>` : '<div class="text-[11px] text-slate-500">Guarda comidas con ⭐ para añadirlas con un toque.</div>');
-    }
-    window.favQuick = async (i) => { const x = favs()[i]; if (!x) return; const kcal = kcalOf(x.p, x.c, x.f); await quickAddMeal(kcal, x.p, x.c, x.f, x.name); showToast(`✓ ${x.name}: ${kcal} kcal`); };
-    renderWkCard(); renderMealCard();
-    const _rd = renderDashboard;
-    renderDashboard = function (rec, all) { _rd(rec, all); try { renderWkCard(); renderMealCard(); } catch (e) { console.error('ARGON+C', e); } };
-  })();
-  </script>
 </body>
 </html>
