@@ -28,7 +28,7 @@ const ARGON_CONFIG = {
  */
 function doPost(e) {
   let isCoach = false;
-  try { isCoach = JSON.parse(e.postData.contents).action === 'ask_coach'; } catch (_) {}
+  try { const a = JSON.parse(e.postData.contents).action; isCoach = (a === 'ask_coach' || a === 'set_profile' || a === 'estimate_meal'); } catch (_) {}
   if (isCoach) return doPostInner_(e);
 
   const lock = LockService.getScriptLock();
@@ -56,6 +56,8 @@ function doPostInner_(e) {
     if (payload && payload.action === 'ask_coach') {
       return handleArgonCoachChat_(payload);
     }
+    if (payload && payload.action === 'set_profile') return handleSetProfile_(payload);
+    if (payload && payload.action === 'estimate_meal') return handleEstimateMeal_(payload);
 
     // Procesamiento normal de envíos de HC Webhook (Health Connect)
     const parsedByDate = extractHealthConnectByDate_(payload);
@@ -589,15 +591,16 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
  */
 // ===ENGINE_START=== (copiado automáticamente de index.html; no editar a mano)
     function computeArgonEngine_(todayRaw, historyRawList, prevComputed) {
-      const wakeTimeStr = ARGON_CONFIG.HABITUAL_WAKE_TIME;
+      const PROF = argonProfile_();
+      const wakeTimeStr = PROF.wake;
       const MIN_BASELINE_DAYS = 7;
       const basalNeedH = 7.50; // Calibrado a 7h 30m de sueño neto efectivo
 
       // Edad cronológica exacta (Nacido: 12 Nov 1997)
-      const birthDate = new Date('1997-11-12T00:00:00-04:00');
+      const birthDate = new Date(PROF.birth + 'T00:00:00-04:00');
       const refDate = todayRaw.log_date ? new Date(todayRaw.log_date + 'T12:00:00-04:00') : new Date();
       const chronologicalAge = +((refDate.getTime() - birthDate.getTime()) / (365.2425 * 86400000)).toFixed(2);
-      const heightM = 1.73;
+      const heightM = PROF.height_m;
 
       // A. BIOIMPEDANCIA FEELFIT
       const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.weight_kg : 86.80);
@@ -838,7 +841,7 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       const prelimTdee = Math.round(prelimRmrActive + neatStepsKcal + netExerciseKcal);
 
       // Step 2: Target macros from preliminary TDEE -> TEF estimate
-      const desiredDeficit = strainScore >= 14.0 ? 500 : 550;
+      const desiredDeficit = strainScore >= 14.0 ? Math.max(250, PROF.deficit - 50) : PROF.deficit;
       let rawTargetKcal = Math.min(2450, Math.max(1650, prelimTdee - desiredDeficit));
       const targetProt = Math.round(2.35 * ffmKg);
       const targetFat = Math.round(0.72 * rawW);
@@ -1127,7 +1130,7 @@ function syncExpedienteToGoogleDrive_(force) {
     let reportText = `====================================================================\n`;
     reportText += `EXPEDIENTE CLÍNICO Y BIOMÉTRICO EN VIVO - PROYECTO ARGON MBE\n`;
     reportText += `Última actualización automática: ${nowStr} (America/Caracas)\n`;
-    reportText += `Perfil: Médico Cirujano (28.9 años, Nac: 1997-11-12) | Meta 7 Dic 2026: Recomposición Corporal\n`;
+    reportText += `Perfil: Médico Cirujano (28.9 años, Nac: ${argonProfile_().birth}) | Meta: Recomposición Corporal\n`;
     reportText += `====================================================================\n\n`;
 
     reportText += `[1] ESTADO FISIOLÓGICO Y METABÓLICO DE HOY (${todayComp.log_date})\n`;
@@ -1212,7 +1215,7 @@ function handleArgonCoachChat_(payload) {
       perfil_paciente: {
         profesion: 'Médico Cirujano (Guardias / Rural)',
         edad_cronologica: 28.94,
-        fecha_nacimiento: '1997-11-12',
+        fecha_nacimiento: argonProfile_().birth,
         deportes: 'Entrenamiento de fuerza (pesas) y Pickleball competitivo',
         meta_7_dic_2026: 'Oxidación lipolítica preservando masa muscular esquelética'
       },
@@ -1452,3 +1455,77 @@ function testAuthorizeAndCreateExpedienteDoc() {
 function reconstruirComidasAyer() { rebuildMealsAyer_(); }
 function reconstruirComidasHoy() { rebuildMealsHoy_(); }
 function repararComidasLogs() { repairMealsFromLogs_(); }
+
+/**
+ * ============================================================================
+ * 7. PERFIL DEL USUARIO + ESTIMADOR DE COMIDAS (GEMINI)
+ * ============================================================================
+ */
+function argonProfile_() {
+  let p = {};
+  try { p = JSON.parse(PropertiesService.getScriptProperties().getProperty('ARGON_PROFILE') || '{}'); } catch (_) {}
+  const h = parseFloat(p.height_m), d = parseFloat(p.deficit);
+  return {
+    birth: /^\d{4}-\d{2}-\d{2}$/.test(p.birth || '') ? p.birth : '1997-11-12',
+    height_m: (h >= 1.2 && h <= 2.3) ? h : ARGON_CONFIG.HEIGHT_M,
+    wake: /^\d{2}:\d{2}$/.test(p.wake || '') ? p.wake : ARGON_CONFIG.HABITUAL_WAKE_TIME,
+    deficit: (d >= 250 && d <= 900) ? d : 550
+  };
+}
+
+function handleSetProfile_(payload) {
+  try {
+    const p = payload.profile || {};
+    const clean = {
+      birth: /^\d{4}-\d{2}-\d{2}$/.test(p.birth || '') ? p.birth : undefined,
+      height_m: (p.height_m >= 1.2 && p.height_m <= 2.3) ? +p.height_m : undefined,
+      wake: /^\d{2}:\d{2}$/.test(p.wake || '') ? p.wake : undefined,
+      deficit: (p.deficit >= 250 && p.deficit <= 900) ? +p.deficit : undefined
+    };
+    PropertiesService.getScriptProperties().setProperty('ARGON_PROFILE', JSON.stringify(clean));
+    return jsonResponse_({ status: 'ok', profile: argonProfile_() });
+  } catch (err) {
+    return jsonResponse_({ status: 'error', message: err.message });
+  }
+}
+
+function handleEstimateMeal_(payload) {
+  try {
+    const text = String(payload.text || '').slice(0, 800);
+    const img = payload.image_b64 ? String(payload.image_b64) : '';
+    if (!text && !img) return jsonResponse_({ status: 'error', message: 'Describe la comida o adjunta una foto' });
+    if (img.length > 1500000) return jsonResponse_({ status: 'error', message: 'Imagen demasiado grande' });
+    const parts = [{ text: 'Estima los alimentos y porciones de esta comida' + (text ? ': ' + text : ' (ver imagen)') + '.' }];
+    if (img) parts.push({ inline_data: { mime_type: payload.mime === 'image/png' ? 'image/png' : 'image/jpeg', data: img } });
+    const body = {
+      system_instruction: { parts: [{ text: 'Eres nutricionista clínico. Devuelve SOLO JSON con la forma {"items":[{"name":string,"grams":number,"prot":number,"carbs":number,"fat":number}]}. Un item por alimento, con porciones realistas (gramos servidos) y macros en gramos para esa porción. Máximo 8 items. Sin texto adicional.' }] },
+      contents: [{ role: 'user', parts: parts }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 1200, responseMimeType: 'application/json' }
+    };
+    const props = PropertiesService.getScriptProperties();
+    const models = [props.getProperty('ARGON_GEMINI_MODEL'), 'gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
+      .filter((m, i, a) => m && a.indexOf(m) === i);
+    let raw = null, lastErr = '';
+    for (let i = 0; i < models.length; i++) {
+      const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent', {
+        method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': ARGON_CONFIG.GEMINI_API_KEY },
+        payload: JSON.stringify(body), muteHttpExceptions: true
+      });
+      const j = JSON.parse(res.getContentText() || '{}');
+      if (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) {
+        raw = j.candidates[0].content.parts.map(p => p.text || '').join('').trim();
+        if (raw) { props.setProperty('ARGON_GEMINI_MODEL', models[i]); break; }
+      } else if (j.error && j.error.message) { lastErr = j.error.message; }
+    }
+    if (!raw) return jsonResponse_({ status: 'error', message: 'Gemini: ' + (lastErr || 'sin respuesta') });
+    const parsed = JSON.parse(raw.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim());
+    const num = (v, mx) => Math.max(0, Math.min(mx, Math.round((parseFloat(v) || 0) * 10) / 10));
+    const items = (parsed.items || []).slice(0, 8).map(it => {
+      const prot = num(it.prot, 300), carbs = num(it.carbs, 500), fat = num(it.fat, 300);
+      return { name: String(it.name || 'Alimento').slice(0, 40), grams: num(it.grams, 2000), prot: prot, carbs: carbs, fat: fat, kcal: Math.round(4 * prot + 4 * carbs + 9 * fat) };
+    }).filter(it => it.kcal > 0);
+    return jsonResponse_({ status: 'ok', items: items });
+  } catch (err) {
+    return jsonResponse_({ status: 'error', message: err.message });
+  }
+}
