@@ -40,7 +40,7 @@
   }
 
   // ---------- UI helpers ----------
-  const card = (t, sub, body) => `<section class="rounded-2xl bg-slate-950/80 border border-slate-800 p-3.5 space-y-2.5"><div><h4 class="text-[11px] font-extrabold uppercase tracking-wider text-cyan-300">${t}</h4><p class="text-[10px] text-slate-400">${sub}</p></div>${body}</section>`;
+  const card = (t, sub, body) => `<section class="native-card p-4 space-y-2.5"><div><h4 class="text-[11px] font-extrabold uppercase tracking-wider text-cyan-300">${t}</h4><p class="text-[10px] text-slate-400">${sub}</p></div>${body}</section>`;
   const note = t => `<p class="text-[10px] text-slate-400 leading-snug">${t}</p>`;
   const empty = t => `<p class="text-[11px] text-amber-300/90">${t}</p>`;
   const ex = r => (r && r.hr_zones_minutes && r.hr_zones_minutes.x) || {};
@@ -136,38 +136,129 @@
     return card('🫁 Umbral de lactato en carrera', 'Test de campo de 30 min (Friel)', out + `<div class="grid grid-cols-3 gap-1.5 pt-1"><input id="lt-km" type="number" step="0.01" placeholder="km en 30′" class="bg-slate-800 rounded-xl px-2 py-1.5 text-xs text-white"><input id="lt-hr" type="number" placeholder="FC media últ. 20′" class="bg-slate-800 rounded-xl px-2 py-1.5 text-xs text-white"><button id="lt-save" class="rounded-xl bg-cyan-500 text-black font-black text-[11px]">Calcular</button></div>` + note('Protocolo: calentar 10–15′, correr 30′ al máximo ritmo sostenible y constante, solo, plano, sin pausas; pulsa "lap" a los 10′. LTHR = FC media de los últimos 20′. Correlaciona razonablemente con el umbral de laboratorio pero con error individual de varios lpm; el ritmo umbral estricto ≈ ritmo de 60′ (por eso se aplica +4% a tu ritmo de 30′). Repetir cada 6–8 semanas, descansado, mismas condiciones.'));
   }
 
-  // ---------- modal ----------
-  function render() {
-    const el = document.getElementById('mbe-body'); if (!el) return;
-    el.innerHTML = [secBed, secHypno, secNaps, secHrv, secWorkouts, secSteps, secRetrain, secLT].map(f => { try { return f(); } catch (e) { return card('Error', f.name, empty(e.message)); } }).join('');
-    const g = document.getElementById('mbe-goal'); if (g) g.onchange = () => { localStorage.setItem('argon_steps_goal', JSON.stringify(Math.max(1000, parseInt(g.value, 10) || 8000))); render(); };
+  // ---------- Paquete D ----------
+  const ACC = { cyan: '#22d3ee', emerald: '#34d399', violet: '#a78bfa', amber: '#fbbf24', rose: '#fb7185' };
+  function applyAccent(k) {
+    const c = ACC[k] || ACC.cyan; let s = document.getElementById('mbe-acc');
+    if (!s) { s = document.createElement('style'); s.id = 'mbe-acc'; document.head.appendChild(s); }
+    s.textContent = k && k !== 'cyan' ? `.text-cyan-300,.text-cyan-400,.text-cyan-200{color:${c}!important}.border-cyan-500\\/30,.border-cyan-500\\/40,.border-cyan-500\\/45{border-color:${c}66!important}.bg-cyan-500\\/15,.bg-cyan-500\\/10,.bg-cyan-500\\/20{background-color:${c}26!important}.tab-btn-active{color:${c}!important;border-color:${c}73!important}` : '';
+    const t = document.querySelector('meta[name=theme-color]'); if (t) t.content = '#05080F';
+  }
+  window.mbeAccent = k => { localStorage.setItem('argon_accent', k); applyAccent(k); renderAll(); };
+
+  function secHeat() {
+    const rows = st.comp.slice(0, 30).reverse();
+    if (!rows.length) return card('🗓️ Mapa de calor · 30 días', 'Recuperación diaria', empty('Sin datos.'));
+    const col = v => v == null ? '#334155' : v >= 67 ? '#10B981' : v >= 34 ? '#F59E0B' : '#EF4444';
+    const cells = rows.map(r => `<div title="${r.log_date}: ${r.recovery_score == null ? 'calibrando' : r.recovery_score + '%'}" class="aspect-square rounded-md" style="background:${col(r.recovery_score)};opacity:${r.recovery_score == null ? .5 : .35 + .65 * Math.min(1, r.recovery_score / 100)}"></div>`).join('');
+    return card('🗓️ Mapa de calor · 30 días', 'Recuperación diaria (más antiguo → hoy)', `<div class="grid grid-cols-10 gap-1">${cells}</div><div class="flex gap-3 text-[9px] text-slate-400"><span><b style="color:#10B981">■</b> ≥67</span><span><b style="color:#F59E0B">■</b> 34–66</span><span><b style="color:#EF4444">■</b> &lt;34</span><span><b style="color:#64748b">■</b> calibrando</span></div>`);
+  }
+
+  function secAch() {
+    const goal = LS('argon_steps_goal', 8000), r7 = st.raw.slice(0, 7), c7 = st.comp.slice(0, 7), c14 = st.comp.slice(0, 14);
+    const n = (a, f) => a.filter(f).length;
+    const L = [
+      ['👣', 'Pasos: meta 7/7', n(r7, r => (parseInt(r.steps_count, 10) || 0) >= goal), 7],
+      ['🌙', 'Sueño ≥7 h: 5 de 7', n(r7, r => (parseInt(r.total_sleep_min, 10) || 0) >= 420), 5],
+      ['🥩', 'Proteína ≥90% de meta: 5 de 7', n(c7, c => c.target_protein_g > 0 && c.intake_protein_g / c.target_protein_g >= 0.9), 5],
+      ['💚', 'Recuperación ≥67: 3 de 7', n(c7, c => c.recovery_score != null && c.recovery_score >= 67), 3],
+      ['📅', 'Registro constante 14 d', c14.length, 14],
+      ['🏋️', 'Entrenos: 3 en 7 d', n(r7, r => parseFloat(r.pickleball_or_gym_minutes) > 0), 3]
+    ];
+    const chips = L.map(([i, t, v, g]) => { const ok = v >= g; return `<div class="flex items-center justify-between p-2 rounded-xl border ${ok ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-900 border-slate-800'}"><span class="text-xs">${i} ${t}</span><span class="text-[11px] font-mono ${ok ? 'text-emerald-400 font-bold' : 'text-slate-400'}">${ok ? '✓' : Math.min(v, g) + '/' + g}</span></div>`; }).join('');
+    return card('🏆 Logros', 'Ventana móvil de 7–14 días', `<div class="space-y-1.5">${chips}</div>`);
+  }
+
+  function weekStats() {
+    const c = st.comp.slice(0, 7), r = st.raw.slice(0, 7); if (!c.length) return null;
+    const av = a => { a = a.filter(v => isFinite(v)); return a.length ? mean(a) : NaN; };
+    return {
+      from: c[c.length - 1].log_date, to: c[0].log_date,
+      rec: av(c.map(x => x.recovery_score == null ? NaN : +x.recovery_score)),
+      sleep: av(r.map(x => (parseInt(x.total_sleep_min, 10) || NaN) / 60)),
+      steps: av(r.map(x => parseInt(x.steps_count, 10) || NaN)),
+      strain: av(c.map(x => parseFloat(x.strain_score))),
+      prot: av(c.map(x => x.target_protein_g > 0 ? x.intake_protein_g / x.target_protein_g * 100 : NaN)),
+      dw: c.length > 1 ? parseFloat(c[0].trend_weight_kg) - parseFloat(c[c.length - 1].trend_weight_kg) : NaN
+    };
+  }
+  const fx = (v, d = 0) => isFinite(v) ? v.toFixed(d) : '--';
+
+  function secWeek() {
+    const w = weekStats(); if (!w) return card('📤 Tarjeta semanal', 'Compartible', empty('Sin datos.'));
+    const t = (l, v) => `<div class="p-2 rounded-xl bg-slate-900 text-center"><div class="text-[9px] text-slate-400">${l}</div><div class="font-mono font-black text-sm">${v}</div></div>`;
+    return card('📤 Tarjeta semanal', `${w.from} → ${w.to}`, `<div class="grid grid-cols-3 gap-2">${t('Recuperación', fx(w.rec) + '%')}${t('Sueño', fx(w.sleep, 1) + ' h')}${t('Pasos', fx(w.steps).replace(/\B(?=(\d{3})+(?!\d))/g, ','))}${t('Strain', fx(w.strain, 1))}${t('Proteína', fx(w.prot) + '%')}${t('Δ Peso', (isFinite(w.dw) ? (w.dw > 0 ? '+' : '') + w.dw.toFixed(2) : '--') + ' kg')}</div><button onclick="mbeShare()" class="w-full py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase tracking-wider">Compartir imagen</button>`);
+  }
+
+  window.mbeShare = async () => {
+    const w = weekStats(); if (!w) return;
+    const cv = document.createElement('canvas'); cv.width = 1080; cv.height = 1350; const x = cv.getContext('2d');
+    const ac = ACC[localStorage.getItem('argon_accent')] || ACC.cyan;
+    const g = x.createLinearGradient(0, 0, 0, 1350); g.addColorStop(0, '#0B1220'); g.addColorStop(1, '#05080F'); x.fillStyle = g; x.fillRect(0, 0, 1080, 1350);
+    x.fillStyle = ac; x.font = '800 64px system-ui,sans-serif'; x.fillText('ARGON', 70, 120);
+    x.fillStyle = '#94A3B8'; x.font = '500 34px system-ui,sans-serif'; x.fillText('Resumen semanal · ' + w.from + ' → ' + w.to, 70, 175);
+    const T = [['Recuperación', fx(w.rec) + '%'], ['Sueño', fx(w.sleep, 1) + ' h'], ['Pasos/día', fx(w.steps).replace(/\B(?=(\d{3})+(?!\d))/g, ',')], ['Strain medio', fx(w.strain, 1) + ' / 21'], ['Proteína vs meta', fx(w.prot) + '%'], ['Δ Peso (tendencia)', (isFinite(w.dw) ? (w.dw > 0 ? '+' : '') + w.dw.toFixed(2) : '--') + ' kg']];
+    T.forEach((t, i) => {
+      const cx = 70 + (i % 2) * 480, cy = 250 + Math.floor(i / 2) * 330;
+      x.fillStyle = 'rgba(30,41,59,.75)'; x.beginPath(); x.roundRect(cx, cy, 460, 300, 36); x.fill();
+      x.fillStyle = '#94A3B8'; x.font = '500 32px system-ui,sans-serif'; x.fillText(t[0], cx + 36, cy + 78);
+      x.fillStyle = '#F8FAFC'; x.font = '800 78px ui-monospace,monospace'; x.fillText(t[1], cx + 36, cy + 200);
+    });
+    x.fillStyle = '#64748B'; x.font = '400 28px system-ui,sans-serif'; x.fillText('Biometría clínica MBE · generado con ARGON', 70, 1290);
+    cv.toBlob(async b => {
+      const f = new File([b], 'argon-semana.png', { type: 'image/png' });
+      try { if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: 'ARGON semanal' }); return; } } catch (_) { return; }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'argon-semana.png'; a.click();
+    });
+  };
+
+  function secTheme() {
+    const cur = localStorage.getItem('argon_accent') || 'cyan';
+    const chips = Object.keys(ACC).map(k => `<button onclick="mbeAccent('${k}')" aria-label="${k}" class="w-9 h-9 rounded-full" style="background:${ACC[k]};outline:${k === cur ? '3px solid #fff' : 'none'};outline-offset:2px"></button>`).join('');
+    return card('🎨 Color de acento', 'Se guarda en este dispositivo', `<div class="flex gap-3">${chips}</div>`);
+  }
+
+  // ---------- inyección en las pestañas ----------
+  const SLOTS = { 0: [secSteps, secRetrain, secWorkouts], 1: [secBed, secHypno, secNaps, secHrv], 2: [secLT], 4: [secHeat, secAch, secWeek, secTheme] };
+
+  function wire() {
+    const g = document.getElementById('mbe-goal'); if (g) g.onchange = () => { localStorage.setItem('argon_steps_goal', JSON.stringify(Math.max(1000, parseInt(g.value, 10) || 8000))); renderAll(); };
     const b = document.getElementById('lt-save');
     if (b) b.onclick = () => {
       const km = parseFloat(document.getElementById('lt-km').value), hr = parseFloat(document.getElementById('lt-hr').value);
       if (!(km >= 2 && km <= 12) || !(hr >= 120 && hr <= 220)) return alert('Datos fuera de rango (km 2–12, FC 120–220).');
-      const h = LS('argon_lt_v1', []); h.push({ date: new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date()), km, hr }); localStorage.setItem('argon_lt_v1', JSON.stringify(h.slice(-10))); render();
+      const h = LS('argon_lt_v1', []); h.push({ date: new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date()), km, hr }); localStorage.setItem('argon_lt_v1', JSON.stringify(h.slice(-10))); renderAll();
     };
   }
 
-  async function openMbe() {
-    const m = document.getElementById('mbe-modal'); m.classList.remove('hidden');
-    const el = document.getElementById('mbe-body'); el.innerHTML = '<p class="text-xs text-cyan-300 animate-pulse">Cargando…</p>';
-    try {
-      const [raw, comp] = await Promise.all([sbGet('daily_raw_biometrics?order=log_date.desc&limit=30'), sbGet('computed_daily_scores?order=log_date.desc&limit=30')]);
-      st.raw = raw; st.comp = comp; render();
-    } catch (e) { el.innerHTML = empty('No se pudo cargar: ' + e.message); }
+  function renderAll(errMsg) {
+    const slides = document.querySelectorAll('.argon-main-swiper .swiper-slide');
+    Object.keys(SLOTS).forEach(i => {
+      const s = slides[i]; if (!s) return;
+      let box = s.querySelector(':scope > .mbe-slot');
+      if (!box) { box = document.createElement('div'); box.className = 'mbe-slot space-y-3.5'; s.appendChild(box); }
+      box.innerHTML = (errMsg && i == 1 ? card('MBE+', 'Datos', empty(errMsg)) : '') + SLOTS[i].map(f => { try { return f(); } catch (e) { return card('Error', f.name, empty(e.message)); } }).join('');
+    });
+    wire();
+    if (typeof argonSwiper !== 'undefined' && argonSwiper) setTimeout(() => argonSwiper.updateAutoHeight(200), 60);
   }
 
+  async function load() {
+    try {
+      const [raw, comp] = await Promise.all([sbGet('daily_raw_biometrics?order=log_date.desc&limit=30'), sbGet('computed_daily_scores?order=log_date.desc&limit=30')]);
+      st.raw = raw; st.comp = comp; renderAll();
+    } catch (e) { renderAll('No se pudieron cargar los datos MBE+: ' + e.message); }
+  }
+
+  window.openMbe = () => { if (typeof goToArgonTab === 'function') goToArgonTab(1); load(); };
+
   function init() {
-    if (document.getElementById('mbe-modal')) return;
-    const w = document.createElement('div');
-    w.innerHTML = `<div id="mbe-modal" class="fixed inset-0 z-[70] hidden bg-black/80 backdrop-blur-md flex items-end justify-center"><div class="bg-slate-900 border-t border-cyan-500/30 rounded-t-3xl max-w-lg w-full h-[90vh] flex flex-col"><div class="px-4 py-3 flex items-center justify-between border-b border-slate-800"><h3 class="text-sm font-black uppercase tracking-wider text-cyan-400">Panel MBE+</h3><button id="mbe-close" class="text-slate-400 text-sm px-2">✕</button></div><div id="mbe-body" class="flex-1 overflow-y-auto p-3 space-y-3"></div></div></div>`;
-    document.body.appendChild(w);
-    window.openMbe = openMbe;
-    document.getElementById('mbe-close').onclick = () => document.getElementById('mbe-modal').classList.add('hidden');
-    document.getElementById('mbe-modal').addEventListener('click', e => { if (e.target.id === 'mbe-modal') e.target.classList.add('hidden'); });
+    applyAccent(localStorage.getItem('argon_accent') || 'cyan');
+    setTimeout(load, 1200);
+    const wrap = () => { const s = window.syncFromSupabase; if (typeof s === 'function' && !s._mbe) { const w = async function () { const r = await s.apply(this, arguments); load(); return r; }; w._mbe = true; window.syncFromSupabase = w; } };
+    setTimeout(wrap, 1500);
   }
 
   if (typeof document !== 'undefined') { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init(); }
-  if (typeof module !== 'undefined') module.exports = { retrain, ltCalc, m18, pace };
+  if (typeof module !== 'undefined') module.exports = { retrain, ltCalc, m18, pace, st, secs: { secBed, secHypno, secNaps, secHrv, secWorkouts, secSteps, secRetrain, secLT, secHeat, secAch, secWeek, secTheme } };
 })();
