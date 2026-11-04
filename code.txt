@@ -1,0 +1,1583 @@
+/**
+ * ============================================================================
+ * PROYECTO ARGON v6.0 FINAL - BACKEND COMPLETO (GOOGLE APPS SCRIPT)
+ * Incluye:
+ * 1. Acumulación persistente de comidas de Zepp del mismo día (sin pérdida por ventana)
+ * 2. Corte estricto a las 00:00 America/Caracas (soporte start_time / startTime)
+ * 3. Ignora active_calories / total_calories quemadas dentro de Nutrición
+ * 4. Blindaje de sueño nocturno (fragmentos <120m no borran la noche completa)
+ * 5. Espejo automático en Google Docs (EXPEDIENTE_CLINICO_ARGON_VIVO)
+ * 6. Coach Clínico MBE con Gemini (4096 tokens + fallback automático de modelos)
+ * 7. Recuperación MBE: media móvil 7 d de lnRMSSD, zona muerta SWC = 0.5 × SD,
+ *    null durante calibración (<7 días válidos)
+ * ============================================================================
+ */
+
+const ARGON_CONFIG = {
+  SUPABASE_URL: 'https://eqbvzgqumwvksiovboth.supabase.co',
+  get SUPABASE_KEY() { return PropertiesService.getScriptProperties().getProperty('SUPABASE_KEY') || ''; },
+  get GEMINI_API_KEY() { return PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || ''; },
+  TIMEZONE: 'America/Caracas',
+  BASAL_SLEEP_NEED_H: 7.50,
+  HABITUAL_WAKE_TIME: '06:00',
+  HEIGHT_M: 1.73
+};
+
+/**
+ * ============================================================================
+ * 1. PUNTO DE ENTRADA PRINCIPAL (WEBHOOK + CHAT COACH MBE)
+ * ============================================================================
+ */
+function doPost(e) {
+  let isCoach = false;
+  try { const a = JSON.parse(e.postData.contents).action; isCoach = (a === 'ask_coach' || a === 'set_profile' || a === 'estimate_meal'); } catch (_) {}
+  if (isCoach) return doPostInner_(e);
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(25000);
+  } catch (_) {
+    return jsonResponse_({ status: 'error', message: 'Servidor ocupado, reintenta' });
+  }
+  try {
+    return doPostInner_(e);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function doPostInner_(e) {
+  try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return jsonResponse_({ status: 'error', message: 'Payload vacío' });
+    }
+
+    const payload = JSON.parse(e.postData.contents);
+
+    // Si la petición viene del botón "🧠 Coach" dentro de la app ARGON
+    if (payload && payload.action === 'ask_coach') {
+      return handleArgonCoachChat_(payload);
+    }
+    if (payload && payload.action === 'set_profile') return handleSetProfile_(payload);
+    if (payload && payload.action === 'estimate_meal') return handleEstimateMeal_(payload);
+
+    // Procesamiento normal de envíos de HC Webhook (Health Connect)
+    const parsedByDate = extractHealthConnectByDate_(payload);
+    const detectedDates = Object.keys(parsedByDate).sort();
+    const syncedSummaries = [];
+
+    detectedDates.forEach(dateStr => {
+      const dayComputed = upsertAndComputeDayInSupabase_(dateStr, parsedByDate[dateStr]);
+      syncedSummaries.push({
+        log_date: dateStr,
+        weight_kg: dayComputed.weight_kg,
+        body_fat_pct: dayComputed.body_fat_pct,
+        steps: dayComputed.steps_count,
+        intake_kcal: dayComputed.intake_kcal,
+        prot_g: dayComputed.intake_protein_g,
+        carbs_g: dayComputed.intake_carbs_g,
+        fat_g: dayComputed.intake_fat_g,
+        strain: dayComputed.strain_score,
+        recovery: dayComputed.recovery_score
+      });
+    });
+
+    try { logWebhookAudit_(payload, detectedDates, syncedSummaries); } catch (le) { Logger.log('Audit: ' + le.message); }
+    syncExpedienteToGoogleDrive_();
+
+    return jsonResponse_({
+      status: 'ok',
+      engine: 'ARGON_v6.0_PERSISTENT_MEALS',
+      days_updated: detectedDates.length,
+      summary: syncedSummaries
+    });
+  } catch (err) {
+    Logger.log('Error en doPost: ' + err.stack);
+    return jsonResponse_({ status: 'error', message: err.message });
+  }
+}
+
+/**
+ * ============================================================================
+ * 2. PARSER DE FECHAS (CARACAS UTC-4) Y ESTIMADOR DE MACROS
+ * ============================================================================
+ */
+function extractRawTimestamp_(rec) {
+  if (!rec || typeof rec !== 'object') return null;
+  const candidates = [
+    rec.start_time, rec.startTime, rec.time, rec.timestamp,
+    rec.date_time, rec.dateTime, rec.log_date, rec.date,
+    rec.end_time, rec.endTime, rec.created_at,
+    rec.metadata && (
+      rec.metadata.start_time || rec.metadata.startTime ||
+      rec.metadata.time || rec.metadata.last_modified_time ||
+      rec.metadata.lastModifiedTime
+    )
+  ];
+  for (let i = 0; i < candidates.length; i++) {
+    if (candidates[i] !== undefined && candidates[i] !== null && candidates[i] !== '') {
+      return candidates[i];
+    }
+  }
+  const keys = Object.keys(rec);
+  for (let j = 0; j < keys.length; j++) {
+    const k = keys[j].toLowerCase();
+    if ((k.includes('time') || k.includes('date')) && typeof rec[keys[j]] !== 'object') {
+      return rec[keys[j]];
+    }
+  }
+  return null;
+}
+
+function toCaracasDateAndMinutes_(rawTs) {
+  if (rawTs === null || rawTs === undefined || rawTs === '') return null;
+
+  if (typeof rawTs === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawTs.trim())) {
+    const dStr = rawTs.trim();
+    return { dateStr: dStr, epochMs: new Date(dStr + 'T12:00:00-04:00').getTime() };
+  }
+
+  let dt = null;
+  if (typeof rawTs === 'number' || (typeof rawTs === 'string' && /^\d+(\.\d+)?$/.test(rawTs.trim()))) {
+    const num = parseFloat(rawTs);
+    const ms = num < 100000000000 ? num * 1000 : num;
+    dt = new Date(ms);
+  } else if (typeof rawTs === 'string') {
+    let norm = rawTs.trim();
+    if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(norm)) norm = norm.replace(/\s+/, 'T');
+    dt = new Date(norm);
+  }
+
+  if (!dt || isNaN(dt.getTime())) return null;
+
+  return {
+    dateStr: Utilities.formatDate(dt, ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd'),
+    epochMs: dt.getTime()
+  };
+}
+
+function estimateMacrosIfZero_(foodName, kcal, prot, carbs, fat) {
+  if (prot > 0 || carbs > 0 || fat > 0 || !kcal || kcal <= 0) {
+    return { prot: +(prot || 0).toFixed(1), carbs: +(carbs || 0).toFixed(1), fat: +(fat || 0).toFixed(1) };
+  }
+  const n = String(foodName || '').toLowerCase();
+
+  // Perfiles de macros por categoría (proteína, carbs, grasa) - suman 1.0
+  const profiles = [
+    { regex: /pollo|pechuga|pavo|atun|atún|pescado|clara|whey/,       p: 0.70, c: 0.05, f: 0.25, weight: 1.0 },
+    { regex: /carne|bistec|res|cerdo|chuleta|lomito|jamon|jamón/,       p: 0.48, c: 0.02, f: 0.50, weight: 1.0 },
+    { regex: /queso|huevo|aguacate|mantequilla/,                        p: 0.32, c: 0.04, f: 0.64, weight: 1.0 },
+    { regex: /arroz|platano|plátano|arepa|waffle|yuca|pan|pasta|avena|pimiento|ensalada|pure|puré|papa|patata/, p: 0.12, c: 0.50, f: 0.38, weight: 1.0 },
+    { regex: /nestea|jugo|batido|coca|refresco|azucar/,                 p: 0.02, c: 0.96, f: 0.02, weight: 1.0 },
+    { regex: /empanada|frita|chucheria|chuchería|chocolate/,            p: 0.12, c: 0.46, f: 0.42, weight: 1.0 }
+  ];
+
+  // Acumulación ponderada: platos combinados (ej. "pollo con arroz") promedian ambos perfiles
+  let totalWeight = 0;
+  let accP = 0, accC = 0, accF = 0;
+  profiles.forEach(profile => {
+    if (profile.regex.test(n)) {
+      accP += profile.p * profile.weight;
+      accC += profile.c * profile.weight;
+      accF += profile.f * profile.weight;
+      totalWeight += profile.weight;
+    }
+  });
+
+  // Si no matchea ningún perfil, usa default balanceado
+  if (totalWeight === 0) {
+    accP = 0.25; accC = 0.45; accF = 0.30;
+    totalWeight = 1;
+  }
+
+  const pRatio = accP / totalWeight;
+  const cRatio = accC / totalWeight;
+  const fRatio = accF / totalWeight;
+
+  return {
+    prot: Math.round((kcal * pRatio) / 4),
+    carbs: Math.round((kcal * cRatio) / 4),
+    fat: Math.round((kcal * fRatio) / 9)
+  };
+}
+
+/**
+ * ============================================================================
+ * 3. EXTRACTOR MULTICATEGORÍA DE HEALTH CONNECT POR FECHA
+ * ============================================================================
+ */
+function extractHealthConnectByDate_(payload) {
+  const daysMap = {};
+  const todayCaracas = Utilities.formatDate(new Date(), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd');
+
+  function getDayBucket(dateStr) {
+    const d = (dateStr && /^\d{4}-\d{2}-\d{2}/.test(dateStr)) ? dateStr.substring(0, 10) : todayCaracas;
+    if (!daysMap[d]) {
+      daysMap[d] = {
+        log_date: d,
+        has_steps_payload: false,
+        steps_map: {},
+        has_nutrition_payload: false,
+        meals_map: {},
+        rhr_list: [],
+        rmssd_list: [],
+        resp_list: [],
+        spo2_list: [],
+        latest_weight_kg: null,
+        latest_weight_ts: 0,
+        latest_bf_pct: null,
+        latest_bf_ts: 0,
+        tmb_kcal: null,
+        sleep_total_min: null,
+        sleep_deep_min: null,
+        sleep_rem_min: null,
+        sleep_light_min: null,
+        sleep_tib_min: null,
+        workout_map: {},
+        nap_map: {},
+        rmssd_day_list: [],
+        workouts: [],
+        hypno: null
+      };
+    }
+    return daysMap[d];
+  }
+
+  function extractAnyNumber(obj, preferredKeys) {
+    if (obj === null || obj === undefined) return null;
+    if (typeof obj === 'number') return obj;
+    if (typeof obj === 'string') {
+      const n = parseFloat(obj.replace(',', '.'));
+      return isNaN(n) ? null : n;
+    }
+    if (typeof obj === 'object') {
+      for (let i = 0; i < preferredKeys.length; i++) {
+        const k = preferredKeys[i];
+        if (obj[k] !== undefined && obj[k] !== null) {
+          const val = extractAnyNumber(obj[k], preferredKeys);
+          if (val !== null) return val;
+        }
+      }
+      if (obj.inKilojoules !== undefined) return parseFloat(obj.inKilojoules) / 4.184;
+      if (obj.inJoules !== undefined) return parseFloat(obj.inJoules) / 4184.0;
+      if (obj.inGrams !== undefined && preferredKeys.includes('inKilograms')) return parseFloat(obj.inGrams) / 1000.0;
+      const keys = Object.keys(obj);
+      for (let j = 0; j < keys.length; j++) {
+        const kName = keys[j].toLowerCase();
+        if (kName.includes('time') || kName.includes('date') || kName.includes('id') || kName.includes('type') || kName.includes('zone')) continue;
+        const subVal = obj[keys[j]];
+        if (typeof subVal === 'number' && !isNaN(subVal)) return subVal;
+      }
+    }
+    return null;
+  }
+
+  function processRecord(rec, categoryName) {
+    if (!rec || typeof rec !== 'object') return;
+    const cat = String(categoryName || rec.type || rec.record_type || rec.recordType || '').toLowerCase();
+
+    const rawTs = extractRawTimestamp_(rec);
+    const parsedTs = toCaracasDateAndMinutes_(rawTs);
+    if (!parsedTs) return;
+
+    const { dateStr, epochMs } = parsedTs;
+    const bucket = getDayBucket(dateStr);
+
+    // 1. PESO
+    if (cat === 'weight' || cat.includes('weight') || rec.weight !== undefined || rec.weight_kg !== undefined) {
+      let w = extractAnyNumber(
+        rec.weight !== undefined ? rec.weight : (rec.weight_kg !== undefined ? rec.weight_kg : (rec.mass !== undefined ? rec.mass : rec)),
+        ['inKilograms', 'in_kilograms', 'kilograms', 'kg', 'value', 'mass']
+      );
+      if (w && w > 35000) w = w / 1000.0;
+      if (w && w >= 40 && w <= 220 && epochMs >= bucket.latest_weight_ts) {
+        bucket.latest_weight_kg = +w.toFixed(2);
+        bucket.latest_weight_ts = epochMs;
+      }
+    }
+
+    // 2. GRASA CORPORAL
+    if (cat === 'body_fat' || cat.includes('bodyfat') || cat.includes('body_fat') || rec.body_fat_pct !== undefined) {
+      let bf = extractAnyNumber(
+        rec.percentage !== undefined ? rec.percentage : (rec.body_fat !== undefined ? rec.body_fat : (rec.bodyFat !== undefined ? rec.bodyFat : rec)),
+        ['inPercent', 'in_percent', 'percent', 'percentage', 'value']
+      );
+      if (bf && bf > 0 && bf < 1.0) bf = bf * 100.0;
+      if (bf && bf >= 4 && bf <= 65 && epochMs >= bucket.latest_bf_ts) {
+        bucket.latest_bf_pct = +bf.toFixed(1);
+        bucket.latest_bf_ts = epochMs;
+      }
+    }
+
+    // 3. PASOS
+    if (cat === 'steps' || cat.includes('step') || rec.steps_count !== undefined) {
+      bucket.has_steps_payload = true;
+      const count = extractAnyNumber(rec.count !== undefined ? rec.count : (rec.steps_count !== undefined ? rec.steps_count : rec), ['count', 'steps', 'value']);
+      if (count !== null && count >= 0 && count < 100000) {
+        const stepKey = String(rec.id || (rec.metadata && rec.metadata.id) || epochMs);
+        bucket.steps_map[stepKey] = Math.round(count);
+      }
+    }
+
+    // 4. NUTRICIÓN ESTRICTA (Ignora active_calories / total_calories y evita colisión de timestamps)
+    if ((cat === 'nutrition' || cat.includes('nutrition') || cat.includes('meal') || cat.includes('food')) && !cat.includes('calories')) {
+      bucket.has_nutrition_payload = true;
+      const nutSource = rec.nutrients || rec.macros || rec;
+      const kcal = extractAnyNumber(rec.energy || rec.calories || rec.total_calories || rec.intake_kcal || rec.totalCalories || nutSource.energy || nutSource.calories, ['inKilocalories', 'in_kilocalories', 'kilocalories', 'kcal', 'value']);
+      const rawProt = extractAnyNumber(rec.protein_grams || rec.protein || rec.proteins || rec.protein_g || rec.intake_protein_g || nutSource.protein || nutSource.proteins, ['inGrams', 'in_grams', 'grams', 'g', 'value']) || 0;
+      const rawCarbs = extractAnyNumber(rec.carbs_grams || rec.total_carbohydrate || rec.totalCarbohydrate || rec.carbohydrates || rec.carbs || rec.carbs_g || rec.intake_carbs_g || nutSource.carbohydrates || nutSource.carbs, ['inGrams', 'in_grams', 'grams', 'g', 'value']) || 0;
+      const rawFat = extractAnyNumber(rec.fat_grams || rec.total_fat || rec.totalFat || rec.fat || rec.fats || rec.fat_g || rec.intake_fat_g || nutSource.fat || nutSource.fats, ['inGrams', 'in_grams', 'grams', 'g', 'value']) || 0;
+
+      const foodName = String(rec.name || rec.meal_name || rec.mealName || rec.food_name || rec.title || rec.meal_type || rec.mealType || 'Alimento').trim();
+      const finalKcal = Math.round(kcal || ((rawProt * 4) + (rawCarbs * 4) + (rawFat * 9)));
+
+      if (finalKcal > 0) {
+        const macros = estimateMacrosIfZero_(foodName, finalKcal, rawProt, rawCarbs, rawFat);
+        const recUid = rec.id || (rec.metadata && rec.metadata.id) || `${epochMs}_${finalKcal}`;
+        const cleanName = foodName.replace(/\s+/g, '_');
+        let mealId = `${dateStr}_${recUid}_${cleanName}_${finalKcal}`;
+        if (!rec.id && !(rec.metadata && rec.metadata.id)) {
+          const baseId = mealId;
+          let n = 2;
+          while (bucket.meals_map[mealId]) mealId = baseId + '#' + n++;
+        }
+        bucket.meals_map[mealId] = {
+          id: mealId,
+          date_caracas: dateStr,
+          est: !(rawProt > 0 || rawCarbs > 0 || rawFat > 0),
+          time_caracas: Utilities.formatDate(new Date(epochMs), ARGON_CONFIG.TIMEZONE, 'HH:mm'),
+          kcal: finalKcal,
+          prot: macros.prot,
+          carbs: macros.carbs,
+          fat: macros.fat,
+          name: foodName
+        };
+      }
+    }
+
+    // 5. VFC (Mediana en webhook para neutralizar artefactos PPG) Y FC REPOSO
+    if (cat.includes('variability') || cat.includes('hrv') || rec.rmssd_ms !== undefined || rec.heartRateVariabilityMillis !== undefined) {
+      const hrv = extractAnyNumber(rec.rmssd_millis || rec.heart_rate_variability_millis || rec.heartRateVariabilityMillis || rec.rmssd_ms || rec.rmssd || rec.hrv || rec, ['inMilliseconds', 'ms', 'value']);
+      if (hrv && hrv >= 10 && hrv <= 180) {
+        const hh = parseInt(Utilities.formatDate(new Date(epochMs), ARGON_CONFIG.TIMEZONE, 'H'), 10);
+        if (hh >= 22) getDayBucket(Utilities.formatDate(new Date(epochMs + 86400000), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd')).rmssd_list.push(hrv);
+        else if (hh < 9) bucket.rmssd_list.push(hrv);
+        else bucket.rmssd_day_list.push(hrv);
+      }
+    }
+    if (cat.includes('resting_heart') || cat.includes('restingheart') || cat === 'rhr' || rec.rhr_bpm !== undefined) {
+      const rhr = extractAnyNumber(rec.beats_per_minute || rec.beatsPerMinute || rec.rhr_bpm || rec.bpm || rec, ['beatsPerMinute', 'beats_per_minute', 'bpm', 'value']);
+      if (rhr && rhr >= 35 && rhr <= 110) bucket.rhr_list.push(rhr);
+    }
+
+    // 6. RESPIRACIÓN Y SPO2
+    if (cat.includes('respiratory') || rec.resp_rate_brpm !== undefined) {
+      const rr = extractAnyNumber(rec.rate || rec.resp_rate_brpm || rec, ['rate', 'brpm', 'value']);
+      if (rr && rr >= 8 && rr <= 35) bucket.resp_list.push(rr);
+    }
+    if (cat.includes('oxygen') || cat.includes('spo2') || rec.spo2_pct !== undefined) {
+      let sp = extractAnyNumber(rec.percentage || rec.spo2_pct || rec, ['inPercent', 'in_percent', 'percent', 'percentage', 'value']);
+      if (sp && sp > 0 && sp <= 1.0) sp = sp * 100.0;
+      if (sp && sp >= 80 && sp <= 100) bucket.spo2_list.push(sp);
+    }
+
+    // 7. SUEÑO (Conserva siempre el episodio principal >= 120m para no pisar la noche con siestas)
+    if (cat === 'sleep' || cat.includes('sleep') || Array.isArray(rec.stages)) {
+      const wakeRaw = rec.end_time || rec.endTime || rec.session_end_time || rawTs;
+      const wakeParsed = toCaracasDateAndMinutes_(wakeRaw) || parsedTs;
+      const sleepBucket = getDayBucket(wakeParsed.dateStr);
+
+      if (Array.isArray(rec.stages) && rec.stages.length > 0) {
+        let deep = 0, rem = 0, light = 0, awake = 0;
+        const segs = []; let t0 = null;
+        rec.stages.forEach(st => {
+          const stStart = toCaracasDateAndMinutes_(st.start_time || st.startTime);
+          const stEnd = toCaracasDateAndMinutes_(st.end_time || st.endTime);
+          if (!stStart || !stEnd) return;
+          const durMin = Math.max(0, Math.round((stEnd.epochMs - stStart.epochMs) / 60000));
+          const stType = String(st.stage || st.type || '').toLowerCase();
+          if (t0 === null) t0 = stStart.epochMs;
+          const code = (stType === '5' || stType.includes('deep')) ? 'D' : (stType === '6' || stType.includes('rem')) ? 'R'
+            : (stType === '1' || stType === '3' || stType === '7' || stType.includes('awake') || stType.includes('out_of_bed')) ? 'A' : 'L';
+          if (durMin > 0) segs.push([code, Math.round((stStart.epochMs - t0) / 60000), durMin]);
+          if (stType === '5' || stType.includes('deep')) deep += durMin;
+          else if (stType === '6' || stType.includes('rem')) rem += durMin;
+          else if (stType === '1' || stType === '3' || stType === '7' || stType.includes('awake') || stType.includes('out_of_bed')) awake += durMin;
+          else if (durMin > 0) light += durMin;
+        });
+        const totalSt = deep + rem + light;
+        const fs = toCaracasDateAndMinutes_(rec.stages[0].start_time || rec.stages[0].startTime);
+        const hr = fs ? parseInt(Utilities.formatDate(new Date(fs.epochMs), ARGON_CONFIG.TIMEZONE, 'H'), 10) : -1;
+        const isNap = totalSt >= 10 && totalSt <= 240 && hr >= 8 && hr <= 20;
+        if (isNap) sleepBucket.nap_map[String(fs.epochMs)] = totalSt;
+        if (!isNap && totalSt >= 120 && totalSt >= (sleepBucket.sleep_total_min || 0)) {
+          sleepBucket.hypno = { t0: t0, seg: segs.slice(0, 220) };
+          sleepBucket.sleep_deep_min = deep;
+          sleepBucket.sleep_rem_min = rem;
+          sleepBucket.sleep_light_min = light;
+          sleepBucket.sleep_total_min = totalSt;
+          sleepBucket.sleep_tib_min = totalSt + awake;
+        }
+      } else {
+        const sStart = toCaracasDateAndMinutes_(rec.start_time || rec.startTime);
+        const sEnd = toCaracasDateAndMinutes_(rec.end_time || rec.endTime);
+        if (sStart && sEnd) {
+          const durMin = Math.round((sEnd.epochMs - sStart.epochMs) / 60000);
+          const hr2 = parseInt(Utilities.formatDate(new Date(sStart.epochMs), ARGON_CONFIG.TIMEZONE, 'H'), 10);
+          const isNap2 = durMin >= 10 && durMin <= 240 && hr2 >= 8 && hr2 <= 20;
+          if (isNap2) sleepBucket.nap_map[String(sStart.epochMs)] = durMin;
+          if (!isNap2 && durMin >= 120 && durMin <= 840 && durMin >= (sleepBucket.sleep_total_min || 0)) {
+            sleepBucket.sleep_total_min = durMin;
+            sleepBucket.sleep_tib_min = Math.round(durMin / 0.87);
+          }
+        }
+      }
+    }
+
+    // 8. EJERCICIO
+    if (cat === 'exercise' || cat.includes('exercise')) {
+      const eStart = toCaracasDateAndMinutes_(rec.start_time || rec.startTime);
+      const eEnd = toCaracasDateAndMinutes_(rec.end_time || rec.endTime);
+      if (eStart && eEnd) {
+        const wMin = Math.round((eEnd.epochMs - eStart.epochMs) / 60000);
+        if (wMin >= 5 && wMin <= 300) {
+          const wk = String(rec.id || eStart.epochMs);
+          bucket.workout_map[wk] = wMin;
+          const kc = extractAnyNumber(rec.active_calories ?? rec.calories ?? rec.total_calories ?? rec.energy ?? null, ['inKilocalories', 'kilocalories', 'kcal', 'value']);
+          const hrA = extractAnyNumber(rec.avg_heart_rate ?? rec.average_heart_rate ?? rec.avg_hr ?? null, ['bpm', 'value']);
+          bucket.workouts.push({
+            id: wk,
+            type: String(rec.title || rec.name || rec.exercise_type || rec.exerciseType || rec.type || 'Ejercicio').slice(0, 30),
+            start: Utilities.formatDate(new Date(eStart.epochMs), ARGON_CONFIG.TIMEZONE, 'HH:mm'),
+            end: Utilities.formatDate(new Date(eEnd.epochMs), ARGON_CONFIG.TIMEZONE, 'HH:mm'),
+            end_ms: eEnd.epochMs, min: wMin,
+            kcal: kc ? Math.round(kc) : null, avg_hr: hrA ? Math.round(hrA) : null
+          });
+        }
+      }
+    }
+  }
+
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+    Object.keys(payload).forEach(topKey => {
+      const kLower = topKey.toLowerCase();
+      if (kLower === 'timestamp' || kLower === 'app_version' || kLower === 'device') return;
+      const val = payload[topKey];
+      if (Array.isArray(val)) {
+        val.forEach(item => processRecord(item, kLower));
+      } else if (val && typeof val === 'object') {
+        if (Array.isArray(val.records)) val.records.forEach(item => processRecord(item, kLower));
+        else if (Array.isArray(val.data)) val.data.forEach(item => processRecord(item, kLower));
+        else processRecord(val, kLower);
+      }
+    });
+  } else if (Array.isArray(payload)) {
+    payload.forEach(item => processRecord(item, ''));
+  }
+
+  getDayBucket(todayCaracas);
+  return daysMap;
+}
+
+/**
+ * ============================================================================
+ * 4. UPSERT CON ACUMULACIÓN PERSISTENTE EN EL DÍA Y REINICIO A LAS 00:00
+ * ============================================================================
+ */
+function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
+  const existingRows = supabaseGet_(`daily_raw_biometrics?log_date=eq.${dateStr}&limit=1`);
+  const existing = existingRows.length > 0 ? existingRows[0] : {};
+  if (parseInt(existing.total_sleep_min, 10) === 450 && parseInt(existing.deep_sleep_min, 10) === 84 && parseInt(existing.rem_sleep_min, 10) === 96) {
+    existing.total_sleep_min = 0; existing.time_in_bed_min = 0; existing.deep_sleep_min = 0; existing.rem_sleep_min = 0; existing.light_sleep_min = 0;
+  }
+
+  const historyRows = supabaseGet_(`daily_raw_biometrics?log_date=lt.${dateStr}&order=log_date.desc&limit=14`);
+  // Fetch computed history for ACWR (strain_score)
+  const computedHistoryRows = supabaseGet_(`computed_daily_scores?log_date=lt.${dateStr}&order=log_date.desc&limit=14`);
+  // Merge strain_score into historyRows
+  const computedMap = new Map(computedHistoryRows.map(r => [r.log_date, r.strain_score]));
+  historyRows.forEach(r => { r.strain_score = computedMap.get(r.log_date) || 0; });
+
+  const lastKnownWeight = historyRows.length > 0 && historyRows[0].weight_kg ? parseFloat(historyRows[0].weight_kg) : 86.80;
+  const lastKnownBf = historyRows.length > 0 && historyRows[0].body_fat_pct ? parseFloat(historyRows[0].body_fat_pct) : 24.4;
+
+  const todayWeight = extractedDay.latest_weight_kg || (existing.weight_kg ? parseFloat(existing.weight_kg) : lastKnownWeight);
+  const todayBf = extractedDay.latest_bf_pct || (existing.body_fat_pct ? parseFloat(existing.body_fat_pct) : lastKnownBf);
+
+  const stepKeys = Object.keys(extractedDay.steps_map);
+  let todaySteps = existing.steps_count || 0;
+  if (stepKeys.length > 0) {
+    const webhookSteps = stepKeys.reduce((sum, k) => sum + extractedDay.steps_map[k], 0);
+    todaySteps = Math.max(todaySteps, webhookSteps);
+  }
+
+  const exKeys = Object.keys(extractedDay.workout_map);
+  let todayWorkoutMin = existing.pickleball_or_gym_minutes || 0;
+  if (exKeys.length > 0) {
+    const webhookWork = exKeys.reduce((sum, k) => sum + extractedDay.workout_map[k], 0);
+    todayWorkoutMin = Math.max(todayWorkoutMin, webhookWork);
+  }
+
+  // Conserva todas las comidas registradas hoy (tanto manuales como de Zepp previas)
+  const mergedMealsMap = {};
+  if (Array.isArray(existing.meals_log_json)) {
+    existing.meals_log_json.forEach(m => {
+      if (!m || !m.kcal) return;
+      const belongsToday = (m.date_caracas === dateStr) ||
+                           String(m.id || '').startsWith('manual_') ||
+                           String(m.id || '').startsWith(dateStr);
+      if (belongsToday) {
+        const dedupKey = m.id || `${m.name}_${m.kcal}_${m.time_caracas || 'manual'}`;
+        mergedMealsMap[dedupKey] = m;
+      }
+    });
+  }
+
+  Object.keys(extractedDay.meals_map).forEach(mId => {
+    const mealObj = extractedDay.meals_map[mId];
+    if (!mealObj.date_caracas || mealObj.date_caracas === dateStr) {
+      const dedupKey = mealObj.id || `${mealObj.name}_${mealObj.kcal}_${mealObj.time_caracas || ''}`;
+      mergedMealsMap[dedupKey] = mealObj;
+    }
+  });
+
+  const mealsList = Object.keys(mergedMealsMap).map(k => mergedMealsMap[k]);
+
+  const totalKcal = mealsList.reduce((acc, m) => acc + (parseInt(m.kcal, 10) || 0), 0);
+  const totalProt = Math.round(mealsList.reduce((acc, m) => acc + (parseFloat(m.prot) || 0), 0));
+  const totalCarbs = Math.round(mealsList.reduce((acc, m) => acc + (parseFloat(m.carbs) || 0), 0));
+  const totalFat = Math.round(mealsList.reduce((acc, m) => acc + (parseFloat(m.fat) || 0), 0));
+
+  const ffmPct = +(100.0 - todayBf).toFixed(1);
+  const ffmKg = +(todayWeight * (ffmPct / 100.0)).toFixed(1);
+  const musclePct = +(ffmPct * 0.6468).toFixed(1);
+  const waterPct = +(ffmPct * 0.7222).toFixed(1);
+  const visceral = Math.max(1, Math.round(11 + (todayBf - 24.4) * 0.48));
+  const tmbKcal = extractedDay.tmb_kcal || Math.round(370 + (21.6 * ffmKg));
+
+  const prevSleepTotal = parseInt(existing.total_sleep_min, 10) || 0;
+  const newSleepTotal = parseInt(extractedDay.sleep_total_min, 10) || 0;
+  const useNewSleep = newSleepTotal >= prevSleepTotal && newSleepTotal >= 120;
+  const napNew = Object.keys(extractedDay.nap_map || {}).reduce((a, k) => a + extractedDay.nap_map[k], 0);
+  const napTotal = Math.max(parseInt(existing.nap_sleep_min, 10) || 0, napNew);
+
+  const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const median = arr => {
+    if (!arr.length) return 0;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+  // Extras sin columnas nuevas: hr_zones_minutes.x
+  const prevHz = (existing.hr_zones_minutes && typeof existing.hr_zones_minutes === 'object') ? existing.hr_zones_minutes : {};
+  const xt = Object.assign({}, prevHz.x || {});
+  const wMap = {};
+  (xt.workouts || []).concat(extractedDay.workouts || []).forEach(w => { if (w && w.id) wMap[w.id] = w; });
+  xt.workouts = Object.keys(wMap).map(k => wMap[k]).sort((a, b) => (a.end_ms || 0) - (b.end_ms || 0)).slice(-12);
+  if (useNewSleep && extractedDay.hypno && extractedDay.hypno.seg.length) xt.hypno = extractedDay.hypno;
+  const napList = Object.keys(extractedDay.nap_map || {}).map(k => ({ t: Utilities.formatDate(new Date(parseInt(k, 10)), ARGON_CONFIG.TIMEZONE, 'HH:mm'), min: extractedDay.nap_map[k] }));
+  if (napList.length) xt.naps = napList;
+  if (extractedDay.rmssd_day_list.length) {
+    const dl = extractedDay.rmssd_day_list;
+    xt.hrv_day = { n: dl.length, median: +median(dl).toFixed(1), min: Math.round(Math.min.apply(null, dl)), max: Math.round(Math.max.apply(null, dl)) };
+  }
+  const mergedRaw = {
+    log_date: dateStr,
+    weight_kg: todayWeight,
+    body_fat_pct: todayBf,
+    skeletal_muscle_pct: musclePct,
+    visceral_fat_index: visceral,
+    tmb_kcal: tmbKcal,
+    body_water_pct: waterPct,
+    rmssd_ms: extractedDay.rmssd_list.length ? +median(extractedDay.rmssd_list).toFixed(1) : (existing.rmssd_ms || 0),
+    rhr_bpm: extractedDay.rhr_list.length ? +median(extractedDay.rhr_list).toFixed(1) : (existing.rhr_bpm || 0),
+    resp_rate_brpm: extractedDay.resp_list.length ? +avg(extractedDay.resp_list).toFixed(1) : (existing.resp_rate_brpm || 0),
+    spo2_pct: extractedDay.spo2_list.length ? +avg(extractedDay.spo2_list).toFixed(1) : (existing.spo2_pct || 0),
+    total_sleep_min: useNewSleep ? newSleepTotal : (prevSleepTotal || 0),
+    time_in_bed_min: useNewSleep ? (extractedDay.sleep_tib_min || Math.round(newSleepTotal / 0.87)) : (existing.time_in_bed_min || 0),
+    deep_sleep_min: useNewSleep ? (extractedDay.sleep_deep_min || 0) : (existing.deep_sleep_min || 0),
+    rem_sleep_min: useNewSleep ? (extractedDay.sleep_rem_min || 0) : (existing.rem_sleep_min || 0),
+    light_sleep_min: useNewSleep ? (extractedDay.sleep_light_min || 0) : (existing.light_sleep_min || 0),
+    steps_count: todaySteps,
+    nap_sleep_min: napTotal,
+    pickleball_or_gym_minutes: todayWorkoutMin,
+    session_rpe: todayWorkoutMin > 0 ? (existing.session_rpe || 7.0) : 0,
+    is_hospital_shift: Boolean(existing.is_hospital_shift),
+    night_awake_shift_hours: parseFloat(existing.night_awake_shift_hours) || 0,
+    intake_kcal: totalKcal,
+    intake_protein_g: totalProt,
+    intake_carbs_g: totalCarbs,
+    intake_fat_g: totalFat,
+    meals_log_json: mealsList,
+    hr_zones_minutes: Object.assign({}, prevHz, { x: xt })
+  };
+
+  supabaseUpsert_('daily_raw_biometrics', mergedRaw);
+
+  const prevCompRows = supabaseGet_(`computed_daily_scores?log_date=lt.${dateStr}&order=log_date.desc&limit=1`);
+  const prevComp = prevCompRows.length > 0 ? prevCompRows[0] : null;
+
+  const computedScore = computeArgonMbeScore_(mergedRaw, historyRows, prevComp);
+  supabaseUpsert_('computed_daily_scores', computedScore);
+
+  return { ...mergedRaw, ...computedScore };
+}
+
+/**
+ * ============================================================================
+ * 5. MOTOR MATEMÁTICO MBE EN SERVIDOR
+ * ============================================================================
+ */
+// ===ENGINE_START=== (copiado automáticamente de index.html; no editar a mano)
+    function computeArgonEngine_(todayRaw, historyRawList, prevComputed) {
+      const PROF = argonProfile_();
+      const wakeTimeStr = PROF.wake;
+      const MIN_BASELINE_DAYS = 7;
+      const basalNeedH = 7.50; // Calibrado a 7h 30m de sueño neto efectivo
+
+      // Edad cronológica exacta (Nacido: 12 Nov 1997)
+      const birthDate = new Date(PROF.birth + 'T00:00:00-04:00');
+      const refDate = todayRaw.log_date ? new Date(todayRaw.log_date + 'T12:00:00-04:00') : new Date();
+      const chronologicalAge = +((refDate.getTime() - birthDate.getTime()) / (365.2425 * 86400000)).toFixed(2);
+      const heightM = PROF.height_m;
+
+      // A. BIOIMPEDANCIA FEELFIT
+      const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.weight_kg : 86.80);
+      const rawBf = parseFloat(todayRaw.body_fat_pct) || (prevComputed ? prevComputed.body_fat_pct : 24.1);
+      const ffmPct = +(100.0 - rawBf).toFixed(1);
+
+      const fatMassKg = +(rawW * (rawBf / 100.0)).toFixed(2);
+      const ffmKg = +(rawW - fatMassKg).toFixed(1);
+      const boneMassKg = +(rawW * 0.0378).toFixed(1);
+      const muscleMassKg = +(ffmKg - boneMassKg).toFixed(1);
+
+      const musclePct = parseFloat(todayRaw.skeletal_muscle_pct) || +(ffmPct * 0.6468).toFixed(1);
+      const waterPct = parseFloat(todayRaw.body_water_pct) || +(ffmPct * 0.7222).toFixed(1);
+      const visceral = parseFloat(todayRaw.visceral_fat_index) || Math.max(1, Math.round(11 + (rawBf - 24.4) * 0.48));
+      const tmbFeelfit = parseInt(todayRaw.tmb_kcal, 10) || Math.round(370 + (21.6 * ffmKg));
+      const waterMassKg = +(rawW * (waterPct / 100.0)).toFixed(2);
+      const bmi = +(rawW / (heightM * heightM)).toFixed(1);
+
+      const prevTrendW = prevComputed && prevComputed.trend_weight_kg ? parseFloat(prevComputed.trend_weight_kg) : rawW;
+      const prevTrendBf = prevComputed && prevComputed.trend_body_fat_pct ? parseFloat(prevComputed.trend_body_fat_pct) : rawBf;
+      const trendW = +((0.25 * rawW) + (0.75 * prevTrendW)).toFixed(2);
+      const trendBf = +((0.25 * rawBf) + (0.75 * prevTrendBf)).toFixed(2);
+
+      // B. STRAIN 4D
+      const steps = Math.max(0, parseInt(todayRaw.steps_count, 10) || 0);
+      const workoutMin = Math.max(0, parseFloat(todayRaw.pickleball_or_gym_minutes) || 0);
+      const sRpe = Math.max(0, parseFloat(todayRaw.session_rpe) || (workoutMin > 0 ? 7.0 : 0));
+      const nightAwakeH = Math.max(0, parseFloat(todayRaw.night_awake_shift_hours) || 0);
+
+      // Pasos netos: descuenta pasos de caminata (Zepp walking_steps o estimado 85 pasos/min ejercicio)
+      const hz = (todayRaw.hr_zones_minutes && typeof todayRaw.hr_zones_minutes === 'object') ? todayRaw.hr_zones_minutes : null;
+      const zonesReal = todayRaw.hr_zones_real === true || !!(hz && hz.real === true);
+      const explicitWalk = parseInt(todayRaw.walking_steps, 10) || parseInt(hz && hz.walking_steps, 10) || 0;
+      const walkingSteps = explicitWalk || (workoutMin > 0 ? Math.round(workoutMin * 85) : 0);
+      const stepsNet = Math.max(0, steps - walkingSteps);
+
+      const ambientZ1 = Math.round(Math.max(0, stepsNet - 2000) / 320);
+
+      // Zonas dinámicas por RPE cuando no hay hr_zones_real
+      let zones;
+      if (zonesReal && hz) {
+        zones = { z1: parseFloat(hz.z1) || 0, z2: parseFloat(hz.z2) || 0, z3: parseFloat(hz.z3) || 0, z4: parseFloat(hz.z4) || 0, z5: parseFloat(hz.z5) || 0 };
+      } else {
+        // Distribución base: separar ambientZ1 (caminata diaria) de workout Z1
+        const workoutZ1 = Math.round(workoutMin * 0.22);
+        const workoutZ2 = Math.round(workoutMin * 0.33);
+        let baseZ1 = ambientZ1 + workoutZ1;
+        let baseZ2 = workoutZ2;
+        let baseZ3 = Math.round(workoutMin * 0.20);
+        let baseZ4 = Math.round(workoutMin * 0.17);
+        let baseZ5 = Math.round(workoutMin * 0.08);
+
+        // Redistribución solo de workout Z1-Z2 -> Z3-Z5 proporcional al RPE (no toca ambientZ1)
+        if (workoutMin > 0 && sRpe > 0) {
+          const rpeFactor = Math.max(0, Math.min(1, (sRpe - 1) / 9)); // 0-1
+          const shiftAmount = (workoutZ1 + workoutZ2) * rpeFactor * 0.5; // máx 50% del peso bajo del workout
+          const newWorkoutZ1 = Math.round(workoutZ1 * (1 - rpeFactor * 0.5));
+          const newWorkoutZ2 = Math.round(workoutZ2 * (1 - rpeFactor * 0.5));
+          const totalHigh = baseZ3 + baseZ4 + baseZ5;
+          if (totalHigh > 0) {
+            baseZ3 += Math.round(shiftAmount * (baseZ3 / totalHigh));
+            baseZ4 += Math.round(shiftAmount * (baseZ4 / totalHigh));
+            baseZ5 += Math.round(shiftAmount * (baseZ5 / totalHigh));
+          } else {
+            baseZ3 += Math.round(shiftAmount * 0.5);
+            baseZ4 += Math.round(shiftAmount * 0.3);
+            baseZ5 += Math.round(shiftAmount * 0.2);
+          }
+          baseZ1 = ambientZ1 + newWorkoutZ1;
+          baseZ2 = newWorkoutZ2;
+        }
+        zones = { z1: baseZ1, z2: baseZ2, z3: baseZ3, z4: baseZ4, z5: baseZ5 };
+      }
+
+      const z13Min = (parseFloat(zones.z1) || 0) + (parseFloat(zones.z2) || 0) + (parseFloat(zones.z3) || 0);
+      const z45Min = (parseFloat(zones.z4) || 0) + (parseFloat(zones.z5) || 0);
+
+      const mids = { z1: 0.55, z2: 0.65, z3: 0.75, z4: 0.85, z5: 0.95 };
+      let cardioTrimp = 0;
+      for (const z in mids) {
+        cardioTrimp += (parseFloat(zones[z]) || 0) * mids[z] * 0.64 * Math.exp(1.92 * mids[z]);
+      }
+      // Eliminada duplicidad: pasos basales ya inyectados en zones.z1 vía ambientZ1
+
+      // neuroLoad: solo componente neuromuscular real (sRPE * tiempo), sin duplicar Z4-Z5
+      const neuroLoad = 0.85 * (sRpe * workoutMin);
+      const shiftLoad = nightAwakeH > 0 ? (1.40 * nightAwakeH * 35.0) : 0.0;
+      const totalLoad = cardioTrimp + neuroLoad + shiftLoad;
+      const strainScore = Math.min(20.8, Math.max(0.0, 21.0 * (1.0 - Math.exp(-0.00165 * totalLoad))));
+
+      // C. SUEÑO EN 4 PILARES + AMORTIZACIÓN DE DEUDA (PROCESO S BORBÉLY)
+      const prevTst = prevComputed && prevComputed.total_sleep_min ? prevComputed.total_sleep_min : 450;
+      const sleepMissing = !(parseInt(todayRaw.total_sleep_min, 10) >= 120) || (parseInt(todayRaw.total_sleep_min, 10) === 450 && parseInt(todayRaw.deep_sleep_min, 10) === 84 && parseInt(todayRaw.rem_sleep_min, 10) === 96);
+      const tstMin = sleepMissing ? 0 : parseInt(todayRaw.total_sleep_min, 10);
+      // Eficiencia basal realista: Math.round(tstMin / 0.87) en vez de tstMin * 1.06
+      const tibMin = sleepMissing ? 0 : (parseInt(todayRaw.time_in_bed_min, 10) || Math.max(tstMin + 25, Math.round(tstMin / 0.87)));
+      const deepMin = sleepMissing ? 0 : (parseInt(todayRaw.deep_sleep_min, 10) || Math.round(tstMin * 0.20));
+      const remMin = sleepMissing ? 0 : (parseInt(todayRaw.rem_sleep_min, 10) || Math.round(tstMin * 0.22));
+      const lightMin = Math.max(0, tstMin - deepMin - remMin);
+      const napMin = parseInt(todayRaw.nap_sleep_min, 10) || 0;
+
+      const sePct = Math.min(100, (tstMin / Math.max(1, tibMin)) * 100);
+      const swsPct = (deepMin / Math.max(1, tstMin)) * 100;
+      const remPct = (remMin / Math.max(1, tstMin)) * 100;
+
+      // Limpieza de noches vacías: solo noches válidas (total_sleep_min >= 120) para deuda y regularidad
+      const validSleeps = [todayRaw, ...historyRawList.slice(0, 6)].filter(r => parseInt(r.total_sleep_min, 10) >= 120);
+      let weightedDebtH = 0;
+      validSleeps.forEach((r, idx) => {
+        const pastTstH = (parseInt(r.total_sleep_min, 10) + (parseInt(r.nap_sleep_min, 10) || 0)) / 60.0;
+        weightedDebtH += (basalNeedH - pastTstH) * Math.exp(-0.35 * idx);
+      });
+      weightedDebtH = Math.max(0, +weightedDebtH.toFixed(2));
+
+      const dynamicNeedH = Math.min(10.0, Math.max(6.5, basalNeedH + (0.042 * strainScore) + (0.35 * weightedDebtH)));
+      const prevStrain = prevComputed && parseFloat(prevComputed.strain_score) ? parseFloat(prevComputed.strain_score) : 0;
+      const needForRecoveryH = Math.min(10.0, Math.max(6.5, basalNeedH + (0.042 * prevStrain) + (0.35 * weightedDebtH)));
+      const hoursVsNeededPct = Math.min(100, Math.round((((tstMin + napMin) / 60.0) / needForRecoveryH) * 100));
+
+      // SD solo con noches válidas
+      const recentValidTst = validSleeps.map(r => parseInt(r.total_sleep_min, 10));
+      const meanTst = recentValidTst.length ? recentValidTst.reduce((a, b) => a + b, 0) / recentValidTst.length : 450;
+      const sdTstHours = recentValidTst.length > 1 ? Math.sqrt(recentValidTst.reduce((s, v) => s + Math.pow((v - meanTst) / 60.0, 2), 0) / recentValidTst.length) : 0;
+      const sleepRegularityPct = Math.min(98, Math.max(55, Math.round(94 - (sdTstHours * 14.0) - (nightAwakeH * 3.5))));
+
+      // Rebalanceo de etapas PPG: 0.50 * hoursVsNeededPct + 0.25 * sleepRegularityPct + 0.15 * seScore + 0.10 * stagesScore
+      const sleepArchScore = Math.round(
+        0.50 * hoursVsNeededPct +
+        0.25 * sleepRegularityPct +
+        0.15 * Math.min(100, (sePct / 88.0) * 100) +
+        0.10 * Math.min(100, ((swsPct + remPct) / 40.0) * 100)
+      );
+
+      const [wakeH, wakeM] = wakeTimeStr.split(':').map(Number);
+      const reqTibHours = dynamicNeedH / Math.max(0.80, sePct / 100.0);
+      const wakeTotalMin = (wakeH * 60) + wakeM + 1440;
+      const startMin = Math.round(wakeTotalMin - (reqTibHours * 60) - 15) % 1440;
+      const endMin = Math.round(wakeTotalMin - (reqTibHours * 60) + 15) % 1440;
+      const fmtTime = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+      // D. RECUPERACIÓN AUTONÓMICA 4D (MBE: Dynamic RMSSD cap, CV_7d, SWC, ACWR penalty)
+      const prevRmssd = prevComputed && prevComputed.rmssd_ms ? prevComputed.rmssd_ms : 50.0;
+      const prevRhr = prevComputed && prevComputed.rhr_bpm ? prevComputed.rhr_bpm : 54.5;
+      const rawRmssdCandidate = parseFloat(todayRaw.rmssd_ms) || prevRmssd;
+
+      // Dynamic RMSSD cap: mean_14d + 3*SD, ceiling 180ms (replaces hard 130ms)
+      const histRmssdForCap = historyRawList.slice(0, 14).filter(r => parseFloat(r.rmssd_ms) > 0 && !(parseFloat(r.rmssd_ms) === 50 && parseFloat(r.rhr_bpm) === 54.5)).map(r => {
+        const v = parseFloat(r.rmssd_ms) || 49.0;
+        return v > 180 ? 49.0 : v;
+      });
+      const histLnForCap = histRmssdForCap.map(v => Math.log(Math.max(5.0, v)));
+      const meanLnForCap = histLnForCap.length >= MIN_BASELINE_DAYS ? histLnForCap.reduce((a, b) => a + b, 0) / histLnForCap.length : Math.log(Math.max(5.0, prevRmssd));
+      const sdLnForCap = histLnForCap.length > 1 ? Math.sqrt(histLnForCap.reduce((s, v) => s + Math.pow(v - meanLnForCap, 2), 0) / histLnForCap.length) : 0.12;
+      const dynamicRmssdCap = Math.min(180, Math.round(Math.exp(meanLnForCap + 3 * sdLnForCap)));
+      const rmssdToday = rawRmssdCandidate > dynamicRmssdCap ? prevRmssd : rawRmssdCandidate;
+
+      const rhrToday = parseFloat(todayRaw.rhr_bpm) || prevRhr;
+      const respToday = parseFloat(todayRaw.resp_rate_brpm) || 14.1;
+      const spo2Today = parseFloat(todayRaw.spo2_pct) || 97.6;
+
+      const lnRmssdToday = Math.log(Math.max(5.0, rmssdToday));
+      const histRmssd = historyRawList.slice(0, 14).filter(r => parseFloat(r.rmssd_ms) > 0 && !(parseFloat(r.rmssd_ms) === 50 && parseFloat(r.rhr_bpm) === 54.5)).map(r => {
+        const v = parseFloat(r.rmssd_ms) || 49.0;
+        return v > dynamicRmssdCap ? 49.0 : v;
+      });
+      const histLn = histRmssd.map(v => Math.log(Math.max(5.0, v)));
+      const histRhr = historyRawList.slice(0, 14).filter(r => parseFloat(r.rhr_bpm) > 0 && !(parseFloat(r.rmssd_ms) === 50 && parseFloat(r.rhr_bpm) === 54.5)).map(r => parseFloat(r.rhr_bpm));
+      const histResp = historyRawList.slice(0, 14).filter(r => parseFloat(r.resp_rate_brpm) > 0).map(r => parseFloat(r.resp_rate_brpm));
+
+      const meanArr = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+      const sdArr = (arr, m) => arr.length > 1 ? Math.sqrt(arr.reduce((s, v) => s + Math.pow(v - m, 2), 0) / arr.length) : 0.12;
+
+      const meanRmssd = histRmssd.length >= MIN_BASELINE_DAYS ? meanArr(histRmssd) : rmssdToday;
+      const meanLn = histLn.length >= MIN_BASELINE_DAYS ? meanArr(histLn) : lnRmssdToday;
+      // sdLn floor reduced from 0.08 to 0.04 for high autonomic stability weeks
+      const sdLn = Math.max(0.04, histLn.length >= MIN_BASELINE_DAYS ? sdArr(histLn, meanLn) : 0.12);
+      const meanRhr = histRhr.length >= MIN_BASELINE_DAYS ? meanArr(histRhr) : rhrToday;
+      const sdRhr = Math.max(1.5, histRhr.length >= MIN_BASELINE_DAYS ? sdArr(histRhr, meanRhr) : 2.2);
+      const meanResp = histResp.length >= MIN_BASELINE_DAYS ? meanArr(histResp) : 14.2;
+
+      // CV_7d: SD of last 7 lnRMSSD / mean of last 7 lnRMSSD * 100
+      const last7Ln = histLn.slice(0, 7);
+      const meanLn7 = last7Ln.length ? meanArr(last7Ln) : meanLn;
+      const sdLn7 = last7Ln.length > 1 ? sdArr(last7Ln, meanLn7) : sdLn;
+      const cvLnRmssd7 = last7Ln.length >= 3 ? +((sdLn7 / Math.max(0.001, meanLn7)) * 100).toFixed(1) : 0;
+
+      // SWC = 0.5 × SD de línea base (Buchheit 2014)
+      const swcLnRmssd = +(0.5 * sdLn).toFixed(3);
+
+      const hrvMissing = !(parseFloat(todayRaw.rmssd_ms) > 0) || (parseFloat(todayRaw.rmssd_ms) === 50 && parseFloat(todayRaw.rhr_bpm) === 54.5);
+      // Media móvil 7 d de lnRMSSD vs base 14 d, con zona muerta SWC
+      const ln7Vals = [lnRmssdToday, ...histLn.slice(0, 6)];
+      const diffLn7 = hrvMissing ? 0 : (meanArr(ln7Vals) - meanLn);
+      const excessLn = Math.max(0, Math.abs(diffLn7) - swcLnRmssd);
+      const hrvZ = hrvMissing ? 0 : Math.max(-3, Math.min(3, Math.sign(diffLn7) * excessLn / sdLn));
+      const rhrMissing = !(parseFloat(todayRaw.rhr_bpm) > 0) || (parseFloat(todayRaw.rmssd_ms) === 50 && parseFloat(todayRaw.rhr_bpm) === 54.5);
+      const rhrZ = rhrMissing ? 0 : Math.max(-3, Math.min(3, (rhrToday - meanRhr) / sdRhr));
+      // FR adulto en reposo 12–20 rpm
+      const penalty = (spo2Today < 94.0 ? 1.0 : 0.0) + (respToday > 20.0 ? 0.5 : 0.0);
+
+      // ACWR: carga aguda (3d) vs crónica (14d); solo con 14d de historial
+      let acwrPenalty = 0;
+      if (historyRawList.length >= 14) {
+        const acuteAvg = historyRawList.slice(0, 3).reduce((s, r) => s + (parseFloat(r.strain_score) || 0), 0) / 3;
+        const chronicAvg = historyRawList.slice(0, 14).reduce((s, r) => s + (parseFloat(r.strain_score) || 0), 0) / 14;
+        if (chronicAvg > 0) acwrPenalty = Math.min(2.0, Math.max(0, (acuteAvg / chronicAvg - 1.3) * 5));
+      }
+
+      // HighSleepStressPct without SWS+REM term
+      const highSleepStressPct = Math.min(45, Math.max(0, Math.round(
+        Math.max(0, rhrZ * 9.0) + Math.max(0, -hrvZ * 7.0)
+      )));
+
+      const sleepZ = sleepMissing ? 0 : Math.max(-3, Math.min(2, (sleepArchScore - 92.0) / 10.0));
+
+      // Recuperación: null durante calibración (<7 días válidos de lnRMSSD)
+      const calibrating = histLn.length < MIN_BASELINE_DAYS;
+      const psi = (0.55 * hrvZ) - (0.20 * rhrZ) + (0.25 * sleepZ) - penalty; // pesos provisionales
+      const recoveryScore = calibrating ? null
+        : Math.min(99, Math.max(1, Math.round(100.0 / (1.0 + Math.exp(-1.15 * psi)))));
+
+      let recStatus = 'CALIBRATING';
+      let recMaxStrain = 12.0; // neutro durante calibración
+      if (recoveryScore !== null) {
+        recStatus = 'MODERATE';
+        if (recoveryScore >= 67) {
+          recStatus = 'OPTIMAL';
+          recMaxStrain = +(14.5 + (recoveryScore - 67) * 0.14).toFixed(1);
+        } else if (recoveryScore < 34) {
+          recStatus = 'COMPROMISED';
+          recMaxStrain = +(6.0 + recoveryScore * 0.10).toFixed(1);
+        } else {
+          recMaxStrain = +(10.0 + (recoveryScore - 34) * 0.13).toFixed(1);
+        }
+        // Aplicar penalización ACWR a la strain máxima recomendada
+        recMaxStrain = Math.max(4.0, +(recMaxStrain - acwrPenalty).toFixed(1));
+      }
+
+      // E. NUTRICIÓN, BITÁCORA DE COMIDAS Y LEY DE ATWATER (MBE: stepsNet, exact TEF, adaptive TDEE)
+      // stepsNet ya calculado arriba (steps - walkingSteps)
+
+      // Two-step TEF: preliminary TDEE for target macros -> TEF from target macros -> rmrActive = TMB*1.05 + TEF -> dynamicTDEE
+      // Step 1: Preliminary TDEE (without TEF in rmrActive)
+      const prelimRmrActive = tmbFeelfit * 1.15;
+      const neatStepsKcal = Math.max(0, (stepsNet - 2500) * 0.035);
+      const netExerciseKcal = workoutMin * (strainScore >= 13 ? 5.5 : 4.2);
+      const prelimTdee = Math.round(prelimRmrActive + neatStepsKcal + netExerciseKcal);
+
+      // Step 2: Target macros from preliminary TDEE -> TEF estimate
+      const desiredDeficit = strainScore >= 14.0 ? Math.max(250, PROF.deficit - 50) : PROF.deficit;
+      let rawTargetKcal = Math.min(2450, Math.max(1650, prelimTdee - desiredDeficit));
+      const targetProt = Math.round(2.35 * ffmKg);
+      const targetFat = Math.round(0.72 * rawW);
+      let targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
+      const prelimTefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
+
+      // Step 3: rmrActive with TEF included (TMB * 1.05 + TEF)
+      const rmrActive = Math.round(tmbFeelfit * 1.05 + prelimTefEstimate);
+      let dynamicTdee = Math.round(rmrActive + neatStepsKcal + netExerciseKcal);
+
+      // Target macros from preliminary TDEE (already calculated above in two-step)
+      // desiredDeficit, targetProt, targetFat, targetCarbs, targetKcal, prelimTefEstimate already defined
+      let targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
+
+      // TEF teórico (basado en macros objetivo) - prelimTefEstimate already calculated
+      let tefEstimate = prelimTefEstimate;
+
+      // Determine real intake
+      const mealsLog = Array.isArray(todayRaw.meals_log_json) ? todayRaw.meals_log_json : [];
+      let realIntakeKcal = Math.max(0, parseInt(todayRaw.intake_kcal, 10) || 0);
+      let realProt = Math.max(0, parseFloat(todayRaw.intake_protein_g) || 0);
+      let realCarbs = Math.max(0, parseFloat(todayRaw.intake_carbs_g) || 0);
+      let realFat = Math.max(0, parseFloat(todayRaw.intake_fat_g) || 0);
+
+      if (mealsLog.length > 0 && realIntakeKcal === 0) {
+        realIntakeKcal = mealsLog.reduce((s, m) => s + (parseInt(m.kcal, 10) || 0), 0);
+        realProt = mealsLog.reduce((s, m) => s + (parseFloat(m.prot) || 0), 0);
+        realCarbs = mealsLog.reduce((s, m) => s + (parseFloat(m.carbs) || 0), 0);
+        realFat = mealsLog.reduce((s, m) => s + (parseFloat(m.fat) || 0), 0);
+      } else if (realIntakeKcal > 0 && realProt === 0 && realCarbs === 0 && realFat === 0) {
+        const ratio = realIntakeKcal / targetKcal;
+        realProt = Math.round(targetProt * ratio);
+        realCarbs = Math.round(targetCarbs * ratio);
+        realFat = Math.round(targetFat * ratio);
+      }
+
+      // TDEE adaptativo: ingesta media vs cambio de peso-tendencia (span por fechas); null si <7d válidos
+      let empiricalTdee = null;
+      let meanIntake = 0;
+      let deltaTrendW = 0;
+      const win14 = historyRawList.slice(0, 14);
+      const validIntakeDays = win14.filter(r => parseInt(r.intake_kcal, 10) >= 1200);
+      if (validIntakeDays.length >= 7 && todayRaw.log_date) {
+        meanIntake = validIntakeDays.reduce((s, r) => s + parseInt(r.intake_kcal, 10), 0) / validIntakeDays.length;
+        const wOf = (r) => { const t = parseFloat(r.trend_weight_kg), w = parseFloat(r.weight_kg); return t >= 65 ? t : (w >= 65 ? w : NaN); };
+        const oldest = [...win14].reverse().find(r => r.log_date && Number.isFinite(wOf(r)));
+        if (oldest) {
+          const spanDays = Math.max(7, Math.min(14, Math.round((new Date(todayRaw.log_date + 'T12:00:00Z') - new Date(oldest.log_date + 'T12:00:00Z')) / 86400000)));
+          deltaTrendW = trendW - wOf(oldest);
+          empiricalTdee = Math.round(meanIntake - (deltaTrendW * 7700 / spanDays));
+          empiricalTdee = Math.max(Math.round(dynamicTdee * 0.75), Math.min(Math.round(dynamicTdee * 1.25), empiricalTdee));
+          dynamicTdee = Math.round((dynamicTdee + empiricalTdee) / 2);
+          rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
+          targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
+          targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
+        }
+      }
+      // TEF siempre sobre macros meta finales (consistente)
+      tefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
+
+      // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO (MBE: clean VO2max, 0.06 deltaRhr, -0.25 deltaLnRmssd separated)
+      const hrMax = 208 - (0.7 * chronologicalAge);
+      // VO2max limpio (Uth): sin modificador FFM para evitar colinealidad
+      const vo2Max = +(15.3 * (hrMax / meanRhr)).toFixed(1);
+
+      const deltaVo2 = +Math.max(-3.2, Math.min(2.5, -0.18 * (vo2Max - 43.0))).toFixed(1);
+      // Desacople FC basal: deltaRhr (0.06 * (meanRhr - 60)) SEPARADO de deltaLnRmssd (-0.25 * (meanLn - 3.9))
+      const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.06 * (meanRhr - 60.0))).toFixed(1);
+      const deltaLnRmssd = +Math.max(-1.5, Math.min(1.5, -0.25 * (meanLn - 3.9))).toFixed(1);
+      const deltaFfm = +Math.max(-2.2, Math.min(2.2, -0.16 * (ffmPct - 79.0))).toFixed(1);
+      const deltaSleep = +Math.max(-1.5, Math.min(1.8, -0.025 * (sleepRegularityPct - 78) - 0.25 * ((sleepMissing ? 7.2 : tstMin / 60.0) - 7.2))).toFixed(1);
+      const avgSteps7d = meanArr([steps, ...historyRawList.slice(0, 6).map(r => parseInt(r.steps_count, 10) || 7500)]);
+      const deltaAct = +Math.max(-1.8, Math.min(1.5, -0.18 * ((avgSteps7d - 6500) / 1000.0) - (workoutMin >= 30 ? 0.35 : 0.0))).toFixed(1);
+
+      const totalAgeDelta = +(deltaVo2 + deltaRhr + deltaLnRmssd + deltaFfm + deltaSleep + deltaAct).toFixed(1);
+      const argonAge = +(chronologicalAge + totalAgeDelta).toFixed(1);
+      const paceOfAging = +Math.max(0.55, Math.min(1.65, 1.0 + (0.09 * totalAgeDelta))).toFixed(2);
+
+      const kcalLeft = Math.max(0, targetKcal - realIntakeKcal);
+      const recTxt = recoveryScore === null
+        ? `Recuperación en calibración (${histLn.length}/${MIN_BASELINE_DAYS} días)`
+        : `Recuperación ${recoveryScore}% (${recStatus === 'OPTIMAL' ? 'Óptima para alta carga' : 'Moderar intensidad'})`;
+      const coachNote = `${recTxt} | Strain hoy: ${strainScore.toFixed(1)}/21 (Meta: ${recMaxStrain ?? 'N/A'}). ` +
+        `Peso Feelfit: ${rawW} kg (${rawBf}% grasa, ${ffmKg} kg sin grasa). Meta Atwater: ${targetKcal} kcal (Comido: ${realIntakeKcal} kcal, restan ${kcalLeft} kcal). Acuéstate entre ${fmtTime(startMin)} y ${fmtTime(endMin)}.`;
+
+      return {
+        log_date: todayRaw.log_date,
+        chronological_age: chronologicalAge,
+        calibrating: histLn.length < MIN_BASELINE_DAYS,
+        sleep_missing: sleepMissing,
+        hrv_missing: hrvMissing,
+        nap_sleep_min: napMin,
+        weight_kg: rawW,
+        body_fat_pct: rawBf,
+        fat_mass_kg: fatMassKg,
+        ffm_kg: ffmKg,
+        ffm_pct: ffmPct,
+        muscle_mass_kg: muscleMassKg,
+        bone_mass_kg: boneMassKg,
+        skeletal_muscle_pct: musclePct,
+        visceral_fat_index: visceral,
+        tmb_kcal: tmbFeelfit,
+        body_water_pct: waterPct,
+        water_mass_kg: waterMassKg,
+        bmi: bmi,
+        trend_weight_kg: trendW,
+        trend_body_fat_pct: trendBf,
+        rmssd_ms: +rmssdToday.toFixed(1),
+        rmssd_14d_mean_ms: +meanRmssd.toFixed(1),
+        rhr_bpm: +rhrToday.toFixed(1),
+        rhr_14d_mean_bpm: +meanRhr.toFixed(1),
+        resp_rate_brpm: +respToday.toFixed(1),
+        resp_14d_mean_brpm: +meanResp.toFixed(1),
+        spo2_pct: +spo2Today.toFixed(1),
+        ln_rmssd: +lnRmssdToday.toFixed(3),
+        ln_rmssd_14d_mean: +meanLn.toFixed(3),
+        ln_rmssd_14d_sd: +sdLn.toFixed(3),
+        hrv_z_score: +hrvZ.toFixed(2),
+        rhr_z_score: +rhrZ.toFixed(2),
+        recovery_score: recoveryScore,
+        recovery_status: recStatus,
+        recommended_max_strain: recMaxStrain,
+        time_in_bed_min: tibMin,
+        total_sleep_min: tstMin,
+        deep_sleep_min: deepMin,
+        rem_sleep_min: remMin,
+        light_sleep_min: lightMin,
+        sleep_efficiency_pct: +sePct.toFixed(1),
+        sleep_architecture_score: sleepArchScore,
+        sleep_hours_vs_needed_pct: hoursVsNeededPct,
+        sleep_regularity_pct: sleepRegularityPct,
+        high_sleep_stress_pct: highSleepStressPct,
+        cumulative_sleep_debt_hours: weightedDebtH,
+        dynamic_sleep_need_hours: +dynamicNeedH.toFixed(2),
+        optimal_bedtime_start: fmtTime(startMin),
+        optimal_bedtime_end: fmtTime(endMin),
+        steps_count: steps,
+        steps_net: stepsNet,
+        pickleball_or_gym_minutes: workoutMin,
+        session_rpe: sRpe,
+        hr_zones_minutes: Object.assign({}, zones, zonesReal ? { real: true } : {}, explicitWalk ? { walking_steps: explicitWalk } : {}),
+        z13_minutes: z13Min,
+        z45_minutes: z45Min,
+        is_hospital_shift: nightAwakeH > 0,
+        night_awake_shift_hours: nightAwakeH,
+        cardio_trimp_load: +cardioTrimp.toFixed(1),
+        neuromuscular_load: +neuroLoad.toFixed(1),
+        shift_orthostatic_load: +shiftLoad.toFixed(1),
+        strain_score: +strainScore.toFixed(1),
+        dynamic_tdee_kcal: dynamicTdee,
+        target_kcal: targetKcal,
+        target_protein_g: targetProt,
+        target_carbs_g: targetCarbs,
+        target_fat_g: targetFat,
+        intake_kcal: realIntakeKcal,
+        intake_protein_g: Math.round(realProt),
+        intake_carbs_g: Math.round(realCarbs),
+        intake_fat_g: Math.round(realFat),
+        meals_log_json: mealsLog,
+        vo2_max_ml_kg_min: vo2Max,
+        argon_physiological_age: argonAge,
+        total_age_delta: totalAgeDelta,
+        pace_of_aging_x: paceOfAging,
+        delta_vo2_years: deltaVo2,
+        delta_rhr_years: deltaRhr,
+        delta_lnrmssd_years: deltaLnRmssd,
+        delta_ffm_years: deltaFfm,
+        delta_sleep_years: deltaSleep,
+        delta_act_years: deltaAct,
+        // MBE new fields
+        dynamic_rmssd_cap_ms: dynamicRmssdCap,
+        cv_lnrmssd_7d_pct: cvLnRmssd7,
+        swc_lnrmssd: swcLnRmssd,
+        acwr_penalty_strain: +acwrPenalty.toFixed(2),
+        tef_kcal: tefEstimate,
+        empirical_tdee_kcal: empiricalTdee,
+        clinical_coach_notes: coachNote
+      };
+    }
+
+const ARGON_ENGINE_COLS_ = ["log_date","ln_rmssd","ln_rmssd_14d_mean","ln_rmssd_14d_sd","hrv_z_score","rhr_z_score","recovery_score","recovery_status","cardio_trimp_load","neuromuscular_load","shift_orthostatic_load","strain_score","recommended_max_strain","sleep_efficiency_pct","sleep_architecture_score","cumulative_sleep_debt_hours","dynamic_sleep_need_hours","optimal_bedtime_start","optimal_bedtime_end","trend_weight_kg","trend_body_fat_pct","dynamic_tdee_kcal","target_kcal","target_protein_g","target_carbs_g","target_fat_g","intake_kcal","intake_protein_g","intake_carbs_g","intake_fat_g","clinical_coach_notes"];
+
+function computeArgonMbeScore_(todayRaw, historyRawList, prevComputed) {
+  const full = computeArgonEngine_(todayRaw, historyRawList, prevComputed);
+  const out = {};
+  ARGON_ENGINE_COLS_.forEach(k => { out[k] = full[k]; });
+  return out;
+}
+// ===ENGINE_END===
+
+// Recalcula al vuelo el motor completo (campos MBE no persistidos en Supabase) para Coach y Drive
+function liveEngineForDate_(compRows, rawRows) {
+  const todayComp = (compRows && compRows[0]) || {};
+  if (!todayComp.log_date) return todayComp;
+  try {
+    const compMap = {};
+    compRows.forEach(c => { compMap[c.log_date] = c; });
+    const merge = (r) => Object.assign({}, compMap[r.log_date] || {}, r);
+    const todayRaw = merge(rawRows.find(r => r.log_date === todayComp.log_date) || { log_date: todayComp.log_date });
+    const hist = rawRows.filter(r => r.log_date < todayComp.log_date).map(merge);
+    const prev = compRows.find(c => c.log_date < todayComp.log_date) || null;
+    return Object.assign({}, todayComp, computeArgonEngine_(todayRaw, hist, prev));
+  } catch (e) {
+    console.error('liveEngineForDate_', e);
+    return todayComp;
+  }
+}
+
+/**
+ * ============================================================================
+ * 6. CLIENTE REST SUPABASE Y AUDITORÍA
+ * ============================================================================
+ */
+function logWebhookAudit_(payload, detectedDates, syncedSummaries) {
+  const topKeys = (payload && typeof payload === 'object' && !Array.isArray(payload)) ? Object.keys(payload) : ['array'];
+  const light = Array.isArray(payload) ? payload : Object.assign({}, payload);
+  if (!Array.isArray(light)) ['heart_rate', 'total_calories', 'active_calories', 'distance'].forEach(k => { delete light[k]; });
+  const rawSampleStr = JSON.stringify(light).substring(0, 60000);
+  let rawSampleObj = {};
+  try { rawSampleObj = JSON.parse(rawSampleStr); } catch (_) { rawSampleObj = { preview: rawSampleStr }; }
+
+  supabaseInsert_('webhook_logs', {
+    source_app: 'HC_WEBHOOK',
+    detected_dates: detectedDates,
+    detected_categories: topKeys,
+    parsed_summary: syncedSummaries,
+    raw_payload: rawSampleObj
+  });
+}
+
+function sbHeaders_(extra) {
+  const k = ARGON_CONFIG.SUPABASE_KEY;
+  return Object.assign({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, extra || {});
+}
+
+function supabaseGet_(path) {
+  const res = UrlFetchApp.fetch(`${ARGON_CONFIG.SUPABASE_URL}/rest/v1/${path}`, {
+    method: 'get', headers: sbHeaders_(), muteHttpExceptions: true
+  });
+  const body = JSON.parse(res.getContentText() || '[]');
+  if (res.getResponseCode() >= 300 || !Array.isArray(body)) {
+    throw new Error(`Supabase GET ${res.getResponseCode()}: ${res.getContentText().slice(0, 200)}`);
+  }
+  return body;
+}
+
+function sbWrite_(table, obj, merge) {
+  const res = UrlFetchApp.fetch(`${ARGON_CONFIG.SUPABASE_URL}/rest/v1/${table}`, {
+    method: 'post',
+    headers: sbHeaders_({ Prefer: (merge ? 'resolution=merge-duplicates,' : '') + 'return=minimal' }),
+    payload: JSON.stringify(obj),
+    muteHttpExceptions: true
+  });
+  if (res.getResponseCode() >= 300) {
+    throw new Error(`Supabase ${table} ${res.getResponseCode()}: ${res.getContentText().slice(0, 200)}`);
+  }
+}
+const supabaseUpsert_ = (t, o) => sbWrite_(t, o, true);
+const supabaseInsert_ = (t, o) => sbWrite_(t, o, false);
+
+function jsonResponse_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * ============================================================================
+ * 7. PUENTE 1: ESPEJO AUTOMÁTICO EN GOOGLE DOCS (EXPEDIENTE_CLINICO_ARGON_VIVO)
+ * ============================================================================
+ */
+function syncExpedienteToGoogleDrive_(force) {
+  const props = PropertiesService.getScriptProperties();
+  if (!force && Date.now() - parseInt(props.getProperty('ARGON_DOC_TS') || '0', 10) < 300000) return;
+  try {
+    const compRows = supabaseGet_('computed_daily_scores?order=log_date.desc&limit=14');
+    const rawRows = supabaseGet_('daily_raw_biometrics?order=log_date.desc&limit=14');
+    if (!compRows || compRows.length === 0) return;
+
+    const rawMap = {};
+    rawRows.forEach(r => { rawMap[r.log_date] = r; });
+
+    const todayComp = liveEngineForDate_(compRows, rawRows);
+    const todayRaw = rawMap[todayComp.log_date] || {};
+    const nowStr = Utilities.formatDate(new Date(), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    const recTxt = todayComp.recovery_score === null || todayComp.recovery_score === undefined
+      ? 'en calibración' : `${todayComp.recovery_score}%`;
+
+    let reportText = `====================================================================\n`;
+    reportText += `EXPEDIENTE CLÍNICO Y BIOMÉTRICO EN VIVO - PROYECTO ARGON MBE\n`;
+    reportText += `Última actualización automática: ${nowStr} (America/Caracas)\n`;
+    reportText += `Perfil: Médico Cirujano (28.9 años, Nac: ${argonProfile_().birth}) | Meta: Recomposición Corporal\n`;
+    reportText += `====================================================================\n\n`;
+
+    reportText += `[1] ESTADO FISIOLÓGICO Y METABÓLICO DE HOY (${todayComp.log_date})\n`;
+    reportText += `• Peso Báscula Feelfit: ${todayRaw.weight_kg || todayComp.trend_weight_kg} kg (EWMA: ${todayComp.trend_weight_kg} kg)\n`;
+    reportText += `• Grasa Corporal: ${todayRaw.body_fat_pct || todayComp.trend_body_fat_pct}% | Músculo Esquelético: ${todayRaw.skeletal_muscle_pct || 48.9}% | Visceral: ${todayRaw.visceral_fat_index || 11}\n`;
+    reportText += `• Tasa Metabólica Basal (TMB Impedancia): ${todayRaw.tmb_kcal || 1794} kcal | Agua Corporal: ${todayRaw.body_water_pct || 54.6}%\n`;
+    reportText += `• Recuperación Autonómica (Recovery): ${recTxt} (${todayComp.recovery_status})\n`;
+    reportText += `• VFC Nocturna (RMSSD): ${todayRaw.rmssd_ms} ms (lnRMSSD: ${todayComp.ln_rmssd} | Z-Score 7d vs 14d: ${todayComp.hrv_z_score} SD)\n`;
+    reportText += `• MBE: CV lnRMSSD 7d: ${todayComp.cv_lnrmssd_7d_pct}% | SWC (0.5×SD): ${todayComp.swc_lnrmssd} | Cap RMSSD Dinámico: ${todayComp.dynamic_rmssd_cap_ms} ms\n`;
+    reportText += `• FC en Reposo (RHR): ${todayRaw.rhr_bpm} lpm (Z-Score: ${todayComp.rhr_z_score} SD) | SpO2: ${todayRaw.spo2_pct}% | FR: ${todayRaw.resp_rate_brpm} rpm\n`;
+    reportText += `• Sueño Total: ${Math.floor((todayRaw.total_sleep_min||0)/60)}h ${(todayRaw.total_sleep_min||0)%60}m (Profundo SWS: ${todayRaw.deep_sleep_min}m | REM: ${todayRaw.rem_sleep_min}m | Eficiencia: ${todayComp.sleep_efficiency_pct}%)\n`;
+    reportText += `• Deuda de Sueño Acumulada (7d): ${todayComp.cumulative_sleep_debt_hours} h | Necesidad Dinámica Hoy: ${todayComp.dynamic_sleep_need_hours} h\n`;
+    reportText += `• Esfuerzo del Día (Day Strain): ${todayComp.strain_score} / 21.0 (Máximo sugerido hoy: ${todayComp.recommended_max_strain ?? 'N/A'})\n`;
+    reportText += `• MBE: Penalización ACWR (Strain): ${todayComp.acwr_penalty_strain} | Cargas: Cardio TRIMP ${todayComp.cardio_trimp_load} AU | Neuromuscular ${todayComp.neuromuscular_load} AU | Guardia ${todayComp.shift_orthostatic_load} AU\n`;
+    reportText += `• Actividad Hoy: ${todayRaw.steps_count || 0} pasos (NEAT netos: ${todayComp.steps_net || 0}) | Ejercicio/Fuerza/Pickleball: ${todayRaw.pickleball_or_gym_minutes || 0} min (RPE: ${todayRaw.session_rpe || 0})\n`;
+    reportText += `• Balance Energético Atwater Hoy: Gasto TDEE ${todayComp.dynamic_tdee_kcal} kcal (Empírico: ${todayComp.empirical_tdee_kcal || 'N/A'} kcal) | Meta Diaria: ${todayComp.target_kcal} kcal\n`;
+    reportText += `• TEF (Efecto Térmico Alimentos): ${todayComp.tef_kcal} kcal\n`;
+    reportText += `• Ingesta Registrada Hoy: ${todayComp.intake_kcal || 0} kcal (Restan: ${Math.max(0, todayComp.target_kcal - (todayComp.intake_kcal||0))} kcal)\n`;
+    reportText += `• Macros Hoy (Comido / Meta): Proteína ${todayComp.intake_protein_g||0}/${todayComp.target_protein_g}g | Carbs ${todayComp.intake_carbs_g||0}/${todayComp.target_carbs_g}g | Grasas ${todayComp.intake_fat_g||0}/${todayComp.target_fat_g}g\n`;
+    reportText += `• Detalle de Comidas Hoy: ${JSON.stringify(todayRaw.meals_log_json || [])}\n\n`;
+
+    reportText += `[2] SERIE HISTÓRICA LONGITUDINAL (ÚLTIMOS 14 DÍAS)\n`;
+    compRows.forEach(c => {
+      const r = rawMap[c.log_date] || {};
+      const rec = (c.recovery_score === null || c.recovery_score === undefined) ? 'calibrando' : `${c.recovery_score}%`;
+      reportText += `- ${c.log_date}: Peso=${r.weight_kg||c.trend_weight_kg}kg (${r.body_fat_pct||c.trend_body_fat_pct}%BF) | Rec=${rec} (RMSSD=${r.rmssd_ms}ms, RHR=${r.rhr_bpm}lpm) | Strain=${c.strain_score} (Pasos=${r.steps_count}, Ej=${r.pickleball_or_gym_minutes}m) | Sueño=${r.total_sleep_min}m (Deuda=${c.cumulative_sleep_debt_hours}h) | Kcal=${c.intake_kcal}/${c.target_kcal} (${c.intake_protein_g}P/${c.intake_carbs_g}C/${c.intake_fat_g}G)\n`;
+    });
+
+    const docName = 'EXPEDIENTE_CLINICO_ARGON_VIVO';
+    let docId = PropertiesService.getScriptProperties().getProperty('ARGON_DOC_ID');
+    let doc = null;
+
+    if (docId) {
+      try { doc = DocumentApp.openById(docId); } catch (_) { doc = null; }
+    }
+    if (!doc) {
+      const files = DriveApp.getFilesByName(docName);
+      if (files.hasNext()) {
+        doc = DocumentApp.openById(files.next().getId());
+      } else {
+        doc = DocumentApp.create(docName);
+      }
+      PropertiesService.getScriptProperties().setProperty('ARGON_DOC_ID', doc.getId());
+    }
+
+    doc.getBody().setText(reportText);
+    doc.saveAndClose();
+    props.setProperty('ARGON_DOC_TS', String(Date.now()));
+  } catch (err) {
+    Logger.log('Aviso Drive Sync: ' + err.message);
+  }
+}
+
+/**
+ * ============================================================================
+ * 8. PUENTE 2: ENDPOINT DEL CHAT CLÍNICO MBE INTEGRADO EN LA APP ARGON
+ * ============================================================================
+ */
+function handleArgonCoachChat_(payload) {
+  try {
+    if (!ARGON_CONFIG.GEMINI_API_KEY || ARGON_CONFIG.GEMINI_API_KEY.includes('PEGA_AQUI')) {
+      return jsonResponse_({
+        status: 'error',
+        reply: '⚠️ Falta configurar GEMINI_API_KEY en tu archivo Code.gs de Google Apps Script.'
+      });
+    }
+
+    const userQuestion = payload.question || 'Dame mi prescripción clínica de entrenamiento, nutrición y sueño para hoy.';
+    const chatHistory = Array.isArray(payload.history) ? payload.history.slice(-6) : [];
+
+    // (el espejo de Docs lo actualiza el webhook)
+
+    const compRows = supabaseGet_('computed_daily_scores?order=log_date.desc&limit=14');
+    const rawRows = supabaseGet_('daily_raw_biometrics?order=log_date.desc&limit=14');
+    const rawMap = {};
+    rawRows.forEach(r => { rawMap[r.log_date] = r; });
+
+    const todayComp = liveEngineForDate_(compRows, rawRows);
+    const todayRaw = rawMap[todayComp.log_date] || {};
+
+    const clinicalContext = {
+      diario_hoy: payload.client_context || null,
+      perfil_paciente: {
+        profesion: 'Médico Cirujano (Guardias / Rural)',
+        edad_cronologica: 28.94,
+        fecha_nacimiento: argonProfile_().birth,
+        deportes: 'Entrenamiento de fuerza (pesas) y Pickleball competitivo',
+        meta_7_dic_2026: 'Oxidación lipolítica preservando masa muscular esquelética'
+      },
+      estado_hoy: {
+        fecha: todayComp.log_date,
+        peso_kg: todayRaw.weight_kg || todayComp.trend_weight_kg,
+        grasa_pct: todayRaw.body_fat_pct || todayComp.trend_body_fat_pct,
+        musculo_esqueletico_pct: todayRaw.skeletal_muscle_pct,
+        grasa_visceral: todayRaw.visceral_fat_index,
+        tmb_kcal: todayRaw.tmb_kcal,
+        recovery_score_pct: todayComp.recovery_score,
+        recovery_status: todayComp.recovery_status,
+        rmssd_ms: todayRaw.rmssd_ms,
+        ln_rmssd: todayComp.ln_rmssd,
+        hrv_z_score: todayComp.hrv_z_score,
+        // MBE v6.0: CV 7d / SWC / Dynamic RMSSD cap
+        cv_lnrmssd_7d_pct: todayComp.cv_lnrmssd_7d_pct,
+        swc_lnrmssd: todayComp.swc_lnrmssd,
+        dynamic_rmssd_cap_ms: todayComp.dynamic_rmssd_cap_ms,
+        rhr_bpm: todayRaw.rhr_bpm,
+        rhr_z_score: todayComp.rhr_z_score,
+        strain_actual: todayComp.strain_score,
+        strain_max_recomendado: todayComp.recommended_max_strain,
+        // MBE v6.0: ACWR penalty
+        acwr_penalty_strain: todayComp.acwr_penalty_strain,
+        pasos_hoy: todayRaw.steps_count,
+        // MBE v6.0: steps_net (NEAT)
+        steps_net: todayComp.steps_net,
+        minutos_ejercicio_hoy: todayRaw.pickleball_or_gym_minutes,
+        sueno_total_min: todayRaw.total_sleep_min,
+        sueno_profundo_sws_min: todayRaw.deep_sleep_min,
+        sueno_rem_min: todayRaw.rem_sleep_min,
+        deuda_sueno_h: todayComp.cumulative_sleep_debt_hours,
+        tdee_kcal: todayComp.dynamic_tdee_kcal,
+        // MBE v6.0: empirical TDEE
+        empirical_tdee_kcal: todayComp.empirical_tdee_kcal,
+        meta_kcal_atwater: todayComp.target_kcal,
+        comido_hoy_kcal: todayComp.intake_kcal,
+        restan_hoy_kcal: Math.max(0, (todayComp.target_kcal || 0) - (todayComp.intake_kcal || 0)),
+        // MBE v6.0: TEF
+        tef_kcal: todayComp.tef_kcal,
+        macros_comidos_vs_meta: {
+          proteina_g: `${todayComp.intake_protein_g || 0} / ${todayComp.target_protein_g} g`,
+          carbohidratos_g: `${todayComp.intake_carbs_g || 0} / ${todayComp.target_carbs_g} g`,
+          grasas_g: `${todayComp.intake_fat_g || 0} / ${todayComp.target_fat_g} g`
+        },
+        comidas_registradas_hoy: todayRaw.meals_log_json || []
+      },
+      // MBE v6.0: Physiological Age deltas
+      edad_fisiologica: {
+        edad_argon: todayComp.argon_physiological_age,
+        total_age_delta: todayComp.total_age_delta,
+        pace_of_aging: todayComp.pace_of_aging_x,
+        delta_vo2: todayComp.delta_vo2_years,
+        delta_rhr: todayComp.delta_rhr_years,
+        // MBE v6.0: delta_lnrmssd (vagal tone) separado
+        delta_lnrmssd: todayComp.delta_lnrmssd_years,
+        delta_ffm: todayComp.delta_ffm_years,
+        delta_sleep: todayComp.delta_sleep_years,
+        delta_act: todayComp.delta_act_years
+      },
+      tendencia_7_dias: compRows.slice(0, 7).map(c => ({
+        fecha: c.log_date,
+        peso: (rawMap[c.log_date] || {}).weight_kg || c.trend_weight_kg,
+        recovery: c.recovery_score,
+        strain: c.strain_score,
+        rmssd: (rawMap[c.log_date] || {}).rmssd_ms,
+        rhr: (rawMap[c.log_date] || {}).rhr_bpm,
+        sueno_min: (rawMap[c.log_date] || {}).total_sleep_min,
+        kcal_comidas: c.intake_kcal
+      }))
+    };
+
+    const systemInstruction =
+      `Eres el Coach Clínico MBE de ARGON v6.0. Hablas con un colega médico cirujano de 28.9 años. ` +
+      `Usa estrictamente principios de Medicina Basada en la Evidencia (fisiología autonómica VFC/lnRMSSD de Plews & Altini, ` +
+      `modelo de carga TRIMP/Strain, termodinámica nutricional de Atwater, preservación proteica en déficit y fisiología circadiana de Borbély). ` +
+      `Si recovery_score_pct es null, la recuperación está en calibración: indícalo y no inventes un porcentaje. ` +
+      `REGLAS DE FORMATO ESTRICTAS: NO uses símbolos '###' ni líneas '---'. Usa numeración limpia (1., 2., 3.), emojis clínicos y **negritas** para resaltar cifras exactas. ` +
+      `Sé directo, cuantitativo y accionable: cita sus números reales de hoy (peso, gramos exactos de proteína/carbs/grasa que le faltan hoy, ` +
+      `VFC, deuda de sueño y zona de entrenamiento recomendada para pesas o pickleball). ` +
+      `DATOS BIOMÉTRICOS EN VIVO DEL PACIENTE (JSON): ${JSON.stringify(clinicalContext)}`;
+
+    const contents = [];
+    chatHistory.forEach(turn => {
+      contents.push({
+        role: turn.role === 'model' ? 'model' : 'user',
+        parts: [{ text: String(turn.text || '') }]
+      });
+    });
+    contents.push({
+      role: 'user',
+      parts: [{ text: userQuestion }]
+    });
+
+    const requestBody = {
+      system_instruction: { parts: [{ text: systemInstruction }] },
+      contents: contents,
+      generationConfig: {
+        temperature: 0.35,
+        maxOutputTokens: 4096
+      }
+    };
+
+    const props = PropertiesService.getScriptProperties();
+    const modelsToTry = [props.getProperty('ARGON_GEMINI_MODEL'), 'gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
+      .filter((m, i, a) => m && a.indexOf(m) === i);
+    let replyText = null;
+    let lastErr = '';
+
+    for (let i = 0; i < modelsToTry.length; i++) {
+      const mName = modelsToTry[i];
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${mName}:generateContent`;
+      const geminiRes = UrlFetchApp.fetch(geminiUrl, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'x-goog-api-key': ARGON_CONFIG.GEMINI_API_KEY },
+        payload: JSON.stringify(requestBody),
+        muteHttpExceptions: true
+      });
+      const resJson = JSON.parse(geminiRes.getContentText() || '{}');
+      if (resJson && resJson.candidates && resJson.candidates[0] && resJson.candidates[0].content && resJson.candidates[0].content.parts) {
+        replyText = resJson.candidates[0].content.parts.map(p => p.text || '').join('\n').trim();
+        if (replyText) { props.setProperty('ARGON_GEMINI_MODEL', mName); break; }
+      } else if (resJson && resJson.error && resJson.error.message) {
+        lastErr = resJson.error.message;
+      }
+    }
+
+    return jsonResponse_({
+      status: 'ok',
+      reply: replyText || ('⚠️ Aviso de API Gemini: ' + lastErr),
+      snapshot_date: todayComp.log_date
+    });
+  } catch (err) {
+    return jsonResponse_({ status: 'error', reply: 'Error interno Coach: ' + err.message });
+  }
+}
+
+function repairMealsFromLogs_() {
+  const logs = supabaseGet_('webhook_logs?select=raw_payload&order=received_at.desc&limit=60');
+  const seen = {}, items = [];
+  logs.forEach(l => {
+    const p = l.raw_payload;
+    if (!p || !Array.isArray(p.nutrition)) return;
+    p.nutrition.forEach(n => {
+      const k = [n.name, n.calories, n.start_time].join('|');
+      if (!seen[k]) { seen[k] = 1; items.push(n); }
+    });
+  });
+  const days = extractHealthConnectByDate_({ nutrition: items });
+  const dates = Object.keys(days).filter(d => Object.keys(days[d].meals_map).length).sort();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    dates.forEach(d => upsertAndComputeDayInSupabase_(d, days[d]));
+  } finally {
+    lock.releaseLock();
+  }
+  Logger.log('Comidas reparadas en ' + dates.length + ' fecha(s): ' + dates.join(', ') + ' | items unicos: ' + items.length);
+}
+
+function rebuildMealsFromLogs_(dateStr) {
+  dateStr = dateStr || Utilities.formatDate(new Date(), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  const logs = supabaseGet_('webhook_logs?select=raw_payload&order=received_at.desc&limit=100');
+  const best = {};
+  let logsConNutricion = 0, logsTruncados = 0;
+  logs.forEach(l => {
+    const p = l.raw_payload;
+    if (!p || p.preview) { logsTruncados++; return; }
+    if (!Array.isArray(p.nutrition)) return;
+    logsConNutricion++;
+    const cnt = {}, ref = {};
+    p.nutrition.forEach(n => {
+      const k = [n.name, n.calories, n.start_time].join('|');
+      cnt[k] = (cnt[k] || 0) + 1;
+      ref[k] = n;
+    });
+    Object.keys(cnt).forEach(k => { if (!best[k] || cnt[k] > best[k].c) best[k] = { c: cnt[k], n: ref[k] }; });
+  });
+  const items = [];
+  Object.keys(best).forEach(k => { for (let i = 0; i < best[k].c; i++) items.push(best[k].n); });
+  const day = extractHealthConnectByDate_({ nutrition: items })[dateStr];
+  const meals = day ? Object.keys(day.meals_map).map(k => day.meals_map[k]) : [];
+  Logger.log('Logs: ' + logs.length + ' | con nutricion: ' + logsConNutricion + ' | truncados/sin datos: ' + logsTruncados + ' | items unicos: ' + items.length + ' | comidas del ' + dateStr + ': ' + meals.length);
+  if (!meals.length) { Logger.log('No hay comidas de ' + dateStr + ' recuperables en los logs. No se modifico nada.'); return; }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    const rows = supabaseGet_('daily_raw_biometrics?log_date=eq.' + dateStr + '&limit=1');
+    const manual = (rows.length && Array.isArray(rows[0].meals_log_json) ? rows[0].meals_log_json : [])
+      .filter(m => m && String(m.id || '').indexOf('manual_') === 0);
+    supabaseUpsert_('daily_raw_biometrics', { log_date: dateStr, meals_log_json: manual, intake_kcal: 0, intake_protein_g: 0, intake_carbs_g: 0, intake_fat_g: 0 });
+    const out = upsertAndComputeDayInSupabase_(dateStr, day);
+    Logger.log('RESULTADO ' + dateStr + ': ' + out.intake_kcal + ' kcal | P ' + out.intake_protein_g + ' | C ' + out.intake_carbs_g + ' | G ' + out.intake_fat_g + ' | comidas: ' + (out.meals_log_json || []).length);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function rebuildMealsHoy_() { rebuildMealsFromLogs_(); }
+function rebuildMealsAyer_() {
+  rebuildMealsFromLogs_(Utilities.formatDate(new Date(Date.now() - 86400000), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd'));
+}
+
+function repairSleepFromLogs_() {
+  const logs = supabaseGet_('webhook_logs?select=raw_payload&order=received_at.desc&limit=100');
+  const seen = {}, items = [];
+  logs.forEach(l => {
+    const p = l.raw_payload;
+    if (!p || !Array.isArray(p.sleep)) return;
+    p.sleep.forEach(s => {
+      const k = String(s.session_end_time || s.end_time || '') + '|' + (s.duration_seconds || '');
+      if (!seen[k]) { seen[k] = 1; items.push(s); }
+    });
+  });
+  const days = extractHealthConnectByDate_({ sleep: items });
+  const dates = Object.keys(days).filter(d => days[d].sleep_total_min).sort();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    dates.forEach(d => {
+      const o = upsertAndComputeDayInSupabase_(d, days[d]);
+      Logger.log(d + ': sueno ' + o.total_sleep_min + ' min (profundo ' + o.deep_sleep_min + ', REM ' + o.rem_sleep_min + ')');
+    });
+  } finally {
+    lock.releaseLock();
+  }
+  Logger.log('Sueno reparado en ' + dates.length + ' fecha(s) | sesiones unicas: ' + items.length);
+}
+
+function repararSuenoLogs() { repairSleepFromLogs_(); }
+
+function testAuthorizeAndCreateExpedienteDoc() {
+  syncExpedienteToGoogleDrive_(true);
+  Logger.log('✅ EXPEDIENTE_CLINICO_ARGON_VIVO creado y actualizado en tu Google Drive.');
+}
+function reconstruirComidasAyer() { rebuildMealsAyer_(); }
+function reconstruirComidasHoy() { rebuildMealsHoy_(); }
+function repararComidasLogs() { repairMealsFromLogs_(); }
+
+/**
+ * ============================================================================
+ * 7. PERFIL DEL USUARIO + ESTIMADOR DE COMIDAS (GEMINI)
+ * ============================================================================
+ */
+function argonProfile_() {
+  let p = {};
+  try { p = JSON.parse(PropertiesService.getScriptProperties().getProperty('ARGON_PROFILE') || '{}'); } catch (_) {}
+  const h = parseFloat(p.height_m), d = parseFloat(p.deficit);
+  return {
+    birth: /^\d{4}-\d{2}-\d{2}$/.test(p.birth || '') ? p.birth : '1997-11-12',
+    height_m: (h >= 1.2 && h <= 2.3) ? h : ARGON_CONFIG.HEIGHT_M,
+    wake: /^\d{2}:\d{2}$/.test(p.wake || '') ? p.wake : ARGON_CONFIG.HABITUAL_WAKE_TIME,
+    deficit: (d >= 250 && d <= 900) ? d : 550
+  };
+}
+
+function handleSetProfile_(payload) {
+  try {
+    const p = payload.profile || {};
+    const clean = {
+      birth: /^\d{4}-\d{2}-\d{2}$/.test(p.birth || '') ? p.birth : undefined,
+      height_m: (p.height_m >= 1.2 && p.height_m <= 2.3) ? +p.height_m : undefined,
+      wake: /^\d{2}:\d{2}$/.test(p.wake || '') ? p.wake : undefined,
+      deficit: (p.deficit >= 250 && p.deficit <= 900) ? +p.deficit : undefined
+    };
+    PropertiesService.getScriptProperties().setProperty('ARGON_PROFILE', JSON.stringify(clean));
+    return jsonResponse_({ status: 'ok', profile: argonProfile_() });
+  } catch (err) {
+    return jsonResponse_({ status: 'error', message: err.message });
+  }
+}
+
+function handleEstimateMeal_(payload) {
+  try {
+    const text = String(payload.text || '').slice(0, 800);
+    const img = payload.image_b64 ? String(payload.image_b64) : '';
+    if (!text && !img) return jsonResponse_({ status: 'error', message: 'Describe la comida o adjunta una foto' });
+    if (img.length > 1500000) return jsonResponse_({ status: 'error', message: 'Imagen demasiado grande' });
+    const parts = [{ text: 'Estima los alimentos y porciones de esta comida' + (text ? ': ' + text : ' (ver imagen)') + '.' }];
+    if (img) parts.push({ inline_data: { mime_type: payload.mime === 'image/png' ? 'image/png' : 'image/jpeg', data: img } });
+    const body = {
+      system_instruction: { parts: [{ text: 'Eres nutricionista clínico. Devuelve SOLO JSON con la forma {"items":[{"name":string,"grams":number,"prot":number,"carbs":number,"fat":number}]}. Un item por alimento, con porciones realistas (gramos servidos) y macros en gramos para esa porción. Máximo 8 items. Sin texto adicional.' }] },
+      contents: [{ role: 'user', parts: parts }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 1200, responseMimeType: 'application/json' }
+    };
+    const props = PropertiesService.getScriptProperties();
+    const models = [props.getProperty('ARGON_GEMINI_MODEL'), 'gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
+      .filter((m, i, a) => m && a.indexOf(m) === i);
+    let raw = null, lastErr = '';
+    for (let i = 0; i < models.length; i++) {
+      const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent', {
+        method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': ARGON_CONFIG.GEMINI_API_KEY },
+        payload: JSON.stringify(body), muteHttpExceptions: true
+      });
+      const j = JSON.parse(res.getContentText() || '{}');
+      if (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) {
+        raw = j.candidates[0].content.parts.map(p => p.text || '').join('').trim();
+        if (raw) { props.setProperty('ARGON_GEMINI_MODEL', models[i]); break; }
+      } else if (j.error && j.error.message) { lastErr = j.error.message; }
+    }
+    if (!raw) return jsonResponse_({ status: 'error', message: 'Gemini: ' + (lastErr || 'sin respuesta') });
+    const parsed = JSON.parse(raw.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim());
+    const num = (v, mx) => Math.max(0, Math.min(mx, Math.round((parseFloat(v) || 0) * 10) / 10));
+    const items = (parsed.items || []).slice(0, 8).map(it => {
+      const prot = num(it.prot, 300), carbs = num(it.carbs, 500), fat = num(it.fat, 300);
+      return { name: String(it.name || 'Alimento').slice(0, 40), grams: num(it.grams, 2000), prot: prot, carbs: carbs, fat: fat, kcal: Math.round(4 * prot + 4 * carbs + 9 * fat) };
+    }).filter(it => it.kcal > 0);
+    return jsonResponse_({ status: 'ok', items: items });
+  } catch (err) {
+    return jsonResponse_({ status: 'error', message: err.message });
+  }
+}
