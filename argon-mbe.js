@@ -102,7 +102,10 @@
     st.raw.slice(0, 7).forEach(r => (ex(r).workouts || []).forEach(w => list.push(Object.assign({ date: r.log_date }, w))));
     list.sort((a, b) => (b.end_ms || 0) - (a.end_ms || 0));
     const body = list.length ? list.slice(0, 8).map(w => `<div class="flex items-center justify-between p-2 rounded-xl bg-slate-900 text-xs"><div><div class="font-bold">${w.type}</div><div class="text-[10px] text-slate-400">${w.date.slice(5)} · ${w.start || '--'}–${w.end || '--'}</div></div><div class="text-right font-mono"><div>${w.min} min</div><div class="text-[10px] text-amber-300">${w.kcal != null ? (w.kcal_est ? '~' : '') + w.kcal + ' kcal' : 'kcal n/d'}${w.avg_hr ? ' · ' + w.avg_hr + ' lpm' : ''}</div><div class="text-[9px] text-slate-400">${w.dist_m ? (w.dist_m / 1000).toFixed(2) + ' km' : ''}${w.steps ? ' · ' + w.steps + ' pasos' : ''}${w.max_hr ? ' · máx ' + w.max_hr : ''}</div></div></div>`).join('') : empty('Sin entrenamientos guardados. Se llenan con el próximo webhook de ejercicio (Code.txt actualizado).');
-    return card('🏃 Entrenamientos recientes (Zepp)', 'Últimos 7 días' + (ex(st.raw[0]).active_kcal ? ' · kcal activas hoy (Zepp): ' + ex(st.raw[0]).active_kcal : ''), body + note('Zepp no envía kcal por sesión: las marcadas con ~ se estiman con la FC (Keytel 2005, fórmula masculina; error típico ±20–30%, tiende a sobreestimar con FC baja). No se suman a la ingesta ni se usan para "comer lo quemado".'));
+    const rr = [];
+    st.raw.slice(1, 8).forEach(r => { const z = ex(r).active_kcal, c = st.comp.find(q => q.log_date === r.log_date), tmb = parseFloat(r.tmb_kcal); if (z && c && tmb && c.dynamic_tdee_kcal) { const ap = c.dynamic_tdee_kcal - tmb * 1.05; if (ap > 50) rr.push([z, ap]); } });
+    const calTxt = rr.length >= 3 ? `<div class="text-[11px] text-amber-300">Calibración: kcal "activas" de Zepp ≈ ×${(mean(rr.map(q => q[0])) / mean(rr.map(q => q[1]))).toFixed(2)} vs estimación ARGON (${rr.length} días). La dieta usa la de ARGON.</div>` : '';
+    return card('🏃 Entrenamientos recientes (Zepp)', 'Últimos 7 días' + (ex(st.raw[0]).active_kcal ? ' · kcal activas hoy (Zepp): ' + ex(st.raw[0]).active_kcal : ''), body + calTxt + note('Zepp no envía kcal por sesión: las marcadas con ~ se estiman con la FC (Keytel 2005, fórmula masculina; error típico ±20–30%, tiende a sobreestimar con FC baja). No se suman a la ingesta ni se usan para "comer lo quemado".'));
   }
 
   function secSteps() {
@@ -246,7 +249,7 @@
 
   async function load() {
     try {
-      const [raw, comp] = await Promise.all([sbGet('daily_raw_biometrics?order=log_date.desc&limit=30'), sbGet('computed_daily_scores?order=log_date.desc&limit=30')]);
+      const [raw, comp] = await Promise.all([sbGet('daily_raw_biometrics?order=log_date.desc&limit=20'), sbGet('computed_daily_scores?order=log_date.desc&limit=30')]);
       st.raw = raw; st.comp = comp; renderAll();
     } catch (e) { renderAll('No se pudieron cargar los datos MBE+: ' + e.message); }
   }

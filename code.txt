@@ -208,6 +208,7 @@ function estimateMacrosIfZero_(foodName, kcal, prot, carbs, fat) {
  */
 function extractHealthConnectByDate_(payload) {
   const daysMap = {};
+  const hrvSessions = []; // [inicioMs, finMs, esSiesta]
   const todayCaracas = Utilities.formatDate(new Date(), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd');
 
   function getDayBucket(dateStr) {
@@ -236,6 +237,12 @@ function extractHealthConnectByDate_(payload) {
         workout_map: {},
         nap_map: {},
         rmssd_day_list: [],
+        hrv_raw: [],
+        hrv_night: [],
+        rmssd_nap_list: [],
+        hr_samples: [],
+        active_kcal: 0,
+        distance_m: 0,
         workouts: [],
         hypno: null
       };
@@ -358,16 +365,26 @@ function extractHealthConnectByDate_(payload) {
     // 5. VFC (Mediana en webhook para neutralizar artefactos PPG) Y FC REPOSO
     if (cat.includes('variability') || cat.includes('hrv') || rec.rmssd_ms !== undefined || rec.heartRateVariabilityMillis !== undefined) {
       const hrv = extractAnyNumber(rec.rmssd_millis || rec.heart_rate_variability_millis || rec.heartRateVariabilityMillis || rec.rmssd_ms || rec.rmssd || rec.hrv || rec, ['inMilliseconds', 'ms', 'value']);
-      if (hrv && hrv >= 10 && hrv <= 180) {
-        const hh = parseInt(Utilities.formatDate(new Date(epochMs), ARGON_CONFIG.TIMEZONE, 'H'), 10);
-        if (hh >= 22) getDayBucket(Utilities.formatDate(new Date(epochMs + 86400000), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd')).rmssd_list.push(hrv);
-        else if (hh < 9) bucket.rmssd_list.push(hrv);
-        else bucket.rmssd_day_list.push(hrv);
-      }
+      if (hrv && hrv >= 10 && hrv <= 180) bucket.hrv_raw.push([epochMs, hrv]);
     }
     if (cat.includes('resting_heart') || cat.includes('restingheart') || cat === 'rhr' || rec.rhr_bpm !== undefined) {
       const rhr = extractAnyNumber(rec.beats_per_minute || rec.beatsPerMinute || rec.rhr_bpm || rec.bpm || rec, ['beatsPerMinute', 'beats_per_minute', 'bpm', 'value']);
       if (rhr && rhr >= 35 && rhr <= 110) bucket.rhr_list.push(rhr);
+    }
+
+    // 5b. FC (muestras) para FC media, zonas y kcal por entreno
+    if (cat === 'heart_rate') {
+      const bpm = extractAnyNumber(rec.bpm ?? rec.avg ?? null, ['bpm', 'value']);
+      if (bpm && bpm >= 30 && bpm <= 230) bucket.hr_samples.push([epochMs, Math.round(bpm)]);
+    }
+    // 5c. Agregados diarios de Zepp: kcal activas y distancia
+    if (cat === 'active_calories') {
+      const kc = extractAnyNumber(rec.calories ?? null, ['inKilocalories', 'kilocalories', 'kcal', 'value']);
+      if (kc && kc > 0 && kc < 8000) bucket.active_kcal = Math.max(bucket.active_kcal || 0, Math.round(kc));
+    }
+    if (cat === 'distance') {
+      const dm = extractAnyNumber(rec.meters ?? null, ['inMeters', 'meters', 'value']);
+      if (dm && dm > 0 && dm < 200000) bucket.distance_m = Math.max(bucket.distance_m || 0, Math.round(dm));
     }
 
     // 6. RESPIRACIÓN Y SPO2
@@ -410,6 +427,7 @@ function extractHealthConnectByDate_(payload) {
         const hr = fs ? parseInt(Utilities.formatDate(new Date(fs.epochMs), ARGON_CONFIG.TIMEZONE, 'H'), 10) : -1;
         const isNap = totalSt >= 10 && totalSt <= 240 && hr >= 8 && hr <= 20;
         if (isNap) sleepBucket.nap_map[String(fs.epochMs)] = totalSt;
+        if (fs && totalSt >= 10) hrvSessions.push([fs.epochMs, wakeParsed.epochMs, isNap]);
         if (!isNap && totalSt >= 120 && totalSt >= (sleepBucket.sleep_total_min || 0)) {
           sleepBucket.hypno = { t0: t0, seg: segs.slice(0, 220) };
           sleepBucket.sleep_deep_min = deep;
@@ -426,6 +444,7 @@ function extractHealthConnectByDate_(payload) {
           const hr2 = parseInt(Utilities.formatDate(new Date(sStart.epochMs), ARGON_CONFIG.TIMEZONE, 'H'), 10);
           const isNap2 = durMin >= 10 && durMin <= 240 && hr2 >= 8 && hr2 <= 20;
           if (isNap2) sleepBucket.nap_map[String(sStart.epochMs)] = durMin;
+          if (durMin >= 10) hrvSessions.push([sStart.epochMs, sEnd.epochMs, isNap2]);
           if (!isNap2 && durMin >= 120 && durMin <= 840 && durMin >= (sleepBucket.sleep_total_min || 0)) {
             sleepBucket.sleep_total_min = durMin;
             sleepBucket.sleep_tib_min = Math.round(durMin / 0.87);
@@ -447,7 +466,8 @@ function extractHealthConnectByDate_(payload) {
           const hrA = extractAnyNumber(rec.avg_heart_rate ?? rec.average_heart_rate ?? rec.avg_hr ?? null, ['bpm', 'value']);
           bucket.workouts.push({
             id: wk,
-            type: String(rec.title || rec.name || rec.exercise_type || rec.exerciseType || rec.type || 'Ejercicio').slice(0, 30),
+            type: String(rec.title || rec.name || rec.exercise_type || rec.exerciseType || ({ '0': 'Entrenamiento', '8': 'Ciclismo', '36': 'HIIT', '56': 'Carrera', '70': 'Fuerza', '79': 'Caminata', '81': 'Pesas', '83': 'Yoga' }[String(rec.type)]) || 'Ejercicio').slice(0, 30),
+            steps: rec.steps || null, dist_m: rec.distance_meters ? Math.round(rec.distance_meters) : null, start_ms: eStart.epochMs,
             start: Utilities.formatDate(new Date(eStart.epochMs), ARGON_CONFIG.TIMEZONE, 'HH:mm'),
             end: Utilities.formatDate(new Date(eEnd.epochMs), ARGON_CONFIG.TIMEZONE, 'HH:mm'),
             end_ms: eEnd.epochMs, min: wMin,
@@ -475,6 +495,54 @@ function extractHealthConnectByDate_(payload) {
     payload.forEach(item => processRecord(item, ''));
   }
 
+  // FC por entreno: media/máx, minutos por zona (%FCmáx Tanaka) y kcal estimadas (Keytel 2005, fórmula masculina) si Zepp no trae kcal
+  // VFC: cada muestra se asigna por sesión de sueño (noche -> día del despertar; siesta aparte). Sin sesión conocida: 22-09 h = noche.
+  const hrvSeen = {};
+  Object.keys(daysMap).forEach(d => (daysMap[d].hrv_raw || []).forEach(s => { hrvSeen[s[0]] = s[1]; }));
+  const dayOf = ms => Utilities.formatDate(new Date(ms), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  Object.keys(hrvSeen).forEach(k => {
+    const t = parseInt(k, 10), v = hrvSeen[k];
+    const ses = hrvSessions.filter(s => t >= s[0] - 300000 && t <= s[1] + 300000)[0];
+    let nightDay = null;
+    if (ses && !ses[2]) nightDay = dayOf(ses[1]);
+    else if (ses && ses[2]) getDayBucket(dayOf(ses[1])).rmssd_nap_list.push(v);
+    else {
+      const hh = parseInt(Utilities.formatDate(new Date(t), ARGON_CONFIG.TIMEZONE, 'H'), 10);
+      if (hh >= 20) nightDay = dayOf(t + 86400000);
+      else if (hh < 10) nightDay = dayOf(t);
+      else getDayBucket(dayOf(t)).rmssd_day_list.push(v);
+    }
+    if (nightDay) { const nb = getDayBucket(nightDay); nb.rmssd_list.push(v); nb.hrv_night.push([Math.round(t / 1000), v]); }
+  });
+  const allHr = [];
+  Object.keys(daysMap).forEach(d => (daysMap[d].hr_samples || []).forEach(s => allHr.push(s)));
+  allHr.sort((a, b) => a[0] - b[0]);
+  if (allHr.length) {
+    const prof = argonProfile_();
+    const ageY = (Date.now() - new Date(prof.birth + 'T00:00:00-04:00').getTime()) / (365.2425 * 86400000);
+    const hrMaxT = 208 - 0.7 * ageY;
+    const wKg = Object.keys(daysMap).map(d => daysMap[d].latest_weight_kg).filter(Boolean)[0] || 87;
+    Object.keys(daysMap).forEach(d => (daysMap[d].workouts || []).forEach(w => {
+      const s0 = w.start_ms || (w.end_ms - w.min * 60000);
+      const idx = [];
+      allHr.forEach((s, i) => { if (s[0] >= s0 && s[0] <= w.end_ms) idx.push(i); });
+      if (idx.length < 3) return;
+      const z = [0, 0, 0, 0, 0]; let sum = 0, mx = 0;
+      idx.forEach(i => {
+        const bpm = allHr[i][1]; sum += bpm; mx = Math.max(mx, bpm);
+        const nxt = allHr[i + 1] ? allHr[i + 1][0] : w.end_ms;
+        const dt = Math.max(0, Math.min(5, (Math.min(nxt, w.end_ms) - allHr[i][0]) / 60000));
+        const p = bpm / hrMaxT;
+        z[p < 0.6 ? 0 : p < 0.7 ? 1 : p < 0.8 ? 2 : p < 0.9 ? 3 : 4] += dt;
+      });
+      const avg = sum / idx.length;
+      w.avg_hr = Math.round(avg); w.max_hr = mx; w.z = z.map(v => Math.round(v));
+      if (!w.kcal) {
+        const perMin = Math.max(0, (-55.0969 + 0.6309 * avg + 0.1988 * wKg + 0.2017 * ageY) / 4.184);
+        w.kcal = Math.round(perMin * w.min); w.kcal_est = true;
+      }
+    }));
+  }
   getDayBucket(todayCaracas);
   return daysMap;
 }
@@ -577,9 +645,68 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
   if (useNewSleep && extractedDay.hypno && extractedDay.hypno.seg.length) xt.hypno = extractedDay.hypno;
   const napList = Object.keys(extractedDay.nap_map || {}).map(k => ({ t: Utilities.formatDate(new Date(parseInt(k, 10)), ARGON_CONFIG.TIMEZONE, 'HH:mm'), min: extractedDay.nap_map[k] }));
   if (napList.length) xt.naps = napList;
+  const nMap = {};
+  (xt.hrv_n || []).forEach(s => { nMap[s[0]] = s[1]; });
+  (extractedDay.hrv_night || []).forEach(s => { nMap[s[0]] = s[1]; });
+  xt.hrv_n = Object.keys(nMap).sort().slice(-600).map(k => [parseInt(k, 10), nMap[k]]);
+  const nightVals = xt.hrv_n.map(s => s[1]);
+  // Búfer rolling de FC (minuto a minuto, últimas 6 h): el registro de ejercicio llega al final y los envíos solo traen 15 min
+  const hrMap = {};
+  (xt.hr_m || []).forEach(s => { hrMap[s[0]] = s[1]; });
+  (extractedDay.hr_samples || []).forEach(s => { hrMap[Math.floor(s[0] / 60000)] = s[1]; });
+  const hrKeys = Object.keys(hrMap).map(Number).sort((a, b) => a - b);
+  const hrNewest = hrKeys.length ? hrKeys[hrKeys.length - 1] : 0;
+  xt.hr_m = hrKeys.filter(k => k >= hrNewest - 360).map(k => [k, hrMap[k]]);
+  if (xt.hr_m.length) {
+    const pf = argonProfile_();
+    const ageY = (Date.now() - new Date(pf.birth + 'T00:00:00-04:00').getTime()) / (365.2425 * 86400000);
+    const hrMaxT = 208 - 0.7 * ageY;
+    xt.workouts.forEach(w => {
+      const s0 = Math.floor((w.start_ms || (w.end_ms - w.min * 60000)) / 60000), e0 = Math.floor(w.end_ms / 60000);
+      const pts = xt.hr_m.filter(s => s[0] >= s0 && s[0] <= e0);
+      if (pts.length < 4 || (pts[pts.length - 1][0] - pts[0][0]) < 0.6 * w.min) return; // cobertura insuficiente: no sobrescribe
+      const z = [0, 0, 0, 0, 0]; let sum = 0, mx = 0;
+      pts.forEach((s, i) => {
+        sum += s[1]; mx = Math.max(mx, s[1]);
+        const gap = pts[i + 1] ? pts[i + 1][0] - s[0] : 1;
+        const p = s[1] / hrMaxT;
+        z[p < 0.6 ? 0 : p < 0.7 ? 1 : p < 0.8 ? 2 : p < 0.9 ? 3 : 4] += Math.min(gap, 10);
+      });
+      const avg = sum / pts.length;
+      w.avg_hr = Math.round(avg); w.max_hr = mx; w.z = z.map(v => Math.round(v));
+      if (!w.kcal || w.kcal_est) {
+        const perMin = Math.max(0, (-55.0969 + 0.6309 * avg + 0.1988 * todayWeight + 0.2017 * ageY) / 4.184);
+        w.kcal = Math.round(perMin * w.min); w.kcal_est = true;
+      }
+    });
+  }
+  if (extractedDay.rmssd_nap_list.length) {
+    const nl = extractedDay.rmssd_nap_list;
+    xt.hrv_nap = { n: nl.length, median: +median(nl).toFixed(1) };
+  }
+  if (extractedDay.active_kcal) xt.active_kcal = Math.max(xt.active_kcal || 0, extractedDay.active_kcal);
+  if (extractedDay.distance_m) xt.distance_m = Math.max(xt.distance_m || 0, extractedDay.distance_m);
   if (extractedDay.rmssd_day_list.length) {
     const dl = extractedDay.rmssd_day_list;
     xt.hrv_day = { n: dl.length, median: +median(dl).toFixed(1), min: Math.round(Math.min.apply(null, dl)), max: Math.round(Math.max.apply(null, dl)) };
+  }
+  // VFC nocturna del día: mediana de las muestras durante sueño profundo (menos artefactos de movimiento; criterio tipo Whoop/Altini).
+  // Sin hipnograma: primeras 4 h desde la 1.ª muestra. Sin suficientes muestras: toda la noche.
+  let hrvNightMs = null;
+  if (nightVals.length) {
+    const prs = xt.hrv_n; let sel = [], mode = '';
+    if (xt.hypno && xt.hypno.seg && xt.hypno.t0) {
+      const deepR = xt.hypno.seg.filter(g => g[0] === 'D').map(g => [xt.hypno.t0 + g[1] * 60000, xt.hypno.t0 + (g[1] + g[2]) * 60000]);
+      sel = prs.filter(p => deepR.some(r => p[0] * 1000 >= r[0] && p[0] * 1000 <= r[1])).map(p => p[1]);
+      if (sel.length >= 5) mode = 'sws';
+    }
+    if (mode !== 'sws') {
+      sel = prs.filter(p => p[0] - prs[0][0] <= 4 * 3600).map(p => p[1]);
+      mode = sel.length >= 5 ? 'first4h' : 'all';
+      if (mode === 'all') sel = nightVals;
+    }
+    hrvNightMs = +median(sel).toFixed(1);
+    xt.hrv_mode = mode;
   }
   const mergedRaw = {
     log_date: dateStr,
@@ -589,7 +716,7 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
     visceral_fat_index: visceral,
     tmb_kcal: tmbKcal,
     body_water_pct: waterPct,
-    rmssd_ms: extractedDay.rmssd_list.length ? +median(extractedDay.rmssd_list).toFixed(1) : (existing.rmssd_ms || 0),
+    rmssd_ms: hrvNightMs !== null ? hrvNightMs : (existing.rmssd_ms || 0),
     rhr_bpm: extractedDay.rhr_list.length ? +median(extractedDay.rhr_list).toFixed(1) : (existing.rhr_bpm || 0),
     resp_rate_brpm: extractedDay.resp_list.length ? +avg(extractedDay.resp_list).toFixed(1) : (existing.resp_rate_brpm || 0),
     spo2_pct: extractedDay.spo2_list.length ? +avg(extractedDay.spo2_list).toFixed(1) : (existing.spo2_pct || 0),
@@ -1106,7 +1233,7 @@ function liveEngineForDate_(compRows, rawRows) {
 function logWebhookAudit_(payload, detectedDates, syncedSummaries) {
   const topKeys = (payload && typeof payload === 'object' && !Array.isArray(payload)) ? Object.keys(payload) : ['array'];
   const light = Array.isArray(payload) ? payload : Object.assign({}, payload);
-  if (!Array.isArray(light)) ['heart_rate', 'total_calories', 'active_calories', 'distance'].forEach(k => { delete light[k]; });
+  if (!Array.isArray(light)) ['heart_rate', 'total_calories', 'active_calories', 'distance'].forEach(k => { if (Array.isArray(light[k])) light[k] = light[k].slice(0, 5); else delete light[k]; });
   const rawSampleStr = JSON.stringify(light).substring(0, 60000);
   let rawSampleObj = {};
   try { rawSampleObj = JSON.parse(rawSampleStr); } catch (_) { rawSampleObj = { preview: rawSampleStr }; }
@@ -1580,4 +1707,34 @@ function handleEstimateMeal_(payload) {
   } catch (err) {
     return jsonResponse_({ status: 'error', message: err.message });
   }
+}
+
+/** Ejecutar a mano en Apps Script: crea el Doc ARGON_MUESTRA_PAYLOAD con 1 muestra por categoría y sus campos. */
+function muestraFormatoPayload() {
+  const logs = supabaseGet_('webhook_logs?select=received_at,raw_payload&order=received_at.desc&limit=60');
+  const cut = (v, d) => {
+    if (typeof v === 'string') return v.length > 120 ? v.slice(0, 120) + '…' : v;
+    if (Array.isArray(v)) return d > 2 ? ('[array ' + v.length + ']') : v.slice(0, 3).map(x => cut(x, d + 1)).concat(v.length > 3 ? ['… +' + (v.length - 3) + ' más'] : []);
+    if (v && typeof v === 'object') { const o = {}; Object.keys(v).slice(0, 40).forEach(k => { o[k] = cut(v[k], d + 1); }); return o; }
+    return v;
+  };
+  const out = {}; let truncados = 0;
+  logs.forEach(l => {
+    const p = l.raw_payload;
+    if (!p || typeof p !== 'object' || p.preview) { truncados++; return; }
+    Object.keys(p).forEach(k => {
+      const v = p[k];
+      if (!out[k]) out[k] = { logs_con_esta_categoria: 0, max_items_en_un_envio: 0, campos: {}, ejemplos: [] };
+      const o = out[k]; o.logs_con_esta_categoria++;
+      if (Array.isArray(v)) {
+        o.max_items_en_un_envio = Math.max(o.max_items_en_un_envio, v.length);
+        v.slice(0, 5).forEach(it => { if (it && typeof it === 'object') Object.keys(it).forEach(f => { o.campos[f] = typeof it[f]; }); });
+        if (o.ejemplos.length < 2 && v.length) o.ejemplos.push(cut(v[0], 0));
+      } else if (o.ejemplos.length < 1) { o.ejemplos.push(cut(v, 0)); }
+    });
+  });
+  const txt = 'Logs revisados: ' + logs.length + ' (truncados/ilegibles: ' + truncados + ')\n\n' + JSON.stringify(out, null, 1);
+  const doc = DocumentApp.create('ARGON_MUESTRA_PAYLOAD');
+  doc.getBody().setText(txt); doc.saveAndClose();
+  Logger.log('Doc creado: ' + doc.getUrl() + ' | categorías: ' + Object.keys(out).join(', '));
 }
