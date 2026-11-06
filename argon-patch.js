@@ -238,10 +238,19 @@
       const todayIso = getLocalTodayIso();
       const isToday = dateStr === todayIso;
       if (!row) {
+        // Debug: check if there are rows for nearby dates
+        let debugInfo = '';
+        try {
+          const { data: nearby } = await supabaseClient.from('daily_raw_biometrics')
+            .select('log_date').order('log_date', { ascending: false }).limit(5);
+          if (nearby && nearby.length) {
+            debugInfo = ' Últimas fechas: ' + nearby.map(r => r.log_date).join(', ');
+          }
+        } catch (_) {}
         if (isToday) {
-          pass = true; detail = 'Webhook aún no ha sincronizado hoy (cada 15 min).';
+          pass = true; detail = `Webhook aún no ha sincronizado hoy (cada 15 min).${debugInfo}`;
         } else {
-          pass = false; detail = `No existe fila en daily_raw_biometrics para ${dateStr}.`;
+          pass = false; detail = `No existe fila en daily_raw_biometrics para ${dateStr}.${debugInfo}`;
         }
       } else if (!rec) {
         pass = false; detail = 'Sin registro local para comparar.';
