@@ -6,7 +6,7 @@
   const TZ = 'America/Caracas';
   const LS = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (_) { return d; } };
   const cfg = () => ({ url: (localStorage.getItem('argon_sb_url') || 'https://eqbvzgqumwvksiovboth.supabase.co').trim(), key: (localStorage.getItem('argon_sb_key') || '').trim() });
-  const st = { raw: [], comp: [] };
+  const st = { raw: [], comp: [], selectedDate: null }; // selectedDate: 'YYYY-MM-DD' o null = hoy
 
   async function sbGet(path) {
     const c = cfg();
@@ -45,6 +45,14 @@
   const empty = t => `<p class="text-[11px] text-amber-300/90">${t}</p>`;
   const ex = r => (r && r.hr_zones_minutes && r.hr_zones_minutes.x) || {};
 
+  // ---------- Selector de fecha ----------
+  function secDatePicker() {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
+    const selected = st.selectedDate || today;
+    const opts = st.comp.slice(0, 30).map(r => `<option value="${r.log_date}" ${r.log_date === selected ? 'selected' : ''}>${r.log_date} ${r.recovery_score != null ? '· Rec ' + r.recovery_score + '%' : ''}${r.total_sleep_min ? ' · ' + (r.total_sleep_min/60).toFixed(1) + 'h' : ''}</option>`).join('');
+    return card('📅 Día', 'Selector de fecha (histórico 30 d)', `<div class="flex items-center gap-3"><label class="text-xs text-slate-400">Fecha</label><select id="mbe-date" class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm">${opts}</select><button onclick="mbeLoad('${today}')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs font-bold">Hoy</button></div>` + note('Las tarjetas muestran datos computados por el servidor para el día seleccionado. El servidor recalcula al recibir datos raw (webhook o guardado manual).'));
+  }
+
   // ---------- secciones ----------
   function secBed() {
     const c = st.comp[0]; if (!c || !c.optimal_bedtime_start) return card('Hora de dormir', 'Ventana óptima', empty('Sin datos calculados.'));
@@ -79,22 +87,36 @@
   }
 
   function secHrv() {
-    const rows = st.raw.filter(r => parseFloat(r.rmssd_ms) > 0 && !isSeed(r)).slice().reverse();
-    if (rows.length < 3) return card('💓 VFC nocturna vs diurna', 'lnRMSSD', empty('Se necesitan ≥3 días con VFC real.'));
-    const ln = rows.map(r => Math.log(Math.max(5, parseFloat(r.rmssd_ms))));
-    const base = ln.slice(-15, -1), mB = mean(base), sB = Math.max(0.04, sd(base, mB));
-    const l7 = ln.slice(-7), m7 = mean(l7), cv7 = sd(l7, m7) / m7 * 100;
-    const diff = m7 - mB, swc = 0.5 * sB;
-    const stat = Math.abs(diff) <= swc ? ['Estable (dentro del SWC)', 'text-emerald-400'] : diff > 0 ? ['Por encima del SWC', 'text-cyan-300'] : ['Por debajo del SWC (fatiga/estrés)', 'text-amber-400'];
-    const t = rows[rows.length - 1], rr = 60000 / (parseFloat(t.rhr_bpm) || 60), norm = (parseFloat(t.rmssd_ms) / rr * 100);
-    const day = ex(st.raw[0]).hrv_day;
+    const c = st.comp[0];
+    if (!c || c.ln_rmssd == null) return card('💓 VFC nocturna vs diurna', 'lnRMSSD (servidor)', empty('Sin datos de VFC computados por el servidor aún.'));
+    const lnToday = parseFloat(c.ln_rmssd);
+    const lnBase = parseFloat(c.ln_rmssd_14d_mean);
+    const lnBaseSd = parseFloat(c.ln_rmssd_14d_sd);
+    const hrvZ = parseFloat(c.hrv_z_score);
+    const rhrZ = parseFloat(c.rhr_z_score);
+    const recScore = c.recovery_score;
+    const recStatus = c.recovery_status || '—';
+    const recMaxStrain = c.recommended_max_strain;
+    const cv7 = parseFloat(c.cv_lnrmssd_7d_pct);
+    const swc = parseFloat(c.swc_lnrmssd);
+    const calibrating = c.calibrating;
+    const rmssd = parseFloat(c.rmssd_ms);
+    const rhr = parseFloat(c.rhr_bpm);
+    const rmssd14d = parseFloat(c.rmssd_14d_mean_ms);
+    const rhr14d = parseFloat(c.rhr_14d_mean_bpm);
+    const resp = parseFloat(c.resp_rate_brpm);
+    const resp14d = parseFloat(c.resp_14d_mean_brpm);
+    const spo2 = parseFloat(c.spo2_pct);
     const nap = ex(st.raw[0]).hrv_nap; const napTxt = nap ? `<div class="text-xs">Siesta: mediana <b class="font-mono">${nap.median} ms</b> · n=${nap.n} <span class="text-slate-400">(no entra en la base)</span></div>` : '';
-    const dayTxt = day ? `<div class="text-xs">Diurna (reposo/actividad): mediana <b class="font-mono">${day.median} ms</b> · n=${day.n} · rango ${day.min}–${day.max}</div>` : '<div class="text-[11px] text-slate-400">Sin muestras diurnas guardadas.</div>';
-    return card('💓 VFC nocturna vs diurna', 'Base: lnRMSSD, media 7 d vs línea base 14 d',
-      `<div class="grid grid-cols-3 gap-2 text-center"><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Noche hoy</div><div class="font-mono font-black">${t.rmssd_ms} ms</div><div class="text-[9px] text-cyan-400 font-mono">ln ${Math.log(t.rmssd_ms).toFixed(2)}</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Media 7 d (ln)</div><div class="font-mono font-black">${m7.toFixed(2)}</div><div class="text-[9px] text-slate-400 font-mono">base ${mB.toFixed(2)}</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">SWC (0.5·SD)</div><div class="font-mono font-black">±${swc.toFixed(3)}</div><div class="text-[9px] text-slate-400 font-mono">CV7 ${cv7.toFixed(1)}%</div></div></div>
-       <div class="text-xs font-bold ${stat[1]}">${stat[0]} · Δ ${diff >= 0 ? '+' : ''}${diff.toFixed(3)}</div>${dayTxt}${napTxt}
-       <div class="text-[10px] text-slate-400 font-mono">RMSSD/RR (normalizado por FC): ${norm.toFixed(1)}%</div>` +
-      note('Se usa ln (transformación validada: Plews 2013; Buchheit 2014). La raíz cuadrada no tiene validación comparable, por eso no es la base. CV7 alto (>10%) = respuesta inestable. La VFC diurna por PPG es ruidosa y depende de postura/actividad: se muestra aparte y NO entra en la línea base ni en la recuperación.'));
+    const day = ex(st.raw[0]).hrv_day; const dayTxt = day ? `<div class="text-xs">Diurna (reposo/actividad): mediana <b class="font-mono">${day.median} ms</b> · n=${day.n} · rango ${day.min}–${day.max}</div>` : '<div class="text-[11px] text-slate-400">Sin muestras diurnas guardadas.</div>';
+    const stat = recScore != null ? (recScore >= 67 ? ['Recuperado', 'text-emerald-400'] : recScore >= 34 ? ['Equilibrado', 'text-cyan-300'] : ['Fatiga/estrés', 'text-amber-400']) : ['Calibrando', 'text-slate-400'];
+    const norm = rhr > 0 ? (rmssd / (60000 / rhr) * 100).toFixed(1) : '--';
+    return card('💓 VFC nocturna vs diurna', 'Datos del servidor (lnRMSSD 7d vs base 14d, SWC=0.5·SD)',
+      `<div class="grid grid-cols-3 gap-2 text-center"><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">RMSSD noche</div><div class="font-mono font-black">${rmssd.toFixed(0)} ms</div><div class="text-[9px] text-cyan-400 font-mono">ln ${lnToday.toFixed(2)}</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Base 14 d (ln)</div><div class="font-mono font-black">${lnBase.toFixed(2)}</div><div class="text-[9px] text-slate-400 font-mono">SD ${lnBaseSd.toFixed(3)}</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">SWC (0.5·SD)</div><div class="font-mono font-black">±${swc.toFixed(3)}</div><div class="text-[9px] text-slate-400 font-mono">CV7 ${cv7.toFixed(1)}%</div></div></div>
+       <div class="grid grid-cols-3 gap-2 text-center mt-2"><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">z-score HRV</div><div class="font-mono font-black text-cyan-300">${hrvZ.toFixed(2)}</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">z-score RHR</div><div class="font-mono font-black text-cyan-300">${rhrZ.toFixed(2)}</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">RHR / 14d</div><div class="font-mono font-black">${rhr} / ${rhr14d} bpm</div></div></div>
+       <div class="grid grid-cols-3 gap-2 text-center mt-2"><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Resp. / 14d</div><div class="font-mono font-black">${resp} / ${resp14d} rpm</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">SpO₂</div><div class="font-mono font-black">${spo2}%</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">RMSSD/RR norm</div><div class="font-mono font-black">${norm}%</div></div></div>
+       <div class="text-xs font-bold ${stat[1]} mt-2">Recuperación: ${recScore != null ? recScore + '%' : 'calibrando'} · ${recStatus} ${recMaxStrain != null ? '· Strain máx: ' + recMaxStrain.toFixed(1) : ''}${calibrating ? ' <span class="text-amber-400">(calibrando)</span>' : ''}</div>${dayTxt}${napTxt}` +
+      note('Cálculo servidor: lnRMSSD media 7 d vs base 14 d (Plews 2013; Buchheit 2014). SWC = 0.5·SD. FR > 20 rpm penaliza. z-scores vs base 14 d. Recuperación: pesos 0.55/0.20/0.25 provisionales (HRV/RHR/FR).'));
   }
 
   function secWorkouts() {
@@ -138,6 +160,29 @@
     const out = lastT ? (() => { const r = ltCalc(lastT.km, lastT.hr); return `<div class="grid grid-cols-3 gap-2 text-center text-xs"><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">LTHR</div><div class="font-mono font-black text-lg text-rose-400">${r.lthr}</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Ritmo 30′</div><div class="font-mono font-black">${pace(r.p30)}/km</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Ritmo umbral ≈</div><div class="font-mono font-black">${pace(r.pThr)}/km</div></div></div>` + r.zones.map(z => `<div class="flex justify-between text-[11px] font-mono"><span class="text-slate-300">${z[0]}</span><span>${z[1] ? z[1] + '–' : '<'}${z[2]} lpm</span></div>`).join('') + `<div class="text-[10px] text-slate-400">Último test: ${lastT.date}</div>`; })()
       : `<div class="text-xs">Estimación sin test (baja confianza): ${Math.round(hrMax * .85)}–${Math.round(hrMax * .90)} lpm (85–90% de FCmáx Tanaka ${hrMax}).</div>`;
     return card('🫁 Umbral de lactato en carrera', 'Test de campo de 30 min (Friel)', out + `<div class="grid grid-cols-3 gap-1.5 pt-1"><input id="lt-km" type="number" step="0.01" placeholder="km en 30′" class="bg-slate-800 rounded-xl px-2 py-1.5 text-xs text-white"><input id="lt-hr" type="number" placeholder="FC media últ. 20′" class="bg-slate-800 rounded-xl px-2 py-1.5 text-xs text-white"><button id="lt-save" class="rounded-xl bg-cyan-500 text-black font-black text-[11px]">Calcular</button></div>` + note('Protocolo: calentar 10–15′, correr 30′ al máximo ritmo sostenible y constante, solo, plano, sin pausas; pulsa "lap" a los 10′. LTHR = FC media de los últimos 20′. Correlaciona razonablemente con el umbral de laboratorio pero con error individual de varios lpm; el ritmo umbral estricto ≈ ritmo de 60′ (por eso se aplica +4% a tu ritmo de 30′). Repetir cada 6–8 semanas, descansado, mismas condiciones.'));
+  }
+
+  // ---------- Edad Fisiológica ARGON (servidor) ----------
+  function secArgonAge() {
+    const c = st.comp[0];
+    if (!c || c.chronological_age == null) return card('🧬 Edad Fisiológica ARGON', 'Modelo multivariante (servidor)', empty('Sin datos computados por el servidor aún.'));
+    const chrono = parseFloat(c.chronological_age);
+    const physio = parseFloat(c.argon_physiological_age);
+    const delta = parseFloat(c.total_age_delta);
+    const pace = parseFloat(c.pace_of_aging_x);
+    const vo2 = parseFloat(c.vo2_max_ml_kg_min);
+    const dVO2 = parseFloat(c.delta_vo2_years);
+    const dRHR = parseFloat(c.delta_rhr_years);
+    const dLnR = parseFloat(c.delta_lnrmssd_years);
+    const dFFM = parseFloat(c.delta_ffm_years);
+    const dSleep = parseFloat(c.delta_sleep_years);
+    const dAct = parseFloat(c.delta_act_years);
+    const paceColor = pace <= 0.85 ? 'text-emerald-400' : pace <= 1.0 ? 'text-cyan-300' : pace <= 1.15 ? 'text-amber-400' : 'text-rose-400';
+    const deltaColor = delta <= -2 ? 'text-emerald-400' : delta <= 0 ? 'text-cyan-300' : delta <= 2 ? 'text-amber-400' : 'text-rose-400';
+    return card('🧬 Edad Fisiológica ARGON', `Edad cronológica: ${chrono.toFixed(1)} años · Modelo: VO₂max + RHR + lnRMSSD + FFM + Sueño + Actividad`,
+      `<div class="grid grid-cols-2 gap-3"><div class="p-3 rounded-xl bg-slate-900 border border-slate-800"><div class="text-[10px] text-slate-400">Edad fisiológica</div><div class="text-3xl font-black font-mono ${deltaColor}">${physio.toFixed(1)} años</div></div><div class="p-3 rounded-xl bg-slate-900 border border-slate-800"><div class="text-[10px] text-slate-400">Delta total</div><div class="text-3xl font-black font-mono ${deltaColor}${delta > 0 ? '' : ''}">${delta >= 0 ? '+' : ''}${delta.toFixed(1)} años</div></div><div class="p-3 rounded-xl bg-slate-900 border border-slate-800"><div class="text-[10px] text-slate-400">Pace of Aging</div><div class="text-3xl font-black font-mono ${paceColor}">${pace.toFixed(2)}×</div><div class="text-[9px] text-slate-400">(<1 = envejeces más lento)</div></div><div class="p-3 rounded-xl bg-slate-900 border border-slate-800"><div class="text-[10px] text-slate-400">VO₂max</div><div class="text-3xl font-black font-mono text-cyan-300">${vo2.toFixed(1)}</div><div class="text-[9px] text-slate-400">ml/kg/min</div></div></div>
+       <div class="grid grid-cols-3 gap-2 mt-3 text-center"><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Δ VO₂max</div><div class="font-mono font-black ${dVO2 < 0 ? 'text-emerald-400' : 'text-rose-400'}">${dVO2 >= 0 ? '+' : ''}${dVO2.toFixed(1)} a</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Δ RHR</div><div class="font-mono font-black ${dRHR < 0 ? 'text-emerald-400' : 'text-rose-400'}">${dRHR >= 0 ? '+' : ''}${dRHR.toFixed(1)} a</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Δ lnRMSSD</div><div class="font-mono font-black ${dLnR < 0 ? 'text-emerald-400' : 'text-rose-400'}">${dLnR >= 0 ? '+' : ''}${dLnR.toFixed(1)} a</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Δ FFM</div><div class="font-mono font-black ${dFFM < 0 ? 'text-emerald-400' : 'text-rose-400'}">${dFFM >= 0 ? '+' : ''}${dFFM.toFixed(1)} a</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Δ Sueño</div><div class="font-mono font-black ${dSleep < 0 ? 'text-emerald-400' : 'text-rose-400'}">${dSleep >= 0 ? '+' : ''}${dSleep.toFixed(1)} a</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Δ Actividad</div><div class="font-mono font-black ${dAct < 0 ? 'text-emerald-400' : 'text-rose-400'}">${dAct >= 0 ? '+' : ''}${dAct.toFixed(1)} a</div></div></div>` +
+      note('Modelo servidor: edad fisiológica = edad cronológica + Σ(deltas ponderados). Cada delta = (valor_observado − valor_referencia_edad) / pendiente_envejecimiento. Pace of Aging = edad_fisiológica / edad_cronológica. Referencias: VO₂max (Jackson 1995), RHR (Zhang 2016), lnRMSSD (Plews 2013), FFM (Janssen 2000), Sueño (Ohayon 2004), Actividad (Paluch 2022). Parámetros provisionales — validar 4–6 semanas.'));
   }
 
   // ---------- Paquete D ----------
@@ -223,10 +268,11 @@
   }
 
   // ---------- inyección en las pestañas ----------
-  const SLOTS = { 0: [secSteps, secRetrain, secWorkouts], 1: [secBed, secHypno, secNaps, secHrv], 2: [secLT], 4: [secHeat, secAch, secWeek, secTheme] };
+  const SLOTS = { 0: [secDatePicker, secSteps, secRetrain, secWorkouts], 1: [secBed, secHypno, secNaps, secHrv], 2: [secLT, secArgonAge], 4: [secHeat, secAch, secWeek, secTheme] };
 
   function wire() {
     const g = document.getElementById('mbe-goal'); if (g) g.onchange = () => { localStorage.setItem('argon_steps_goal', JSON.stringify(Math.max(1000, parseInt(g.value, 10) || 8000))); renderAll(); };
+    const dp = document.getElementById('mbe-date'); if (dp) dp.onchange = () => { load(dp.value); };
     const b = document.getElementById('lt-save');
     if (b) b.onclick = () => {
       const km = parseFloat(document.getElementById('lt-km').value), hr = parseFloat(document.getElementById('lt-hr').value);
@@ -247,12 +293,27 @@
     if (typeof argonSwiper !== 'undefined' && argonSwiper) setTimeout(() => argonSwiper.updateAutoHeight(200), 60);
   }
 
-  async function load() {
+  async function load(dateStr) {
+    if (dateStr) st.selectedDate = dateStr;
+    const target = st.selectedDate || new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
     try {
-      const [raw, comp] = await Promise.all([sbGet('daily_raw_biometrics?order=log_date.desc&limit=20'), sbGet('computed_daily_scores?order=log_date.desc&limit=30')]);
-      st.raw = raw; st.comp = comp; renderAll();
+      const [raw, comp] = await Promise.all([
+        sbGet(`daily_raw_biometrics?log_date=eq.${target}&limit=1`),
+        sbGet(`computed_daily_scores?log_date=eq.${target}&limit=1`)
+      ]);
+      // Para histórico: también traer rango para sparklines/medias
+      const [rawHist, compHist] = await Promise.all([
+        sbGet('daily_raw_biometrics?order=log_date.desc&limit=30'),
+        sbGet('computed_daily_scores?order=log_date.desc&limit=30')
+      ]);
+      st.raw = [raw[0], ...rawHist.slice(1)].filter(Boolean);
+      st.comp = [comp[0], ...compHist.slice(1)].filter(Boolean);
+      renderAll();
     } catch (e) { renderAll('No se pudieron cargar los datos MBE+: ' + e.message); }
   }
+
+  // API pública: window.mbeLoad('2026-01-15')
+  window.mbeLoad = load;
 
   window.openMbe = () => { if (typeof goToArgonTab === 'function') goToArgonTab(1); load(); };
 
