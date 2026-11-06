@@ -1300,7 +1300,6 @@
       const latestRec = dates.length ? localData[dates[dates.length - 1]] : null;
 
       if (dates.length === 0 && !(localStorage.getItem('argon_sb_key') || '').trim()) {
-        seedCalibratedFeelfitHistory(false);
       } else {
         loadDayData(todayStr);
       }
@@ -1495,448 +1494,7 @@
       initSupabaseFromStorage();
     }
 
-    // ========================================================================
-    // 5. MOTOR MATEMÁTICO MBE v6.0 (FEELFIT + DEUDA SUEÑO 7.5H + ATWATER 0 KCAL)
-    // ========================================================================
-    function computeArgonDayScore(todayRaw, historyRawList, prevComputed) {
-      const PROF = argonProfile_();
-      const wakeTimeStr = PROF.wake;
-      const MIN_BASELINE_DAYS = 7;
-      const basalNeedH = 7.50; // Calibrado a 7h 30m de sueño neto efectivo
-
-      // Edad cronológica exacta (Nacido: 12 Nov 1997)
-      const birthDate = new Date(PROF.birth + 'T00:00:00-04:00');
-      const refDate = todayRaw.log_date ? new Date(todayRaw.log_date + 'T12:00:00-04:00') : new Date();
-      const chronologicalAge = +((refDate.getTime() - birthDate.getTime()) / (365.2425 * 86400000)).toFixed(2);
-      const heightM = PROF.height_m;
-
-      // A. BIOIMPEDANCIA FEELFIT
-      const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.weight_kg : 86.80);
-      const rawBf = parseFloat(todayRaw.body_fat_pct) || (prevComputed ? prevComputed.body_fat_pct : 24.1);
-      const ffmPct = +(100.0 - rawBf).toFixed(1);
-
-      const fatMassKg = +(rawW * (rawBf / 100.0)).toFixed(2);
-      const ffmKg = +(rawW - fatMassKg).toFixed(1);
-      const boneMassKg = +(rawW * 0.0378).toFixed(1);
-      const muscleMassKg = +(ffmKg - boneMassKg).toFixed(1);
-
-      const musclePct = parseFloat(todayRaw.skeletal_muscle_pct) || +(ffmPct * 0.6468).toFixed(1);
-      const waterPct = parseFloat(todayRaw.body_water_pct) || +(ffmPct * 0.7222).toFixed(1);
-      const visceral = parseFloat(todayRaw.visceral_fat_index) || Math.max(1, Math.round(11 + (rawBf - 24.4) * 0.48));
-      const tmbFeelfit = parseInt(todayRaw.tmb_kcal, 10) || Math.round(370 + (21.6 * ffmKg));
-      const waterMassKg = +(rawW * (waterPct / 100.0)).toFixed(2);
-      const bmi = +(rawW / (heightM * heightM)).toFixed(1);
-
-      const prevTrendW = prevComputed && prevComputed.trend_weight_kg ? parseFloat(prevComputed.trend_weight_kg) : rawW;
-      const prevTrendBf = prevComputed && prevComputed.trend_body_fat_pct ? parseFloat(prevComputed.trend_body_fat_pct) : rawBf;
-      const trendW = +((0.25 * rawW) + (0.75 * prevTrendW)).toFixed(2);
-      const trendBf = +((0.25 * rawBf) + (0.75 * prevTrendBf)).toFixed(2);
-
-      // B. STRAIN 4D
-      const steps = Math.max(0, parseInt(todayRaw.steps_count, 10) || 0);
-      const workoutMin = Math.max(0, parseFloat(todayRaw.pickleball_or_gym_minutes) || 0);
-      const sRpe = Math.max(0, parseFloat(todayRaw.session_rpe) || (workoutMin > 0 ? 7.0 : 0));
-      const nightAwakeH = Math.max(0, parseFloat(todayRaw.night_awake_shift_hours) || 0);
-
-      // Pasos netos: descuenta pasos de caminata (Zepp walking_steps o estimado 85 pasos/min ejercicio)
-      const hz = (todayRaw.hr_zones_minutes && typeof todayRaw.hr_zones_minutes === 'object') ? todayRaw.hr_zones_minutes : null;
-      const zonesReal = todayRaw.hr_zones_real === true || !!(hz && hz.real === true);
-      const explicitWalk = parseInt(todayRaw.walking_steps, 10) || parseInt(hz && hz.walking_steps, 10) || 0;
-      const walkingSteps = explicitWalk || (workoutMin > 0 ? Math.round(workoutMin * 85) : 0);
-      const stepsNet = Math.max(0, steps - walkingSteps);
-
-      const ambientZ1 = Math.round(Math.max(0, stepsNet - 2000) / 320);
-
-      // Zonas dinámicas por RPE cuando no hay hr_zones_real
-      let zones;
-      if (zonesReal && hz) {
-        zones = { z1: parseFloat(hz.z1) || 0, z2: parseFloat(hz.z2) || 0, z3: parseFloat(hz.z3) || 0, z4: parseFloat(hz.z4) || 0, z5: parseFloat(hz.z5) || 0 };
-      } else {
-        // Distribución base: separar ambientZ1 (caminata diaria) de workout Z1
-        const workoutZ1 = Math.round(workoutMin * 0.22);
-        const workoutZ2 = Math.round(workoutMin * 0.33);
-        let baseZ1 = ambientZ1 + workoutZ1;
-        let baseZ2 = workoutZ2;
-        let baseZ3 = Math.round(workoutMin * 0.20);
-        let baseZ4 = Math.round(workoutMin * 0.17);
-        let baseZ5 = Math.round(workoutMin * 0.08);
-
-        // Redistribución solo de workout Z1-Z2 -> Z3-Z5 proporcional al RPE (no toca ambientZ1)
-        if (workoutMin > 0 && sRpe > 0) {
-          const rpeFactor = Math.max(0, Math.min(1, (sRpe - 1) / 9)); // 0-1
-          const shiftAmount = (workoutZ1 + workoutZ2) * rpeFactor * 0.5; // máx 50% del peso bajo del workout
-          const newWorkoutZ1 = Math.round(workoutZ1 * (1 - rpeFactor * 0.5));
-          const newWorkoutZ2 = Math.round(workoutZ2 * (1 - rpeFactor * 0.5));
-          const totalHigh = baseZ3 + baseZ4 + baseZ5;
-          if (totalHigh > 0) {
-            baseZ3 += Math.round(shiftAmount * (baseZ3 / totalHigh));
-            baseZ4 += Math.round(shiftAmount * (baseZ4 / totalHigh));
-            baseZ5 += Math.round(shiftAmount * (baseZ5 / totalHigh));
-          } else {
-            baseZ3 += Math.round(shiftAmount * 0.5);
-            baseZ4 += Math.round(shiftAmount * 0.3);
-            baseZ5 += Math.round(shiftAmount * 0.2);
-          }
-          baseZ1 = ambientZ1 + newWorkoutZ1;
-          baseZ2 = newWorkoutZ2;
-        }
-        zones = { z1: baseZ1, z2: baseZ2, z3: baseZ3, z4: baseZ4, z5: baseZ5 };
-      }
-
-      const z13Min = (parseFloat(zones.z1) || 0) + (parseFloat(zones.z2) || 0) + (parseFloat(zones.z3) || 0);
-      const z45Min = (parseFloat(zones.z4) || 0) + (parseFloat(zones.z5) || 0);
-
-      const mids = { z1: 0.55, z2: 0.65, z3: 0.75, z4: 0.85, z5: 0.95 };
-      let cardioTrimp = 0;
-      for (const z in mids) {
-        cardioTrimp += (parseFloat(zones[z]) || 0) * mids[z] * 0.64 * Math.exp(1.92 * mids[z]);
-      }
-      // Eliminada duplicidad: pasos basales ya inyectados en zones.z1 vía ambientZ1
-
-      // neuroLoad: solo componente neuromuscular real (sRPE * tiempo), sin duplicar Z4-Z5
-      const neuroLoad = 0.85 * (sRpe * workoutMin);
-      const shiftLoad = nightAwakeH > 0 ? (1.40 * nightAwakeH * 35.0) : 0.0;
-      const totalLoad = cardioTrimp + neuroLoad + shiftLoad;
-      const strainScore = Math.min(20.8, Math.max(0.0, 21.0 * (1.0 - Math.exp(-0.00165 * totalLoad))));
-
-      // C. SUEÑO EN 4 PILARES + AMORTIZACIÓN DE DEUDA (PROCESO S BORBÉLY)
-      const prevTst = prevComputed && prevComputed.total_sleep_min ? prevComputed.total_sleep_min : 450;
-      const sleepMissing = !(parseInt(todayRaw.total_sleep_min, 10) >= 120) || (parseInt(todayRaw.total_sleep_min, 10) === 450 && parseInt(todayRaw.deep_sleep_min, 10) === 84 && parseInt(todayRaw.rem_sleep_min, 10) === 96);
-      const tstMin = sleepMissing ? 0 : parseInt(todayRaw.total_sleep_min, 10);
-      // Eficiencia basal realista: Math.round(tstMin / 0.87) en vez de tstMin * 1.06
-      const tibMin = sleepMissing ? 0 : (parseInt(todayRaw.time_in_bed_min, 10) || Math.max(tstMin + 25, Math.round(tstMin / 0.87)));
-      const deepMin = sleepMissing ? 0 : (parseInt(todayRaw.deep_sleep_min, 10) || Math.round(tstMin * 0.20));
-      const remMin = sleepMissing ? 0 : (parseInt(todayRaw.rem_sleep_min, 10) || Math.round(tstMin * 0.22));
-      const lightMin = Math.max(0, tstMin - deepMin - remMin);
-      const napMin = parseInt(todayRaw.nap_sleep_min, 10) || 0;
-
-      const sePct = Math.min(100, (tstMin / Math.max(1, tibMin)) * 100);
-      const swsPct = (deepMin / Math.max(1, tstMin)) * 100;
-      const remPct = (remMin / Math.max(1, tstMin)) * 100;
-
-      // Limpieza de noches vacías: solo noches válidas (total_sleep_min >= 120) para deuda y regularidad
-      const validSleeps = [todayRaw, ...historyRawList.slice(0, 6)].filter(r => parseInt(r.total_sleep_min, 10) >= 120);
-      let weightedDebtH = 0;
-      validSleeps.forEach((r, idx) => {
-        const pastTstH = (parseInt(r.total_sleep_min, 10) + (parseInt(r.nap_sleep_min, 10) || 0)) / 60.0;
-        weightedDebtH += (basalNeedH - pastTstH) * Math.exp(-0.35 * idx);
-      });
-      weightedDebtH = Math.max(0, +weightedDebtH.toFixed(2));
-
-      const dynamicNeedH = Math.min(10.0, Math.max(6.5, basalNeedH + (0.042 * strainScore) + (0.35 * weightedDebtH)));
-      const prevStrain = prevComputed && parseFloat(prevComputed.strain_score) ? parseFloat(prevComputed.strain_score) : 0;
-      const needForRecoveryH = Math.min(10.0, Math.max(6.5, basalNeedH + (0.042 * prevStrain) + (0.35 * weightedDebtH)));
-      const hoursVsNeededPct = Math.min(100, Math.round((((tstMin + napMin) / 60.0) / needForRecoveryH) * 100));
-
-      // SD solo con noches válidas
-      const recentValidTst = validSleeps.map(r => parseInt(r.total_sleep_min, 10));
-      const meanTst = recentValidTst.length ? recentValidTst.reduce((a, b) => a + b, 0) / recentValidTst.length : 450;
-      const sdTstHours = recentValidTst.length > 1 ? Math.sqrt(recentValidTst.reduce((s, v) => s + Math.pow((v - meanTst) / 60.0, 2), 0) / recentValidTst.length) : 0;
-      const sleepRegularityPct = Math.min(98, Math.max(55, Math.round(94 - (sdTstHours * 14.0) - (nightAwakeH * 3.5))));
-
-      // Rebalanceo de etapas PPG: 0.50 * hoursVsNeededPct + 0.25 * sleepRegularityPct + 0.15 * seScore + 0.10 * stagesScore
-      const sleepArchScore = Math.round(
-        0.50 * hoursVsNeededPct +
-        0.25 * sleepRegularityPct +
-        0.15 * Math.min(100, (sePct / 88.0) * 100) +
-        0.10 * Math.min(100, ((swsPct + remPct) / 40.0) * 100)
-      );
-
-      const [wakeH, wakeM] = wakeTimeStr.split(':').map(Number);
-      const reqTibHours = dynamicNeedH / Math.max(0.80, sePct / 100.0);
-      const wakeTotalMin = (wakeH * 60) + wakeM + 1440;
-      const startMin = Math.round(wakeTotalMin - (reqTibHours * 60) - 15) % 1440;
-      const endMin = Math.round(wakeTotalMin - (reqTibHours * 60) + 15) % 1440;
-      const fmtTime = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-
-      // D. RECUPERACIÓN AUTONÓMICA 4D (MBE: Dynamic RMSSD cap, CV_7d, SWC, ACWR penalty)
-      const prevRmssd = prevComputed && prevComputed.rmssd_ms ? prevComputed.rmssd_ms : 50.0;
-      const prevRhr = prevComputed && prevComputed.rhr_bpm ? prevComputed.rhr_bpm : 54.5;
-      const rawRmssdCandidate = parseFloat(todayRaw.rmssd_ms) || prevRmssd;
-
-      // Dynamic RMSSD cap: mean_14d + 3*SD, ceiling 180ms (replaces hard 130ms)
-      const histRmssdForCap = historyRawList.slice(0, 14).filter(r => parseFloat(r.rmssd_ms) > 0 && !(parseFloat(r.rmssd_ms) === 50 && parseFloat(r.rhr_bpm) === 54.5)).map(r => {
-        const v = parseFloat(r.rmssd_ms) || 49.0;
-        return v > 180 ? 49.0 : v;
-      });
-      const histLnForCap = histRmssdForCap.map(v => Math.log(Math.max(5.0, v)));
-      const meanLnForCap = histLnForCap.length >= MIN_BASELINE_DAYS ? histLnForCap.reduce((a, b) => a + b, 0) / histLnForCap.length : Math.log(Math.max(5.0, prevRmssd));
-      const sdLnForCap = histLnForCap.length > 1 ? Math.sqrt(histLnForCap.reduce((s, v) => s + Math.pow(v - meanLnForCap, 2), 0) / histLnForCap.length) : 0.12;
-      const dynamicRmssdCap = Math.min(180, Math.round(Math.exp(meanLnForCap + 3 * sdLnForCap)));
-      const rmssdToday = rawRmssdCandidate > dynamicRmssdCap ? prevRmssd : rawRmssdCandidate;
-
-      const rhrToday = parseFloat(todayRaw.rhr_bpm) || prevRhr;
-      const respToday = parseFloat(todayRaw.resp_rate_brpm) || 14.1;
-      const spo2Today = parseFloat(todayRaw.spo2_pct) || 97.6;
-
-      const lnRmssdToday = Math.log(Math.max(5.0, rmssdToday));
-      const histRmssd = historyRawList.slice(0, 14).filter(r => parseFloat(r.rmssd_ms) > 0 && !(parseFloat(r.rmssd_ms) === 50 && parseFloat(r.rhr_bpm) === 54.5)).map(r => {
-        const v = parseFloat(r.rmssd_ms) || 49.0;
-        return v > dynamicRmssdCap ? 49.0 : v;
-      });
-      const histLn = histRmssd.map(v => Math.log(Math.max(5.0, v)));
-      const histRhr = historyRawList.slice(0, 14).filter(r => parseFloat(r.rhr_bpm) > 0 && !(parseFloat(r.rmssd_ms) === 50 && parseFloat(r.rhr_bpm) === 54.5)).map(r => parseFloat(r.rhr_bpm));
-      const histResp = historyRawList.slice(0, 14).filter(r => parseFloat(r.resp_rate_brpm) > 0).map(r => parseFloat(r.resp_rate_brpm));
-
-      const meanArr = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-      const sdArr = (arr, m) => arr.length > 1 ? Math.sqrt(arr.reduce((s, v) => s + Math.pow(v - m, 2), 0) / arr.length) : 0.12;
-
-      const meanRmssd = histRmssd.length >= MIN_BASELINE_DAYS ? meanArr(histRmssd) : rmssdToday;
-      const meanLn = histLn.length >= MIN_BASELINE_DAYS ? meanArr(histLn) : lnRmssdToday;
-      // sdLn floor reduced from 0.08 to 0.04 for high autonomic stability weeks
-      const sdLn = Math.max(0.04, histLn.length >= MIN_BASELINE_DAYS ? sdArr(histLn, meanLn) : 0.12);
-      const meanRhr = histRhr.length >= MIN_BASELINE_DAYS ? meanArr(histRhr) : rhrToday;
-      const sdRhr = Math.max(1.5, histRhr.length >= MIN_BASELINE_DAYS ? sdArr(histRhr, meanRhr) : 2.2);
-      const meanResp = histResp.length >= MIN_BASELINE_DAYS ? meanArr(histResp) : 14.2;
-
-      // CV_7d: SD of last 7 lnRMSSD / mean of last 7 lnRMSSD * 100
-      const last7Ln = histLn.slice(0, 7);
-      const meanLn7 = last7Ln.length ? meanArr(last7Ln) : meanLn;
-      const sdLn7 = last7Ln.length > 1 ? sdArr(last7Ln, meanLn7) : sdLn;
-      const cvLnRmssd7 = last7Ln.length >= 3 ? +((sdLn7 / Math.max(0.001, meanLn7)) * 100).toFixed(1) : 0;
-
-      // SWC = 0.5 × SD de línea base (Buchheit 2014)
-      const swcLnRmssd = +(0.5 * sdLn).toFixed(3);
-
-      const hrvMissing = !(parseFloat(todayRaw.rmssd_ms) > 0) || (parseFloat(todayRaw.rmssd_ms) === 50 && parseFloat(todayRaw.rhr_bpm) === 54.5);
-      // Media móvil 7 d de lnRMSSD vs base 14 d, con zona muerta SWC
-      const ln7Vals = [lnRmssdToday, ...histLn.slice(0, 6)];
-      const diffLn7 = hrvMissing ? 0 : (meanArr(ln7Vals) - meanLn);
-      const excessLn = Math.max(0, Math.abs(diffLn7) - swcLnRmssd);
-      const hrvZ = hrvMissing ? 0 : Math.max(-3, Math.min(3, Math.sign(diffLn7) * excessLn / sdLn));
-      const rhrMissing = !(parseFloat(todayRaw.rhr_bpm) > 0) || (parseFloat(todayRaw.rmssd_ms) === 50 && parseFloat(todayRaw.rhr_bpm) === 54.5);
-      const rhrZ = rhrMissing ? 0 : Math.max(-3, Math.min(3, (rhrToday - meanRhr) / sdRhr));
-      // FR adulto en reposo 12–20 rpm
-      const penalty = (spo2Today < 94.0 ? 1.0 : 0.0) + (respToday > 20.0 ? 0.5 : 0.0);
-
-      // ACWR: carga aguda (3d) vs crónica (14d); solo con 14d de historial
-      let acwrPenalty = 0;
-      if (historyRawList.length >= 14) {
-        const acuteAvg = historyRawList.slice(0, 3).reduce((s, r) => s + (parseFloat(r.strain_score) || 0), 0) / 3;
-        const chronicAvg = historyRawList.slice(0, 14).reduce((s, r) => s + (parseFloat(r.strain_score) || 0), 0) / 14;
-        if (chronicAvg > 0) acwrPenalty = Math.min(2.0, Math.max(0, (acuteAvg / chronicAvg - 1.3) * 5));
-      }
-
-      const highSleepStressPct = Math.min(45, Math.max(0, Math.round(
-        Math.max(0, rhrZ * 9.0) + Math.max(0, -hrvZ * 7.0)
-      )));
-
-      const sleepZ = sleepMissing ? 0 : Math.max(-3, Math.min(2, (sleepArchScore - 92.0) / 10.0));
-
-      // Recuperación: null durante calibración (<7 días válidos de lnRMSSD)
-      const calibrating = histLn.length < MIN_BASELINE_DAYS;
-      const psi = (0.55 * hrvZ) - (0.20 * rhrZ) + (0.25 * sleepZ) - penalty; // pesos provisionales
-      const recoveryScore = calibrating ? null
-        : Math.min(99, Math.max(1, Math.round(100.0 / (1.0 + Math.exp(-1.15 * psi)))));
-
-      let recStatus = 'CALIBRATING';
-      let recMaxStrain = 12.0; // valor neutro durante calibración
-      if (recoveryScore !== null) {
-        recStatus = 'MODERATE';
-        if (recoveryScore >= 67) {
-          recStatus = 'OPTIMAL';
-          recMaxStrain = +(14.5 + (recoveryScore - 67) * 0.14).toFixed(1);
-        } else if (recoveryScore < 34) {
-          recStatus = 'COMPROMISED';
-          recMaxStrain = +(6.0 + recoveryScore * 0.10).toFixed(1);
-        } else {
-          recMaxStrain = +(10.0 + (recoveryScore - 34) * 0.13).toFixed(1);
-        }
-        recMaxStrain = Math.max(4.0, +(recMaxStrain - acwrPenalty).toFixed(1));
-      }
-
-      // E. NUTRICIÓN, BITÁCORA DE COMIDAS Y LEY DE ATWATER (MBE: stepsNet, exact TEF, adaptive TDEE)
-      // stepsNet ya calculado arriba (steps - walkingSteps)
-
-      // Two-step TEF: preliminary TDEE for target macros -> TEF from target macros -> rmrActive = TMB*1.05 + TEF -> dynamicTDEE
-      // Step 1: Preliminary TDEE (without TEF in rmrActive)
-      const prelimRmrActive = tmbFeelfit * 1.15;
-      const neatStepsKcal = Math.max(0, (stepsNet - 2500) * 0.035);
-      const netExerciseKcal = workoutMin * (strainScore >= 13 ? 5.5 : 4.2);
-      const prelimTdee = Math.round(prelimRmrActive + neatStepsKcal + netExerciseKcal);
-
-      // Step 2: Target macros from preliminary TDEE -> TEF estimate
-      const desiredDeficit = strainScore >= 14.0 ? Math.max(250, PROF.deficit - 50) : PROF.deficit;
-      let rawTargetKcal = Math.min(2450, Math.max(1650, prelimTdee - desiredDeficit));
-      const targetProt = Math.round(2.35 * ffmKg);
-      const targetFat = Math.round(0.72 * rawW);
-      let targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
-      const prelimTefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
-
-      // Step 3: rmrActive with TEF included (TMB * 1.05 + TEF)
-      const rmrActive = Math.round(tmbFeelfit * 1.05 + prelimTefEstimate);
-      let dynamicTdee = Math.round(rmrActive + neatStepsKcal + netExerciseKcal);
-
-      // Target macros from preliminary TDEE (already calculated above in two-step)
-      // desiredDeficit, targetProt, targetFat, targetCarbs, targetKcal, prelimTefEstimate already defined
-      let targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
-
-      // TEF teórico (basado en macros objetivo) - prelimTefEstimate already calculated
-      let tefEstimate = prelimTefEstimate;
-
-      // Determine real intake
-      const mealsLog = Array.isArray(todayRaw.meals_log_json) ? todayRaw.meals_log_json : [];
-      let realIntakeKcal = Math.max(0, parseInt(todayRaw.intake_kcal, 10) || 0);
-      let realProt = Math.max(0, parseFloat(todayRaw.intake_protein_g) || 0);
-      let realCarbs = Math.max(0, parseFloat(todayRaw.intake_carbs_g) || 0);
-      let realFat = Math.max(0, parseFloat(todayRaw.intake_fat_g) || 0);
-
-      if (mealsLog.length > 0 && realIntakeKcal === 0) {
-        realIntakeKcal = mealsLog.reduce((s, m) => s + (parseInt(m.kcal, 10) || 0), 0);
-        realProt = mealsLog.reduce((s, m) => s + (parseFloat(m.prot) || 0), 0);
-        realCarbs = mealsLog.reduce((s, m) => s + (parseFloat(m.carbs) || 0), 0);
-        realFat = mealsLog.reduce((s, m) => s + (parseFloat(m.fat) || 0), 0);
-      } else if (realIntakeKcal > 0 && realProt === 0 && realCarbs === 0 && realFat === 0) {
-        const ratio = realIntakeKcal / targetKcal;
-        realProt = Math.round(targetProt * ratio);
-        realCarbs = Math.round(targetCarbs * ratio);
-        realFat = Math.round(targetFat * ratio);
-      }
-
-      
-
-      // TDEE adaptativo: ingesta media vs cambio de peso-tendencia (span por fechas); null si <7d válidos
-      let empiricalTdee = null;
-      let meanIntake = 0;
-      let deltaTrendW = 0;
-      const win14 = historyRawList.slice(0, 14);
-      const validIntakeDays = win14.filter(r => parseInt(r.intake_kcal, 10) >= 1200);
-      if (validIntakeDays.length >= 7 && todayRaw.log_date) {
-        meanIntake = validIntakeDays.reduce((s, r) => s + parseInt(r.intake_kcal, 10), 0) / validIntakeDays.length;
-        const wOf = (r) => { const t = parseFloat(r.trend_weight_kg), w = parseFloat(r.weight_kg); return t >= 65 ? t : (w >= 65 ? w : NaN); };
-        const oldest = [...win14].reverse().find(r => r.log_date && Number.isFinite(wOf(r)));
-        if (oldest) {
-          const spanDays = Math.max(7, Math.min(14, Math.round((new Date(todayRaw.log_date + 'T12:00:00Z') - new Date(oldest.log_date + 'T12:00:00Z')) / 86400000)));
-          deltaTrendW = trendW - wOf(oldest);
-          empiricalTdee = Math.round(meanIntake - (deltaTrendW * 7700 / spanDays));
-          empiricalTdee = Math.max(Math.round(dynamicTdee * 0.75), Math.min(Math.round(dynamicTdee * 1.25), empiricalTdee));
-          dynamicTdee = Math.round((dynamicTdee + empiricalTdee) / 2);
-          rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
-          targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
-          targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
-        }
-      }
-      // TEF siempre sobre macros meta finales (consistente)
-      tefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
-
-      // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO (MBE: clean VO2max, 0.06 deltaRhr, -0.25 deltaLnRmssd separated)
-      const hrMax = 208 - (0.7 * chronologicalAge);
-      // VO2max limpio (Uth): sin modificador FFM para evitar colinealidad
-      const vo2Max = +(15.3 * (hrMax / meanRhr)).toFixed(1);
-
-      const deltaVo2 = +Math.max(-3.2, Math.min(2.5, -0.18 * (vo2Max - 43.0))).toFixed(1);
-      // Desacople FC basal: deltaRhr (0.06 * (meanRhr - 60)) SEPARADO de deltaLnRmssd (-0.25 * (meanLn - 3.9))
-      const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.06 * (meanRhr - 60.0))).toFixed(1);
-      const deltaLnRmssd = +Math.max(-1.5, Math.min(1.5, -0.25 * (meanLn - 3.9))).toFixed(1);
-      const deltaFfm = +Math.max(-2.2, Math.min(2.2, -0.16 * (ffmPct - 79.0))).toFixed(1);
-      const deltaSleep = +Math.max(-1.5, Math.min(1.8, -0.025 * (sleepRegularityPct - 78) - 0.25 * ((sleepMissing ? 7.2 : tstMin / 60.0) - 7.2))).toFixed(1);
-      const avgSteps7d = meanArr([steps, ...historyRawList.slice(0, 6).map(r => parseInt(r.steps_count, 10) || 7500)]);
-      const deltaAct = +Math.max(-1.8, Math.min(1.5, -0.18 * ((avgSteps7d - 6500) / 1000.0) - (workoutMin >= 30 ? 0.35 : 0.0))).toFixed(1);
-
-      const totalAgeDelta = +(deltaVo2 + deltaRhr + deltaLnRmssd + deltaFfm + deltaSleep + deltaAct).toFixed(1);
-      const argonAge = +(chronologicalAge + totalAgeDelta).toFixed(1);
-      const paceOfAging = +Math.max(0.55, Math.min(1.65, 1.0 + (0.09 * totalAgeDelta))).toFixed(2);
-
-      const kcalLeft = Math.max(0, targetKcal - realIntakeKcal);
-      const recTxt = recoveryScore === null
-        ? `Recuperación en calibración (${histLn.length}/${MIN_BASELINE_DAYS} días)`
-        : `Recuperación ${recoveryScore}% (${recStatus === 'OPTIMAL' ? 'Óptima para alta carga' : 'Moderar intensidad'})`;
-      const coachNote = `${recTxt} | Strain hoy: ${strainScore.toFixed(1)}/21 (Meta: ${recMaxStrain}). ` +
-        `Peso Feelfit: ${rawW} kg (${rawBf}% grasa, ${ffmKg} kg sin grasa). Meta Atwater: ${targetKcal} kcal (Comido: ${realIntakeKcal} kcal, restan ${kcalLeft} kcal). Acuéstate entre ${fmtTime(startMin)} y ${fmtTime(endMin)}.`;
-
-      return {
-        log_date: todayRaw.log_date,
-        chronological_age: chronologicalAge,
-        calibrating: histLn.length < MIN_BASELINE_DAYS,
-        sleep_missing: sleepMissing,
-        hrv_missing: hrvMissing,
-        nap_sleep_min: napMin,
-        weight_kg: rawW,
-        body_fat_pct: rawBf,
-        fat_mass_kg: fatMassKg,
-        ffm_kg: ffmKg,
-        ffm_pct: ffmPct,
-        muscle_mass_kg: muscleMassKg,
-        bone_mass_kg: boneMassKg,
-        skeletal_muscle_pct: musclePct,
-        visceral_fat_index: visceral,
-        tmb_kcal: tmbFeelfit,
-        body_water_pct: waterPct,
-        water_mass_kg: waterMassKg,
-        bmi: bmi,
-        trend_weight_kg: trendW,
-        trend_body_fat_pct: trendBf,
-        rmssd_ms: +rmssdToday.toFixed(1),
-        rmssd_14d_mean_ms: +meanRmssd.toFixed(1),
-        rhr_bpm: +rhrToday.toFixed(1),
-        rhr_14d_mean_bpm: +meanRhr.toFixed(1),
-        resp_rate_brpm: +respToday.toFixed(1),
-        resp_14d_mean_brpm: +meanResp.toFixed(1),
-        spo2_pct: +spo2Today.toFixed(1),
-        ln_rmssd: +lnRmssdToday.toFixed(3),
-        ln_rmssd_14d_mean: +meanLn.toFixed(3),
-        ln_rmssd_14d_sd: +sdLn.toFixed(3),
-        hrv_z_score: +hrvZ.toFixed(2),
-        rhr_z_score: +rhrZ.toFixed(2),
-        recovery_score: recoveryScore,
-        recovery_status: recStatus,
-        recommended_max_strain: recMaxStrain,
-        time_in_bed_min: tibMin,
-        total_sleep_min: tstMin,
-        deep_sleep_min: deepMin,
-        rem_sleep_min: remMin,
-        light_sleep_min: lightMin,
-        sleep_efficiency_pct: +sePct.toFixed(1),
-        sleep_architecture_score: sleepArchScore,
-        sleep_hours_vs_needed_pct: hoursVsNeededPct,
-        sleep_regularity_pct: sleepRegularityPct,
-        high_sleep_stress_pct: highSleepStressPct,
-        cumulative_sleep_debt_hours: weightedDebtH,
-        dynamic_sleep_need_hours: +dynamicNeedH.toFixed(2),
-        optimal_bedtime_start: fmtTime(startMin),
-        optimal_bedtime_end: fmtTime(endMin),
-        steps_count: steps,
-        steps_net: stepsNet,
-        pickleball_or_gym_minutes: workoutMin,
-        session_rpe: sRpe,
-        hr_zones_minutes: Object.assign({}, zones, zonesReal ? { real: true } : {}, explicitWalk ? { walking_steps: explicitWalk } : {}),
-        z13_minutes: z13Min,
-        z45_minutes: z45Min,
-        is_hospital_shift: nightAwakeH > 0,
-        night_awake_shift_hours: nightAwakeH,
-        cardio_trimp_load: +cardioTrimp.toFixed(1),
-        neuromuscular_load: +neuroLoad.toFixed(1),
-        shift_orthostatic_load: +shiftLoad.toFixed(1),
-        strain_score: +strainScore.toFixed(1),
-        dynamic_tdee_kcal: dynamicTdee,
-        target_kcal: targetKcal,
-        target_protein_g: targetProt,
-        target_carbs_g: targetCarbs,
-        target_fat_g: targetFat,
-        intake_kcal: realIntakeKcal,
-        intake_protein_g: Math.round(realProt),
-        intake_carbs_g: Math.round(realCarbs),
-        intake_fat_g: Math.round(realFat),
-        meals_log_json: mealsLog,
-        vo2_max_ml_kg_min: vo2Max,
-        argon_physiological_age: argonAge,
-        total_age_delta: totalAgeDelta,
-        pace_of_aging_x: paceOfAging,
-        delta_vo2_years: deltaVo2,
-        delta_rhr_years: deltaRhr,
-        delta_lnrmssd_years: deltaLnRmssd,
-        delta_ffm_years: deltaFfm,
-        delta_sleep_years: deltaSleep,
-        delta_act_years: deltaAct,
-        // MBE new fields
-        dynamic_rmssd_cap_ms: dynamicRmssdCap,
-        cv_lnrmssd_7d_pct: cvLnRmssd7,
-        swc_lnrmssd: swcLnRmssd,
-        acwr_penalty_strain: +acwrPenalty.toFixed(2),
-        tef_kcal: tefEstimate,
-        empirical_tdee_kcal: empiricalTdee,
-        clinical_coach_notes: coachNote
-      };
+    
     }
 
     // ========================================================================
@@ -2362,7 +1920,8 @@
         fat: addFat
       });
 
-      const updatedRaw = {
+      // Optimistic UI update: only update intake fields locally for immediate feedback
+      const optimisticRaw = {
         ...current,
         intake_kcal: Math.max(0, (current.intake_kcal || 0) + addKcal),
         intake_protein_g: Math.max(0, (current.intake_protein_g || 0) + addProt),
@@ -2370,14 +1929,13 @@
         intake_fat_g: Math.max(0, (current.intake_fat_g || 0) + addFat),
         meals_log_json: currentMeals
       };
-
-      const pastList = Object.keys(store).filter(d => d < dateStr).sort().reverse().map(d => store[d]);
-      const recomputed = computeArgonDayScore(updatedRaw, pastList, pastList[0] || null);
-      store[dateStr] = recomputed;
-      setCache(dateStr, recomputed); // Update cache with optimistic recompute
+      store[dateStr] = optimisticRaw;
+      setCache(dateStr, optimisticRaw);
       saveLocalStore(store);
       loadDayData(dateStr);
-      if (supabaseClient) await pushDayToSupabase(recomputed);
+
+      // Thin-client: push raw to server, let server recompute MBE
+      if (supabaseClient) await pushDayToSupabase(optimisticRaw);
     }
 
     async function removeMealByIndex(idx) {
@@ -2394,7 +1952,8 @@
       const newCarbs = Math.round(meals.reduce((s, m) => s + (parseFloat(m.carbs) || 0), 0));
       const newFat = Math.round(meals.reduce((s, m) => s + (parseFloat(m.fat) || 0), 0));
 
-      const updatedRaw = {
+      // Optimistic UI update: only update intake fields locally for immediate feedback
+      const optimisticRaw = {
         ...current,
         intake_kcal: newKcal,
         intake_protein_g: newProt,
@@ -2402,13 +1961,13 @@
         intake_fat_g: newFat,
         meals_log_json: meals
       };
-      const pastList = Object.keys(store).filter(d => d < dateStr).sort().reverse().map(d => store[d]);
-      const recomputed = computeArgonDayScore(updatedRaw, pastList, pastList[0] || null);
-      store[dateStr] = recomputed;
-      setCache(dateStr, recomputed); // Update cache with optimistic recompute
+      store[dateStr] = optimisticRaw;
+      setCache(dateStr, optimisticRaw);
       saveLocalStore(store);
       loadDayData(dateStr);
-      if (supabaseClient) await pushDayToSupabase(recomputed);
+
+      // Thin-client: push raw to server, let server recompute MBE
+      if (supabaseClient) await pushDayToSupabase(optimisticRaw);
     }
 
     async function resetTodayMeals() {
@@ -2417,7 +1976,8 @@
       const current = store[dateStr];
       if (!current) return;
 
-      const updatedRaw = {
+      // Optimistic UI update: only clear intake fields locally for immediate feedback
+      const optimisticRaw = {
         ...current,
         intake_kcal: 0,
         intake_protein_g: 0,
@@ -2425,13 +1985,13 @@
         intake_fat_g: 0,
         meals_log_json: []
       };
-      const pastList = Object.keys(store).filter(d => d < dateStr).sort().reverse().map(d => store[d]);
-      const recomputed = computeArgonDayScore(updatedRaw, pastList, pastList[0] || null);
-      store[dateStr] = recomputed;
-      setCache(dateStr, recomputed);
+      store[dateStr] = optimisticRaw;
+      setCache(dateStr, optimisticRaw);
       saveLocalStore(store);
       loadDayData(dateStr);
-      if (supabaseClient) await pushDayToSupabase(recomputed);
+
+      // Thin-client: push raw to server, let server recompute MBE
+      if (supabaseClient) await pushDayToSupabase(optimisticRaw);
     }
 
     async function saveAndComputeManualEntry() {
@@ -2477,13 +2037,16 @@
         ['z1','z2','z3','z4','z5'].forEach((k, i) => { zo[k] = zs[i] !== null ? zs[i] : (parseFloat(pz[k]) || 0); });
         rawInput.hr_zones_minutes = zo;
       }
-      const computed = computeArgonDayScore(rawInput, pastList, pastList[0] || null);
-      store[dateStr] = computed;
-      setCache(dateStr, computed);
+
+      // Optimistic UI update: show raw input immediately
+      store[dateStr] = rawInput;
+      setCache(dateStr, rawInput);
       saveLocalStore(store);
       closeModal('log-modal');
       loadDayData(dateStr);
-      if (supabaseClient) await pushDayToSupabase(computed);
+
+      // Thin-client: push raw to server, let server recompute MBE
+      if (supabaseClient) await pushDayToSupabase(rawInput);
     }
 
     function addDaysIso(iso, n) {
@@ -2492,67 +2055,6 @@
       return d.toISOString().slice(0, 10);
     }
 
-    async function seedCalibratedFeelfitHistory(pushCloud = false) {
-      if (Object.keys(getLocalStore()).length > 0 && !confirm('Esto reemplaza tu historial local por datos simulados de calibración. ¿Continuar?')) return;
-      pushCloud = false;
-      const existingStore = getLocalStore();
-      const todayIso = getLocalTodayIso();
-      const existingToday = existingStore[todayIso] || {};
-
-      const store = { ...existingStore };
-      const today = new Date();
-      let prevComp = null;
-      const historyRaw = [];
-
-      for (let i = 13; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(today.getDate() - i);
-        const dateStr = addDaysIso(todayIso, -i);
-        if (existingStore[dateStr]) {
-          prevComp = existingStore[dateStr];
-          historyRaw.push(existingStore[dateStr]);
-          continue;
-        }
-
-        const isToday = (i === 0);
-        const isPickleball = (!isToday && i % 2 === 0);
-
-        const raw = {
-          log_date: dateStr,
-          weight_kg: isToday ? (existingToday.weight_kg || 86.80) : +(86.85 + (i * 0.04)).toFixed(2),
-          body_fat_pct: isToday ? (existingToday.body_fat_pct || 24.1) : +(24.1 + (i * 0.02)).toFixed(1),
-          rmssd_ms: isToday ? 50.0 : +(49.5 + Math.sin(i) * 4.5).toFixed(1),
-          rhr_bpm: isToday ? 54.5 : +(55.0 - Math.sin(i) * 1.8).toFixed(1),
-          total_sleep_min: isToday ? (existingToday.total_sleep_min || 451) : Math.round(450 + Math.cos(i) * 12),
-          time_in_bed_min: 480,
-          deep_sleep_min: isToday ? (existingToday.deep_sleep_min || 61) : 88,
-          rem_sleep_min: isToday ? (existingToday.rem_sleep_min || 131) : 98,
-          pickleball_or_gym_minutes: isToday ? 0 : (isPickleball ? 85 : 30),
-          session_rpe: isToday ? 0 : (isPickleball ? 7.5 : 5.5),
-          steps_count: isToday ? (existingToday.steps_count || 0) : (isPickleball ? 11500 : 8200),
-          night_awake_shift_hours: 0.0,
-          resp_rate_brpm: 14.1,
-          spo2_pct: 97.6,
-          intake_kcal: isToday ? (existingToday.intake_kcal || 0) : 1743,
-          intake_protein_g: isToday ? (existingToday.intake_protein_g || 0) : 155,
-          intake_carbs_g: isToday ? (existingToday.intake_carbs_g || 0) : 139,
-          intake_fat_g: isToday ? (existingToday.intake_fat_g || 0) : 63,
-          meals_log_json: isToday ? (existingToday.meals_log_json || []) : []
-        };
-
-        const comp = computeArgonDayScore(raw, [...historyRaw].reverse(), prevComp);
-        store[dateStr] = comp;
-        setCache(dateStr, comp);
-        historyRaw.push(raw);
-        prevComp = comp;
-
-        if (pushCloud && supabaseClient) {
-          await pushDayToSupabase(comp);
-        }
-      }
-
-      saveLocalStore(store);
-      loadDayData(todayIso);
     }
 
     async function pushDayToSupabase(c) {
@@ -2661,11 +2163,11 @@
               record.weight_kg = (r.weight_kg && r.weight_kg >= 65) ? parseFloat(r.weight_kg) : (c.weight_kg ?? lastW);
               record.body_fat_pct = (r.body_fat_pct && r.body_fat_pct >= 10) ? parseFloat(r.body_fat_pct) : (c.body_fat_pct ?? lastBf);
             } else {
-              // Fallback: client recompute (legacy)
+              // Thin-client: server has raw but no computed yet. Use raw data directly without local MBE compute.
+              // Server will compute asynchronously. UI shows raw values, MBE fields stay empty until server sync.
               const lastW = prevComp ? prevComp.weight_kg : 86.80;
               const lastBf = prevComp ? prevComp.body_fat_pct : 24.1;
-              const merged = {
-                ...c,
+              record = {
                 ...r,
                 log_date: dStr,
                 weight_kg: (r.weight_kg && r.weight_kg >= 65) ? parseFloat(r.weight_kg) : lastW,
@@ -2676,9 +2178,10 @@
                 intake_protein_g: parseFloat(r.intake_protein_g) || 0,
                 intake_carbs_g: parseFloat(r.intake_carbs_g) || 0,
                 intake_fat_g: parseFloat(r.intake_fat_g) || 0,
-                meals_log_json: Array.isArray(r.meals_log_json) ? r.meals_log_json : []
+                meals_log_json: Array.isArray(r.meals_log_json) ? r.meals_log_json : [],
+                // Mark that server computation is pending
+                _server_pending: true
               };
-              record = computeArgonDayScore(merged, [...historyRaw].reverse(), prevComp);
             }
 
             // Cache server-computed data for instant tab switching
@@ -3153,7 +2656,7 @@
       sync: () => syncFromSupabase(),
       settings: () => openModal('settings-modal'),
       qa: () => runQualityAuditModal(),
-      demo: () => { if (confirm('Esto agrega datos DEMO solo en días vacíos (solo local). ¿Continuar?')) seedCalibratedFeelfitHistory(false); },
+      demo: () => { showToast('Función de datos demo eliminada - usa datos reales'); },
       export: () => {
         try {
           const payload = { exported_at: new Date().toISOString(), records: getLocalStore(), journal: JSON.parse(localStorage.getItem('argon_journal_v1') || '{}') };
@@ -3531,11 +3034,27 @@
     ['profile-modal', 'workout-modal', 'meal-modal'].forEach(wireSheet);
     document.head.insertAdjacentHTML('beforeend', '<style>.ml-row{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:9px 10px;border-radius:14px;background:rgba(2,6,23,.65);border:1px solid rgba(255,255,255,.06);font-size:12px;color:#E2E8F0}.ml-row:active{transform:scale(.98)}</style>');
 
-    // ---------- recalcular todo local ----------
-    function recomputeAll() {
-      const st = getLocalStore(), ds = Object.keys(st).sort(); let prev = null; const hist = [], out = {};
-      ds.forEach(d => { const c = computeArgonDayScore(st[d], [...hist].reverse(), prev); out[d] = c; hist.push(c); prev = c; });
-      saveLocalStore(out); loadDayData(sel());
+    // ---------- recalcular todo local (thin-client: solo sincroniza raw, servidor recalcula) ----------
+    async function recomputeAll() {
+      const st = getLocalStore(), ds = Object.keys(st).sort();
+      if (!supabaseClient) {
+        console.warn('No supabaseClient - solo datos raw locales (sin MBE)');
+        // Without server, we can't compute MBE. Just keep raw data as-is.
+        loadDayData(sel());
+        showToast('Modo offline: MBE requiere servidor');
+        return;
+      }
+      // Thin-client: push all raw days to server, trigger recalc
+      for (const d of ds) {
+        try {
+          await pushDayToSupabase(st[d]);
+        } catch (e) {
+          console.error('Error pushing day', d, e);
+        }
+      }
+      // After push, sync will pull server-computed data
+      await syncFromSupabase();
+      showToast('✓ Datos enviados al servidor para recálculo MBE');
     }
 
     // ---------- PERFIL ----------
@@ -3578,12 +3097,16 @@
     async function applyWorkouts(date) {
       const store = getLocalStore(), cur = store[date]; if (!cur) return;
       const ag = aggregateWorkouts(wkDay(date), cur.hr_zones_minutes);
-      const raw = Object.assign({}, cur, { pickleball_or_gym_minutes: ag.min, session_rpe: ag.rpe });
-      if (ag.zones) raw.hr_zones_minutes = ag.zones;
-      const past = Object.keys(store).filter(d => d < date).sort().reverse().map(d => store[d]);
-      const comp = computeArgonDayScore(raw, past, past[0] || null);
-      store[date] = comp; setCache(date, comp); saveLocalStore(store); loadDayData(date);
-      if (typeof supabaseClient !== 'undefined' && supabaseClient) await pushDayToSupabase(comp);
+      // Optimistic UI update: update workout fields locally for immediate feedback
+      const optimisticRaw = Object.assign({}, cur, { pickleball_or_gym_minutes: ag.min, session_rpe: ag.rpe });
+      if (ag.zones) optimisticRaw.hr_zones_minutes = ag.zones;
+      store[date] = optimisticRaw;
+      setCache(date, optimisticRaw);
+      saveLocalStore(store);
+      loadDayData(date);
+
+      // Thin-client: push raw to server, let server recompute MBE
+      if (typeof supabaseClient !== 'undefined' && supabaseClient) await pushDayToSupabase(optimisticRaw);
     }
     function wkTypeButtons() { $('wk-types').innerHTML = WTYPES.map(t => `<button class="jchip ${t[0] === wkType ? 'on' : ''}" onclick="wkPickType('${t[0]}')">${t[1]}</button>`).join(''); }
     window.wkPickType = (k) => { wkType = k; const t = WTYPES.find(x => x[0] === k); $('wk-rpe').value = t[2]; wkRpeLabel(); wkTypeButtons(); };
