@@ -1138,6 +1138,20 @@
       } catch { }
     }
 
+    // Helper: acceso seguro a campos (thin-client → server puede devolver null)
+    function s(obj, key, def = '--') {
+      const v = obj?.[key];
+      return (v === null || v === undefined || Number.isNaN(v)) ? def : v;
+    }
+    function sf(obj, key, fixed = 1, def = '--') {
+      const v = obj?.[key];
+      return (v === null || v === undefined || Number.isNaN(v)) ? def : Number(v).toFixed(fixed);
+    }
+    function si(obj, key, def = '--') {
+      const v = obj?.[key];
+      return (v === null || v === undefined || Number.isNaN(v)) ? def : String(v);
+    }
+
     // Carga rango de fechas (30d) — usa índices DESC en Supabase
     async function loadRangeData(startDate, endDate) {
       if (!supabaseClient) return { raw: {}, comp: {} };
@@ -1956,28 +1970,28 @@
       const badgeRec = document.getElementById('badge-recovery');
       badgeRec.textContent = record.sleep_missing ? 'SIN SUEÑO' : record.hrv_missing ? 'SIN VFC' : record.calibrating ? 'CALIBRANDO' : (recPct >= 67 ? 'ÓPTIMO' : (recPct >= 34 ? 'MODERADO' : 'FATIGA SNC'));
       badgeRec.style.color = recColor;
-      document.getElementById('sub-recovery').textContent = `VFC: ${record.rmssd_ms} ms`;
+      document.getElementById('sub-recovery').textContent = `VFC: ${s(record, 'rmssd_ms')} ms`;
 
-      const strainVal = record.strain_score;
+      const strainVal = s(record, 'strain_score', 0);
       document.getElementById('ring-strain').style.strokeDashoffset = circ - (Math.min(21, strainVal) / 21.0) * circ;
-      document.getElementById('val-strain').textContent = strainVal.toFixed(1);
-      document.getElementById('ring-strain').style.stroke = strainVal > record.recommended_max_strain ? '#EF4444' : (strainVal >= record.recommended_max_strain * 0.8 ? '#F59E0B' : '#06B6D4');
-      document.getElementById('badge-strain-target').textContent = `Meta: ${record.recommended_max_strain}`;
-      document.getElementById('sub-strain').textContent = `${record.steps_count.toLocaleString()} pasos`;
+      document.getElementById('val-strain').textContent = sf(record, 'strain_score', 1);
+      document.getElementById('ring-strain').style.stroke = strainVal > s(record, 'recommended_max_strain', 21) ? '#EF4444' : (strainVal >= s(record, 'recommended_max_strain', 21) * 0.8 ? '#F59E0B' : '#06B6D4');
+      document.getElementById('badge-strain-target').textContent = `Meta: ${s(record, 'recommended_max_strain', 21)}`;
+      document.getElementById('sub-strain').textContent = `${s(record, 'steps_count', 0).toLocaleString()} pasos`;
 
-      const sleepPct = Math.round(record.sleep_architecture_score);
+      const sleepPct = Math.round(s(record, 'sleep_architecture_score', 0));
       document.getElementById('ring-sleep').style.strokeDashoffset = circ - (sleepPct / 100) * circ;
       document.getElementById('val-sleep').textContent = record.sleep_missing ? '--' : `${sleepPct}%`;
-      document.getElementById('badge-sleep-eff').textContent = `Efic: ${Math.round(record.sleep_efficiency_pct)}%`;
-      document.getElementById('sub-sleep').textContent = `Deuda: ${record.cumulative_sleep_debt_hours}h`;
+      document.getElementById('badge-sleep-eff').textContent = `Efic: ${Math.round(s(record, 'sleep_efficiency_pct', 0))}%`;
+      document.getElementById('sub-sleep').textContent = `Deuda: ${s(record, 'cumulative_sleep_debt_hours', 0)}h`;
 
-      document.getElementById('clinical-coach-notes').textContent = record.clinical_coach_notes;
+      document.getElementById('clinical-coach-notes').textContent = s(record, 'clinical_coach_notes', 'Sin datos');
 
       const wk = document.getElementById('week-strip');
       if (wk) {
         const last7 = allRecordsSorted.filter(r => r.log_date <= record.log_date).slice(-7);
         wk.innerHTML = last7.map(r => {
-          const v = r.recovery_score || 0;
+          const v = s(r, 'recovery_score', 0);
           const c = v >= 67 ? '#10B981' : (v >= 34 ? '#F59E0B' : '#EF4444');
           const sel = r.log_date === record.log_date;
           const dow = ['D', 'L', 'M', 'M', 'J', 'V', 'S'][new Date(r.log_date + 'T12:00:00').getDay()];
@@ -1986,45 +2000,50 @@
       }
 
       // 2. Bioimpedancia Feelfit y Macros
-      document.getElementById('weight-trend').textContent = `${record.weight_kg.toFixed(2)} kg`;
-      document.getElementById('ffm-label').textContent = `Sin grasa: ${record.ffm_kg}kg | EWMA: ${record.trend_weight_kg}`;
-      document.getElementById('bf-trend').textContent = `${record.body_fat_pct}%`;
-      document.getElementById('fat-kg-label').textContent = `Grasa: ${record.fat_mass_kg} kg | IMC: ${record.bmi}`;
-      document.getElementById('metric-muscle').textContent = `${record.skeletal_muscle_pct}%`;
-      document.getElementById('muscle-mass-sub').textContent = `Muscular: ${record.muscle_mass_kg} kg`;
-      document.getElementById('metric-visceral').textContent = `${record.visceral_fat_index}`;
-      document.getElementById('metric-water').textContent = `${record.body_water_pct}%`;
-      document.getElementById('water-prot-sub').textContent = `${record.water_mass_kg} kg`;
-      document.getElementById('metric-tmb').textContent = `${record.tmb_kcal} kcal`;
-      document.getElementById('tmb-sub').textContent = `Ósea: ${record.bone_mass_kg}kg`;
+      document.getElementById('weight-trend').textContent = `${sf(record, 'weight_kg', 2)} kg`;
+      document.getElementById('ffm-label').textContent = `Sin grasa: ${s(record, 'ffm_kg')}kg | EWMA: ${s(record, 'trend_weight_kg')}`;
+      document.getElementById('bf-trend').textContent = `${sf(record, 'body_fat_pct', 1)}%`;
+      document.getElementById('fat-kg-label').textContent = `Grasa: ${s(record, 'fat_mass_kg')} kg | IMC: ${sf(record, 'bmi', 1)}`;
+      document.getElementById('metric-muscle').textContent = `${sf(record, 'skeletal_muscle_pct', 1)}%`;
+      document.getElementById('muscle-mass-sub').textContent = `Muscular: ${s(record, 'muscle_mass_kg')} kg`;
+      document.getElementById('metric-visceral').textContent = `${s(record, 'visceral_fat_index')}`;
+      document.getElementById('metric-water').textContent = `${sf(record, 'body_water_pct', 1)}%`;
+      document.getElementById('water-prot-sub').textContent = `${s(record, 'water_mass_kg')} kg`;
+      document.getElementById('metric-tmb').textContent = `${s(record, 'tmb_kcal')} kcal`;
+      document.getElementById('tmb-sub').textContent = `Ósea: ${s(record, 'bone_mass_kg')}kg`;
 
-      const deficitToday = Math.max(250, record.dynamic_tdee_kcal - record.target_kcal);
+      const dynamicTdee = s(record, 'dynamic_tdee_kcal', 2400);
+      const targetKcal = s(record, 'target_kcal', 2000);
+      const deficitToday = Math.max(250, dynamicTdee - targetKcal);
       const weeklyFatLossKg = +((deficitToday * 7) / 7700).toFixed(2);
-      const remainingKcal = Math.max(0, record.target_kcal - record.intake_kcal);
+      const remainingKcal = Math.max(0, targetKcal - s(record, 'intake_kcal', 0));
 
       document.getElementById('remaining-kcal-pill').textContent = `Restan: ${remainingKcal} kcal`;
-      document.getElementById('nutri-tdee').textContent = `${record.dynamic_tdee_kcal} kcal`;
+      document.getElementById('nutri-tdee').textContent = `${dynamicTdee} kcal`;
       document.getElementById('nutri-deficit').textContent = `-${deficitToday} kcal`;
       document.getElementById('fat-loss-rate').textContent = `-${weeklyFatLossKg} kg/sem`;
-      document.getElementById('nutri-target-kcal').textContent = `${record.target_kcal} kcal`;
-      document.getElementById('nutri-intake-kcal').textContent = `Comido: ${record.intake_kcal}`;
+      document.getElementById('nutri-target-kcal').textContent = `${targetKcal} kcal`;
+      document.getElementById('nutri-intake-kcal').textContent = `Comido: ${s(record, 'intake_kcal', 0)}`;
 
       // MBE: TEF display
       const tefEl = document.getElementById('nutri-tef');
-      if (tefEl) tefEl.textContent = `${record.tef_kcal || 0} kcal`;
+      if (tefEl) tefEl.textContent = `${s(record, 'tef_kcal', 0)} kcal`;
       const empSub = document.getElementById('nutri-emp-sub');
-      if (empSub) empSub.textContent = record.empirical_tdee_kcal ? `Empírico 14d: ${record.empirical_tdee_kcal}` : 'TMB+Pasos+Ej';
+      if (empSub) empSub.textContent = s(record, 'empirical_tdee_kcal') ? `Empírico 14d: ${s(record, 'empirical_tdee_kcal')}` : 'TMB+Pasos+Ej';
 
-      document.getElementById('macro-prot-text').textContent = `${record.intake_protein_g} / ${record.target_protein_g} g`;
-      document.getElementById('macro-carb-text').textContent = `${record.intake_carbs_g} / ${record.target_carbs_g} g`;
-      document.getElementById('macro-fat-text').textContent = `${record.intake_fat_g} / ${record.target_fat_g} g`;
+      document.getElementById('macro-prot-text').textContent = `${s(record, 'intake_protein_g', 0)} / ${s(record, 'target_protein_g', 0)} g`;
+      document.getElementById('macro-carb-text').textContent = `${s(record, 'intake_carbs_g', 0)} / ${s(record, 'target_carbs_g', 0)} g`;
+      document.getElementById('macro-fat-text').textContent = `${s(record, 'intake_fat_g', 0)} / ${s(record, 'target_fat_g', 0)} g`;
 
-      document.getElementById('bar-prot').style.width = `${Math.min(100, (record.intake_protein_g / Math.max(1, record.target_protein_g)) * 100)}%`;
-      document.getElementById('bar-carb').style.width = `${Math.min(100, (record.intake_carbs_g / Math.max(1, record.target_carbs_g)) * 100)}%`;
-      document.getElementById('bar-fat').style.width = `${Math.min(100, (record.intake_fat_g / Math.max(1, record.target_fat_g)) * 100)}%`;
+      const protTarget = s(record, 'target_protein_g', 1);
+      const carbTarget = s(record, 'target_carbs_g', 1);
+      const fatTarget = s(record, 'target_fat_g', 1);
+      document.getElementById('bar-prot').style.width = `${Math.min(100, (s(record, 'intake_protein_g', 0) / Math.max(1, protTarget)) * 100)}%`;
+      document.getElementById('bar-carb').style.width = `${Math.min(100, (s(record, 'intake_carbs_g', 0) / Math.max(1, carbTarget)) * 100)}%`;
+      document.getElementById('bar-fat').style.width = `${Math.min(100, (s(record, 'intake_fat_g', 0) / Math.max(1, fatTarget)) * 100)}%`;
 
-      const protGap = Math.max(0, record.target_protein_g - record.intake_protein_g);
-      const kcalLeftNow = Math.max(0, record.target_kcal - record.intake_kcal);
+      const protGap = Math.max(0, protTarget - s(record, 'intake_protein_g', 0));
+      const kcalLeftNow = Math.max(0, targetKcal - s(record, 'intake_kcal', 0));
       const pAlert = document.getElementById('protein-alert');
       if (pAlert) {
         if (protGap >= 10 && kcalLeftNow < protGap * 4) {
@@ -2036,9 +2055,9 @@
       const macroRingsEl = document.getElementById('macro-rings');
       if (macroRingsEl) {
         const defs = [
-          ['Proteína', record.intake_protein_g, record.target_protein_g, '#10B981'],
-          ['Carbs', record.intake_carbs_g, record.target_carbs_g, '#06B6D4'],
-          ['Grasas', record.intake_fat_g, record.target_fat_g, '#F59E0B']
+          ['Proteína', s(record, 'intake_protein_g', 0), protTarget, '#10B981'],
+          ['Carbs', s(record, 'intake_carbs_g', 0), carbTarget, '#06B6D4'],
+          ['Grasas', s(record, 'intake_fat_g', 0), fatTarget, '#F59E0B']
         ];
         macroRingsEl.innerHTML = defs.map(([lbl, cur, tgt, col]) => {
           const pct = Math.min(100, Math.round((cur / Math.max(1, tgt)) * 100));
@@ -2073,69 +2092,83 @@
       document.getElementById('metric-rmssd-ms').textContent = `${record.rmssd_ms} ms`;
       document.getElementById('base-hrv').textContent = `${record.rmssd_14d_mean_ms} ms base`;
       const deltaHrvEl = document.getElementById('delta-hrv');
-      deltaHrvEl.textContent = record.rmssd_ms >= record.rmssd_14d_mean_ms ? '▲' : '▼';
-      deltaHrvEl.className = record.rmssd_ms >= record.rmssd_14d_mean_ms ? 'text-[10px] text-emerald-400' : 'text-[10px] text-amber-400';
+      const rmssd = s(record, 'rmssd_ms', 0);
+      const rmssd14d = s(record, 'rmssd_14d_mean_ms', 0);
+      deltaHrvEl.textContent = rmssd >= rmssd14d ? '▲' : '▼';
+      deltaHrvEl.className = rmssd >= rmssd14d ? 'text-[10px] text-emerald-400' : 'text-[10px] text-amber-400';
 
-      document.getElementById('metric-rhr-z').textContent = `${record.rhr_z_score >= 0 ? '+' : ''}${record.rhr_z_score} SD`;
-      document.getElementById('metric-rhr').textContent = `${record.rhr_bpm} lpm`;
-      document.getElementById('base-rhr').textContent = `${record.rhr_14d_mean_bpm} lpm base`;
+      const hrvZ = s(record, 'hrv_z_score', 0);
+      const rhrZ = s(record, 'rhr_z_score', 0);
+      document.getElementById('metric-lnrmssd').textContent = sf(record, 'ln_rmssd', 3);
+      document.getElementById('z-score-pill').textContent = `${hrvZ >= 0 ? '+' : ''}${hrvZ} SD`;
+      document.getElementById('metric-rmssd-ms').textContent = `${rmssd} ms`;
+      document.getElementById('base-hrv').textContent = `${rmssd14d} ms base`;
+
+      document.getElementById('metric-rhr-z').textContent = `${rhrZ >= 0 ? '+' : ''}${rhrZ} SD`;
+      document.getElementById('metric-rhr').textContent = `${sf(record, 'rhr_bpm', 1)} lpm`;
+      document.getElementById('base-rhr').textContent = `${sf(record, 'rhr_14d_mean_bpm', 1)} lpm base`;
       const deltaRhrEl = document.getElementById('delta-rhr');
-      deltaRhrEl.textContent = record.rhr_bpm <= record.rhr_14d_mean_bpm ? '▼' : '▲';
-      deltaRhrEl.className = record.rhr_bpm <= record.rhr_14d_mean_bpm ? 'text-[10px] text-emerald-400' : 'text-[10px] text-amber-400';
+      const rhr = s(record, 'rhr_bpm', 0);
+      const rhr14d = s(record, 'rhr_14d_mean_bpm', 0);
+      deltaRhrEl.textContent = rhr <= rhr14d ? '▼' : '▲';
+      deltaRhrEl.className = rhr <= rhr14d ? 'text-[10px] text-emerald-400' : 'text-[10px] text-amber-400';
 
-      document.getElementById('metric-resp').textContent = `${record.resp_rate_brpm} rpm`;
-      document.getElementById('base-resp').textContent = `${record.resp_14d_mean_brpm} rpm base`;
-      document.getElementById('metric-spo2').textContent = `${record.spo2_pct}%`;
+      document.getElementById('metric-resp').textContent = `${sf(record, 'resp_rate_brpm', 1)} rpm`;
+      document.getElementById('base-resp').textContent = `${sf(record, 'resp_14d_mean_brpm', 1)} rpm base`;
+      document.getElementById('metric-spo2').textContent = `${sf(record, 'spo2_pct', 1)}%`;
       document.getElementById('rec-sleep-perf').textContent = `${sleepPct}%`;
 
       // MBE: CV 7d / SWC
       const cv7dEl = document.getElementById('metric-cv7d');
-      if (cv7dEl) cv7dEl.textContent = `${record.cv_lnrmssd_7d_pct || 0}%`;
+      if (cv7dEl) cv7dEl.textContent = `${sf(record, 'cv_lnrmssd_7d_pct', 1)}%`;
       const swcEl = document.getElementById('metric-swc');
-      if (swcEl) swcEl.textContent = `SWC: ${record.swc_lnrmssd ? record.swc_lnrmssd.toFixed(3) : '--'}`;
+      if (swcEl) swcEl.textContent = `SWC: ${sf(record, 'swc_lnrmssd', 3)}`;
 
       // 4. Calificación del Sueño (4 Pilares Clínicos)
-      const tstH = Math.floor(record.total_sleep_min / 60);
-      const tstM = record.total_sleep_min % 60;
+      const totalSleep = s(record, 'total_sleep_min', 0);
+      const tstH = Math.floor(totalSleep / 60);
+      const tstM = totalSleep % 60;
       document.getElementById('sleep-tst').textContent = record.sleep_missing ? 'Sin datos' : `${tstH}h ${tstM}m`;
-      const swsRemPct = Math.round(((record.deep_sleep_min + record.rem_sleep_min) / Math.max(1, record.total_sleep_min)) * 100);
-      document.getElementById('sleep-sws-rem').textContent = `SWS+REM: ${swsRemPct}%` + (record.nap_sleep_min ? ` · Siesta ${record.nap_sleep_min}m` : '');
-      document.getElementById('sleep-debt').textContent = `${record.cumulative_sleep_debt_hours} h`;
-      document.getElementById('sleep-window-badge').textContent = `${String(record.optimal_bedtime_start).slice(0,5)} - ${String(record.optimal_bedtime_end).slice(0,5)}`;
-      document.getElementById('sleep-need').textContent = `Necesitas: ${record.dynamic_sleep_need_hours}h`;
+      const deepSleep = s(record, 'deep_sleep_min', 0);
+      const remSleep = s(record, 'rem_sleep_min', 0);
+      const swsRemPct = Math.round(((deepSleep + remSleep) / Math.max(1, totalSleep)) * 100);
+      document.getElementById('sleep-sws-rem').textContent = `SWS+REM: ${swsRemPct}%` + (s(record, 'nap_sleep_min') ? ` · Siesta ${s(record, 'nap_sleep_min')}m` : '');
+      document.getElementById('sleep-debt').textContent = `${sf(record, 'cumulative_sleep_debt_hours', 1)} h`;
+      document.getElementById('sleep-window-badge').textContent = `${si(record, 'optimal_bedtime_start').slice(0,5)} - ${si(record, 'optimal_bedtime_end').slice(0,5)}`;
+      document.getElementById('sleep-need').textContent = `Necesitas: ${sf(record, 'dynamic_sleep_need_hours', 1)}h`;
 
-      document.getElementById('pillar-hours-pct').textContent = `${record.sleep_hours_vs_needed_pct}%`;
-      document.getElementById('bar-pillar-hours').style.width = `${record.sleep_hours_vs_needed_pct}%`;
-      document.getElementById('pillar-reg-pct').textContent = `${record.sleep_regularity_pct}%`;
-      document.getElementById('bar-pillar-reg').style.width = `${record.sleep_regularity_pct}%`;
-      const effRound = Math.round(record.sleep_efficiency_pct);
+      document.getElementById('pillar-hours-pct').textContent = `${s(record, 'sleep_hours_vs_needed_pct', 0)}%`;
+      document.getElementById('bar-pillar-hours').style.width = `${s(record, 'sleep_hours_vs_needed_pct', 0)}%`;
+      document.getElementById('pillar-reg-pct').textContent = `${s(record, 'sleep_regularity_pct', 0)}%`;
+      document.getElementById('bar-pillar-reg').style.width = `${s(record, 'sleep_regularity_pct', 0)}%`;
+      const effRound = Math.round(s(record, 'sleep_efficiency_pct', 0));
       document.getElementById('pillar-eff-pct').textContent = `${effRound}%`;
       document.getElementById('bar-pillar-eff').style.width = `${effRound}%`;
-      document.getElementById('pillar-stress-pct').textContent = `${record.high_sleep_stress_pct}%`;
-      document.getElementById('bar-pillar-stress').style.width = `${Math.max(6, record.high_sleep_stress_pct)}%`;
+      document.getElementById('pillar-stress-pct').textContent = `${s(record, 'high_sleep_stress_pct', 0)}%`;
+      document.getElementById('bar-pillar-stress').style.width = `${Math.max(6, s(record, 'high_sleep_stress_pct', 0))}%`;
 
-      const deepPct = Math.round((record.deep_sleep_min / Math.max(1, record.total_sleep_min)) * 100);
-      const remPct = Math.round((record.rem_sleep_min / Math.max(1, record.total_sleep_min)) * 100);
+      const deepPct = Math.round((deepSleep / Math.max(1, totalSleep)) * 100);
+      const remPct = Math.round((remSleep / Math.max(1, totalSleep)) * 100);
       const lightPct = Math.max(0, 100 - deepPct - remPct);
-      document.getElementById('label-deep').textContent = `🟦 Profundo (SWS): ${record.deep_sleep_min}m (${deepPct}%)`;
-      document.getElementById('label-rem').textContent = `🟪 REM: ${record.rem_sleep_min}m (${remPct}%)`;
-      document.getElementById('label-light').textContent = `⬜ Ligero: ${record.light_sleep_min}m`;
+      document.getElementById('label-deep').textContent = `🟦 Profundo (SWS): ${deepSleep}m (${deepPct}%)`;
+      document.getElementById('label-rem').textContent = `🟪 REM: ${remSleep}m (${remPct}%)`;
+      document.getElementById('label-light').textContent = `⬜ Ligero: ${s(record, 'light_sleep_min', 0)}m`;
       document.getElementById('bar-deep').style.width = `${deepPct}%`;
       document.getElementById('bar-rem').style.width = `${remPct}%`;
       document.getElementById('bar-light').style.width = `${lightPct}%`;
 
       // 5. Esfuerzo 4D
-      document.getElementById('load-cardio').textContent = `${record.cardio_trimp_load} AU`;
-      document.getElementById('load-neuro').textContent = `${record.neuromuscular_load} AU`;
-      document.getElementById('load-workout-min').textContent = `${record.pickleball_or_gym_minutes} min sesión`;
-      document.getElementById('load-shift').textContent = `${record.shift_orthostatic_load} AU`;
-      document.getElementById('strain-z13-time').textContent = fmtHoursMin(record.z13_minutes);
-      document.getElementById('strain-z45-time').textContent = fmtHoursMin(record.z45_minutes);
-      document.getElementById('strain-strength-time').textContent = fmtHoursMin(record.pickleball_or_gym_minutes);
-      document.getElementById('load-steps').textContent = record.steps_count.toLocaleString();
+      document.getElementById('load-cardio').textContent = `${sf(record, 'cardio_trimp_load', 1)} AU`;
+      document.getElementById('load-neuro').textContent = `${sf(record, 'neuromuscular_load', 1)} AU`;
+      document.getElementById('load-workout-min').textContent = `${s(record, 'pickleball_or_gym_minutes', 0)} min sesión`;
+      document.getElementById('load-shift').textContent = `${sf(record, 'shift_orthostatic_load', 1)} AU`;
+      document.getElementById('strain-z13-time').textContent = fmtHoursMin(s(record, 'z13_minutes', 0));
+      document.getElementById('strain-z45-time').textContent = fmtHoursMin(s(record, 'z45_minutes', 0));
+      document.getElementById('strain-strength-time').textContent = fmtHoursMin(s(record, 'pickleball_or_gym_minutes', 0));
+      document.getElementById('load-steps').textContent = s(record, 'steps_count', 0).toLocaleString();
 
       const shiftBadge = document.getElementById('shift-badge');
-      if (record.shift_orthostatic_load > 0) {
+      if (s(record, 'shift_orthostatic_load', 0) > 0) {
         shiftBadge.textContent = 'Guardia Nocturna Activa';
         shiftBadge.className = 'text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40';
       } else {
@@ -2146,7 +2179,7 @@
       // MBE: ACWR badge
       const acwrBadge = document.getElementById('acwr-badge');
       if (acwrBadge) {
-        const acwrPenalty = record.acwr_penalty_strain || 0;
+        const acwrPenalty = s(record, 'acwr_penalty_strain', 0);
         acwrBadge.textContent = acwrPenalty > 0 ? `ACWR: -${acwrPenalty.toFixed(1)} meta` : 'ACWR Óptimo';
         acwrBadge.className = acwrPenalty > 0.5
           ? 'text-[9px] px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40'
@@ -2155,28 +2188,28 @@
 
       // MBE: NEAT steps (steps_net)
       const stepsNetEl = document.getElementById('load-steps-net');
-      if (stepsNetEl) stepsNetEl.textContent = `NEAT: ${(record.steps_net || 0).toLocaleString()}`;
+      if (stepsNetEl) stepsNetEl.textContent = `NEAT: ${s(record, 'steps_net', 0).toLocaleString()}`;
 
       // 6. Edad Fisiológica ARGON
-      document.getElementById('argon-age-val').textContent = record.argon_physiological_age.toFixed(1);
+      document.getElementById('argon-age-val').textContent = sf(record, 'argon_physiological_age', 1);
       const ageDeltaEl = document.getElementById('argon-age-delta-badge');
-      ageDeltaEl.textContent = `${fmtDeltaYears(record.total_age_delta)} vs cronológica`;
-      ageDeltaEl.className = record.total_age_delta <= 0 ? 'text-xs font-bold text-emerald-400' : 'text-xs font-bold text-amber-400';
+      ageDeltaEl.textContent = `${fmtDeltaYears(s(record, 'total_age_delta', 0))} vs cronológica`;
+      ageDeltaEl.className = s(record, 'total_age_delta', 0) <= 0 ? 'text-xs font-bold text-emerald-400' : 'text-xs font-bold text-amber-400';
 
-      document.getElementById('pace-of-aging-val').textContent = `${record.pace_of_aging_x.toFixed(2)}x`;
-      document.getElementById('vo2max-val').textContent = `${record.vo2_max_ml_kg_min} ml/kg/min`;
-      document.getElementById('vo2max-age-impact').textContent = fmtDeltaYears(record.delta_vo2_years);
-      document.getElementById('rhr-age-val').textContent = `${record.rhr_14d_mean_bpm} lpm`;
-      document.getElementById('rhr-age-impact').textContent = fmtDeltaYears(record.delta_rhr_years);
-      document.getElementById('ffm-pct-val').textContent = `${record.ffm_pct}% (${record.ffm_kg} kg)`;
-      document.getElementById('ffm-age-impact').textContent = fmtDeltaYears(record.delta_ffm_years);
-      document.getElementById('sleep-age-impact').textContent = fmtDeltaYears(record.delta_sleep_years);
-      document.getElementById('activity-age-impact').textContent = fmtDeltaYears(record.delta_act_years);
+      document.getElementById('pace-of-aging-val').textContent = `${sf(record, 'pace_of_aging_x', 2)}x`;
+      document.getElementById('vo2max-val').textContent = `${sf(record, 'vo2_max_ml_kg_min', 1)} ml/kg/min`;
+      document.getElementById('vo2max-age-impact').textContent = fmtDeltaYears(s(record, 'delta_vo2_years', 0));
+      document.getElementById('rhr-age-val').textContent = `${sf(record, 'rhr_14d_mean_bpm', 1)} lpm`;
+      document.getElementById('rhr-age-impact').textContent = fmtDeltaYears(s(record, 'delta_rhr_years', 0));
+      document.getElementById('ffm-pct-val').textContent = `${sf(record, 'ffm_pct', 1)}% (${s(record, 'ffm_kg', 0)} kg)`;
+      document.getElementById('ffm-age-impact').textContent = fmtDeltaYears(s(record, 'delta_ffm_years', 0));
+      document.getElementById('sleep-age-impact').textContent = fmtDeltaYears(s(record, 'delta_sleep_years', 0));
+      document.getElementById('activity-age-impact').textContent = fmtDeltaYears(s(record, 'delta_act_years', 0));
       // MBE: Vagal tone (delta_lnrmssd_years)
       const lnrmssdAgeEl = document.getElementById('lnrmssd-age-impact');
-      if (lnrmssdAgeEl) lnrmssdAgeEl.textContent = fmtDeltaYears(record.delta_lnrmssd_years);
+      if (lnrmssdAgeEl) lnrmssdAgeEl.textContent = fmtDeltaYears(s(record, 'delta_lnrmssd_years', 0));
       const lnV = document.getElementById('lnrmssd-age-val');
-      if (lnV) lnV.textContent = `${record.ln_rmssd_14d_mean} ln`;
+      if (lnV) lnV.textContent = `${sf(record, 'ln_rmssd_14d_mean', 3)} ln`;
 
       const sparkSvg = (vals, col, base) => {
         const v = vals.map(Number).filter(x => Number.isFinite(x));
@@ -2189,9 +2222,9 @@
       };
       const last7s = allRecordsSorted.filter(r => r.log_date <= record.log_date).slice(-7);
       const sparkH = document.getElementById('spark-hrv');
-      if (sparkH) sparkH.innerHTML = sparkSvg(last7s.map(r => r.rmssd_ms), '#10B981', record.rmssd_14d_mean_ms);
+      if (sparkH) sparkH.innerHTML = sparkSvg(last7s.map(r => s(r, 'rmssd_ms')), '#10B981', s(record, 'rmssd_14d_mean_ms'));
       const sparkR = document.getElementById('spark-rhr');
-      if (sparkR) sparkR.innerHTML = sparkSvg(last7s.map(r => r.rhr_bpm), '#06B6D4', record.rhr_14d_mean_bpm);
+      if (sparkR) sparkR.innerHTML = sparkSvg(last7s.map(r => s(r, 'rhr_bpm')), '#06B6D4', s(record, 'rhr_14d_mean_bpm'));
 
       renderGoalProgress(record, allRecordsSorted);
       renderApexTelemetry(allRecordsSorted.slice(-14));
