@@ -235,8 +235,14 @@
       if (error) throw error;
       const row = data && data[0];
       let pass, detail;
+      const todayIso = getLocalTodayIso();
+      const isToday = dateStr === todayIso;
       if (!row) {
-        pass = false; detail = `No existe fila en daily_raw_biometrics para ${dateStr}.`;
+        if (isToday) {
+          pass = true; detail = 'Webhook aún no ha sincronizado hoy (cada 15 min).';
+        } else {
+          pass = false; detail = `No existe fila en daily_raw_biometrics para ${dateStr}.`;
+        }
       } else if (!rec) {
         pass = false; detail = 'Sin registro local para comparar.';
       } else {
