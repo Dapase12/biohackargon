@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ARGON — Parcheador Idempotente Code.txt</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+    .status-ok { color: #22c55e; }
+    .status-warn { color: #fbbf24; }
+    .status-err { color: #ef4444; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-6">
+  <div class="max-w-4xl mx-auto space-y-6">
+    <header>
+      <h1 class="text-2xl font-black tracking-tight">⚙️ Parcheador Idempotente <span class="text-cyan-400">Code.txt</span></h1>
+      <p class="text-slate-400 text-sm mt-1">Aplica cambios mínimos y seguros al backend de Google Apps Script</p>
+    </header>
+
+    <section class="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 space-y-4">
+      <h2 class="text-lg font-bold text-cyan-300">1. Pegar Code.txt actual</h2>
+      <textarea id="currentCode" class="mono w-full h-60 bg-slate-950 border border-slate-700 rounded-xl p-4 text-slate-100 placeholder-slate-500" placeholder="Pega aquí el contenido ACTUAL de tu Code.gs en Apps Script..."></textarea>
+      <div class="flex gap-3">
+        <button onclick="analyze()" class="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-black font-bold rounded-xl transition">Analizar</button>
+        <button onclick="clearAll()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition">Limpiar</button>
+      </div>
+    </section>
+
+    <section class="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 space-y-4 hidden" id="resultsSection">
+      <h2 class="text-lg font-bold text-cyan-300">2. Resultado del análisis</h2>
+      <div id="analysisOutput" class="mono bg-slate-950 border border-slate-700 rounded-xl p-4 max-h-96 overflow-auto whitespace-pre-wrap"></div>
+    </section>
+
+    <section class="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 space-y-4 hidden" id="patchedSection">
+      <h2 class="text-lg font-bold text-emerald-300">3. Code.txt parcheado (copia y pega en Apps Script → «Nueva versión»)</h2>
+      <div class="flex gap-2 mb-2">
+        <button onclick="copyPatched()" class="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-black text-sm font-bold rounded-lg">Copiar todo</button>
+        <span id="copyStatus" class="text-sm text-slate-400 self-center"></span>
+      </div>
+      <textarea id="patchedCode" class="mono w-full h-96 bg-slate-950 border border-slate-700 rounded-xl p-4 text-slate-100" readonly></textarea>
+    </section>
+
+    <section class="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 space-y-3">
+      <h2 class="text-lg font-bold text-amber-300">⚠️ Pasos en Apps Script</h2>
+      <ol class="list-decimal list-inside space-y-2 text-sm text-slate-300">
+        <li>Abre <code class="mono bg-slate-800 px-1 rounded">script.google.com</code> → tu proyecto ARGON</li>
+        <li>Reemplaza <strong>todo</strong> el contenido de <code class="mono bg-slate-800 px-1 rounded">Code.gs</code> con el resultado de arriba</li>
+        <li>Despliega → <strong>Nueva versión</strong> → Descripción: <code class="mono bg-slate-800 px-1 rounded">ARGON v6.1 - computed_daily_scores expandido</code></li>
+        <li>Ejecuta el SQL en <code class="mono bg-slate-800 px-1 rounded">sql/expand_computed_daily_scores.sql</code> en Supabase SQL Editor</li>
+        <li>Verifica en la app: pestaña Hoy, Cuerpo, Sueño, Nutrición cargan sin errores</li>
+      </ol>
+    </section>
+  </div>
+
+  <script>
+    // ============================================================================
+    // PARTE CANÓNICA (fuente de verdad) — Debe coincidir con code.txt del repo
+    // ============================================================================
+    const CANONICAL_ARGON_ENGINE_COLS = `const ARGON_ENGINE_COLS_ = [
+  "log_date",
+  // Edad fisiológica ARGON
+  "chronological_age","argon_physiological_age","total_age_delta","pace_of_aging_x",
+  "delta_vo2_years","delta_rhr_years","delta_lnrmssd_years","delta_ffm_years",
+  "delta_sleep_years","delta_act_years","vo2_max_ml_kg_min",
+  // Composición corporal (Feelfit + derivados)
+  "weight_kg","body_fat_pct","fat_mass_kg","ffm_kg","ffm_pct",
+  "muscle_mass_kg","bone_mass_kg","skeletal_muscle_pct","visceral_fat_index",
+  "tmb_kcal","body_water_pct","water_mass_kg","bmi","trend_body_fat_pct",
+  // VFC / Recuperación MBE (métricas completas)
+  "rmssd_ms","rmssd_14d_mean_ms","rhr_bpm","rhr_14d_mean_bpm",
+  "resp_rate_brpm","resp_14d_mean_brpm","spo2_pct",
+  "ln_rmssd","ln_rmssd_14d_mean","ln_rmssd_14d_sd","hrv_z_score","rhr_z_score",
+  "dynamic_rmssd_cap_ms","cv_lnrmssd_7d_pct","swc_lnrmssd","acwr_penalty_strain",
+  "calibrating","sleep_missing","hrv_missing","nap_sleep_min",
+  "recovery_score","recovery_status","recommended_max_strain",
+  // Sueño detalle (4 pilares + regularidad)
+  "time_in_bed_min","total_sleep_min","deep_sleep_min","rem_sleep_min","light_sleep_min",
+  "sleep_efficiency_pct","sleep_architecture_score",
+  "sleep_hours_vs_needed_pct","sleep_regularity_pct","high_sleep_stress_pct",
+  "cumulative_sleep_debt_hours","dynamic_sleep_need_hours",
+  "optimal_bedtime_start","optimal_bedtime_end",
+  // Strain desglose
+  "steps_count","steps_net","pickleball_or_gym_minutes","session_rpe",
+  "hr_zones_minutes","z13_minutes","z45_minutes",
+  "is_hospital_shift","night_awake_shift_hours",
+  "cardio_trimp_load","neuromuscular_load","shift_orthostatic_load","strain_score",
+  // Nutrición completa
+  "dynamic_tdee_kcal","target_kcal","target_protein_g","target_carbs_g","target_fat_g",
+  "intake_kcal","intake_protein_g","intake_carbs_g","intake_fat_g",
+  "tef_kcal","empirical_tdee_kcal",
+  // Texto coach
+  "clinical_coach_notes"
+];`;
+
+    function analyze() {
+      const current = document.getElementById('currentCode').value;
+      if (!current.trim()) {
+        alert('Pega primero el Code.txt actual');
+        return;
+      }
+
+      let output = '';
+      let patched = current;
+      let changes = 0;
+
+      // 1. Verificar/actualizar ARGON_ENGINE_COLS_
+      const colsRegex = /const ARGON_ENGINE_COLS_\s*=\s*\[[\s\S]*?\];/;
+      const match = current.match(colsRegex);
+
+      if (match) {
+        if (match[0].trim() === CANONICAL_ARGON_ENGINE_COLS.trim()) {
+          output += '✅ ARGON_ENGINE_COLS_ ya está actualizado\n';
+        } else {
+          output += '🔄 ARGON_ENGINE_COLS_ desactualizado → se reemplazará\n';
+          patched = patched.replace(colsRegex, CANONICAL_ARGON_ENGINE_COLS);
+          changes++;
+        }
+      } else {
+        output += '❌ ARGON_ENGINE_COLS_ NO ENCONTRADO → se insertará antes de computeArgonMbeScore_\n';
+        // Insertar antes de computeArgonMbeScore_
+        const insertPos = patched.indexOf('function computeArgonMbeScore_');
+        if (insertPos > 0) {
+          patched = patched.slice(0, insertPos) + CANONICAL_ARGON_ENGINE_COLS + '\n\n' + patched.slice(insertPos);
+          changes++;
+        }
+      }
+
+      // 2. Verificar que computeArgonEngine_ devuelve todos los campos (muestra de claves críticas)
+      const criticalKeys = [
+        'chronological_age', 'argon_physiological_age', 'total_age_delta', 'pace_of_aging_x',
+        'delta_vo2_years', 'delta_rhr_years', 'delta_lnrmssd_years', 'delta_ffm_years',
+        'delta_sleep_years', 'delta_act_years', 'vo2_max_ml_kg_min',
+        'weight_kg', 'body_fat_pct', 'fat_mass_kg', 'ffm_kg', 'ffm_pct',
+        'muscle_mass_kg', 'bone_mass_kg', 'skeletal_muscle_pct', 'visceral_fat_index',
+        'tmb_kcal', 'body_water_pct', 'water_mass_kg', 'bmi', 'trend_body_fat_pct',
+        'rmssd_ms', 'rmssd_14d_mean_ms', 'rhr_bpm', 'rhr_14d_mean_bpm',
+        'resp_rate_brpm', 'resp_14d_mean_brpm', 'spo2_pct',
+        'ln_rmssd', 'ln_rmssd_14d_mean', 'ln_rmssd_14d_sd', 'hrv_z_score', 'rhr_z_score',
+        'dynamic_rmssd_cap_ms', 'cv_lnrmssd_7d_pct', 'swc_lnrmssd', 'acwr_penalty_strain',
+        'calibrating', 'sleep_missing', 'hrv_missing', 'nap_sleep_min',
+        'recovery_score', 'recovery_status', 'recommended_max_strain',
+        'time_in_bed_min', 'total_sleep_min', 'deep_sleep_min', 'rem_sleep_min', 'light_sleep_min',
+        'sleep_efficiency_pct', 'sleep_architecture_score',
+        'sleep_hours_vs_needed_pct', 'sleep_regularity_pct', 'high_sleep_stress_pct',
+        'cumulative_sleep_debt_hours', 'dynamic_sleep_need_hours',
+        'optimal_bedtime_start', 'optimal_bedtime_end',
+        'steps_count', 'steps_net', 'pickleball_or_gym_minutes', 'session_rpe',
+        'hr_zones_minutes', 'z13_minutes', 'z45_minutes',
+        'is_hospital_shift', 'night_awake_shift_hours',
+        'cardio_trimp_load', 'neuromuscular_load', 'shift_orthostatic_load', 'strain_score',
+        'dynamic_tdee_kcal', 'target_kcal', 'target_protein_g', 'target_carbs_g', 'target_fat_g',
+        'intake_kcal', 'intake_protein_g', 'intake_carbs_g', 'intake_fat_g',
+        'tef_kcal', 'empirical_tdee_kcal', 'clinical_coach_notes'
+      ];
+
+      const engineMatch = current.match(/function computeArgonEngine_\([\s\S]*?return \{[\s\S]*?\};/);
+      if (engineMatch) {
+        const engineCode = engineMatch[0];
+        const missing = criticalKeys.filter(k => !engineCode.includes(`"${k}"`) && !engineCode.includes(`'${k}'`) && !engineCode.includes(`${k}:`));
+        if (missing.length === 0) {
+          output += '✅ computeArgonEngine_ devuelve todos los campos críticos\n';
+        } else {
+          output += `⚠️ computeArgonEngine_ FALTAN claves: ${missing.join(', ')}\n`;
+          output += '   (Revisa manualmente el return object en computeArgonEngine_)\n';
+        }
+      } else {
+        output += '❌ No se encontró computeArgonEngine_\n';
+      }
+
+      // 3. Verificar computeArgonMbeScore_ usa ARGON_ENGINE_COLS_
+      const mbeMatch = current.match(/function computeArgonMbeScore_\([\s\S]*?\}/);
+      if (mbeMatch) {
+        const mbeCode = mbeMatch[0];
+        if (mbeCode.includes('ARGON_ENGINE_COLS_.forEach')) {
+          output += '✅ computeArgonMbeScore_ usa ARGON_ENGINE_COLS_\n';
+        } else {
+          output += '⚠️ computeArgonMbeScore_ NO usa ARGON_ENGINE_COLS_.forEach\n';
+        }
+      }
+
+      // 4. Verificar handleRecalcDay_ (nuevo endpoint thin-client)
+      if (current.includes('function handleRecalcDay_')) {
+        output += '✅ handleRecalcDay_ encontrado (endpoint recalc servidor)\n';
+      } else {
+        output += '⚠️ handleRecalcDay_ NO encontrado → añadir manualmente al Code.gs\n';
+      }
+
+      // 5. Mostrar resultado
+      document.getElementById('analysisOutput').textContent = output;
+      document.getElementById('resultsSection').classList.remove('hidden');
+
+      if (changes > 0) {
+        document.getElementById('patchedCode').value = patched;
+        document.getElementById('patchedSection').classList.remove('hidden');
+      } else {
+        document.getElementById('patchedSection').classList.add('hidden');
+        output += '\n✨ Sin cambios necesarios — tu Code.txt ya está al día';
+        document.getElementById('analysisOutput').textContent = output;
+      }
+    }
+
+    function copyPatched() {
+      const ta = document.getElementById('patchedCode');
+      ta.select();
+      document.execCommand('copy');
+      const status = document.getElementById('copyStatus');
+      status.textContent = '✅ Copiado al portapapeles';
+      status.className = 'text-sm text-emerald-400 self-center';
+      setTimeout(() => { status.textContent = ''; }, 3000);
+    }
+
+    function clearAll() {
+      document.getElementById('currentCode').value = '';
+      document.getElementById('resultsSection').classList.add('hidden');
+      document.getElementById('patchedSection').classList.add('hidden');
+    }
+  </script>
+</body>
+</html>
