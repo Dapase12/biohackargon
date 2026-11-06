@@ -1,4 +1,4 @@
-const CACHE = 'argon-pwa-v3.3';
+const CACHE = 'argon-pwa-v3.4';
 const CORE = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 const CDN = [
   'https://cdn.tailwindcss.com',
