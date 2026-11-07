@@ -1110,7 +1110,7 @@
       if (st && e && e.message) st.textContent = 'Aviso JS: ' + e.message;
     });
 
-    let supabaseClient = null;
+    window.supabaseClient = null;
     let apexChartInstance = null;
     let currentApexTab = 'hrv';
     let argonCoachHistory = [];
@@ -1159,10 +1159,10 @@
 
     // Carga rango de fechas (30d) — usa índices DESC en Supabase
     async function loadRangeData(startDate, endDate) {
-      if (!supabaseClient) return { raw: {}, comp: {} };
+      if (!window.supabaseClient) return { raw: {}, comp: {} };
       const [rawRes, compRes] = await Promise.all([
-        supabaseClient.from('daily_raw_biometrics').select('*').gte('log_date', startDate).lte('log_date', endDate).order('log_date', { ascending: false }),
-        supabaseClient.from('computed_daily_scores').select('*').gte('log_date', startDate).lte('log_date', endDate).order('log_date', { ascending: false })
+        window.supabaseClient.from('daily_raw_biometrics').select('*').gte('log_date', startDate).lte('log_date', endDate).order('log_date', { ascending: false }),
+        window.supabaseClient.from('computed_daily_scores').select('*').gte('log_date', startDate).lte('log_date', endDate).order('log_date', { ascending: false })
       ]);
       const rawMap = {}; (rawRes.data || []).forEach(r => { rawMap[r.log_date] = r; });
       const compMap = {}; (compRes.data || []).forEach(c => { compMap[c.log_date] = c; });
@@ -1474,7 +1474,7 @@
       if (document.getElementById('cfg-gas-url')) document.getElementById('cfg-gas-url').value = gasUrl;
 
       if (url && key && window.supabase) {
-        supabaseClient = window.supabase.createClient(url, key);
+        window.supabaseClient = window.supabase.createClient(url, key);
         document.getElementById('sync-status-text').textContent = 'Supabase Conectado ✓';
         document.getElementById('status-dot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse';
         syncFromSupabase();
@@ -1941,7 +1941,7 @@
       loadDayData(dateStr);
 
       // Thin-client: push raw to server, let server recompute MBE
-      if (supabaseClient) await pushDayToSupabase(optimisticRaw);
+      if (window.supabaseClient) await pushDayToSupabase(optimisticRaw);
     }
 
     async function removeMealByIndex(idx) {
@@ -1973,7 +1973,7 @@
       loadDayData(dateStr);
 
       // Thin-client: push raw to server, let server recompute MBE
-      if (supabaseClient) await pushDayToSupabase(optimisticRaw);
+      if (window.supabaseClient) await pushDayToSupabase(optimisticRaw);
     }
 
     async function resetTodayMeals() {
@@ -1997,7 +1997,7 @@
       loadDayData(dateStr);
 
       // Thin-client: push raw to server, let server recompute MBE
-      if (supabaseClient) await pushDayToSupabase(optimisticRaw);
+      if (window.supabaseClient) await pushDayToSupabase(optimisticRaw);
     }
 
     async function saveAndComputeManualEntry() {
@@ -2052,7 +2052,7 @@
       loadDayData(dateStr);
 
       // Thin-client: push raw to server, let server recompute MBE
-      if (supabaseClient) await pushDayToSupabase(rawInput);
+      if (window.supabaseClient) await pushDayToSupabase(rawInput);
     }
 
     function addDaysIso(iso, n) {
@@ -2064,10 +2064,10 @@
     }
 
     async function pushDayToSupabase(c) {
-      if (!supabaseClient) return;
+      if (!window.supabaseClient) return;
       try {
         // 1. Upsert solo datos RAW (cliente no computa MBE)
-        const r1 = await supabaseClient.from('daily_raw_biometrics').upsert({
+        const r1 = await window.supabaseClient.from('daily_raw_biometrics').upsert({
           log_date: c.log_date,
           rhr_bpm: c.rhr_bpm,
           rmssd_ms: c.rmssd_ms,
@@ -2128,7 +2128,7 @@
     }
 
     async function syncFromSupabase() {
-      if (!supabaseClient) return;
+      if (!window.supabaseClient) return;
       try {
         document.getElementById('sync-status-text').textContent = 'Sincronizando DAG...';
         const endDate = getLocalTodayIso();
@@ -2257,9 +2257,9 @@
       }
 
       let webhookHtml = '<div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400">Conecta Supabase para inspeccionar webhook_logs.</div>';
-      if (supabaseClient) {
+      if (window.supabaseClient) {
         try {
-          const { data: logs } = await supabaseClient
+          const { data: logs } = await window.supabaseClient
             .from('webhook_logs')
             .select('*')
             .order('received_at', { ascending: false })
@@ -2497,8 +2497,8 @@
     function jUpdate(fn) {
       const d = curDate(), s = jStore(), e = s[d] || { water_ml: 0, flags: {} };
       fn(e); s[d] = e; localStorage.setItem(JKEY, JSON.stringify(s));
-      if (typeof supabaseClient !== 'undefined' && supabaseClient) {
-        supabaseClient.from('daily_journal').upsert({ log_date: d, water_ml: e.water_ml, flags: e.flags }).then(() => {}, () => {});
+      if (window.supabaseClient) {
+        window.supabaseClient.from('daily_journal').upsert({ log_date: d, water_ml: e.water_ml, flags: e.flags }).then(() => {}, () => {});
       }
       if (lastRec) render(lastRec, lastAll);
     }
@@ -2616,7 +2616,7 @@
 
     const _sync = syncFromSupabase;
     syncFromSupabase = async function () {
-      if (typeof supabaseClient === 'undefined' || !supabaseClient) { showToast('Modo local: configura Supabase en ⚙️'); return; }
+      if (!window.supabaseClient) { showToast('Modo local: configura Supabase en ⚙️'); return; }
       await _sync(); showToast('✓ Datos sincronizados');
     };
     const _go = goToArgonTab;
@@ -3045,8 +3045,8 @@
     // ---------- recalcular todo local (thin-client: solo sincroniza raw, servidor recalcula) ----------
     async function recomputeAll() {
       const st = getLocalStore(), ds = Object.keys(st).sort();
-      if (!supabaseClient) {
-        console.warn('No supabaseClient - solo datos raw locales (sin MBE)');
+      if (!window.supabaseClient) {
+        console.warn('No window.supabaseClient - solo datos raw locales (sin MBE)');
         // Without server, we can't compute MBE. Just keep raw data as-is.
         loadDayData(sel());
         showToast('Modo offline: MBE requiere servidor');
@@ -3114,7 +3114,7 @@
       loadDayData(date);
 
       // Thin-client: push raw to server, let server recompute MBE
-      if (typeof supabaseClient !== 'undefined' && supabaseClient) await pushDayToSupabase(optimisticRaw);
+      if (window.supabaseClient) await pushDayToSupabase(optimisticRaw);
     }
     function wkTypeButtons() { $('wk-types').innerHTML = WTYPES.map(t => `<button class="jchip ${t[0] === wkType ? 'on' : ''}" onclick="wkPickType('${t[0]}')">${t[1]}</button>`).join(''); }
     window.wkPickType = (k) => { wkType = k; const t = WTYPES.find(x => x[0] === k); $('wk-rpe').value = t[2]; wkRpeLabel(); wkTypeButtons(); };

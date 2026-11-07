@@ -20,11 +20,11 @@
   // 1. SYNC: últimos 45 días (DESC) y reordenado ASC en cliente
   // ---------------------------------------------------------------------------
   window.syncFromSupabase = async function syncFromSupabase() {
-    if (!supabaseClient) return;
+    if (!window.supabaseClient) return;
     try {
       setStatus('Sincronizando DAG...');
       const since = new Date(Date.now() - 45 * 86400000).toISOString().split('T')[0];
-      const q = (t) => supabaseClient.from(t).select('*')
+      const q = (t) => window.supabaseClient.from(t).select('*')
         .gte('log_date', since).order('log_date', { ascending: false }).limit(60);
 
       const [rawRes, compRes] = await Promise.all([q('daily_raw_biometrics'), q('computed_daily_scores')]);
@@ -111,9 +111,9 @@
   // 2. COMIDAS: push parcial (solo columnas de ingesta) + mutaciones coherentes
   // ---------------------------------------------------------------------------
   window.pushMealsToSupabase = async function pushMealsToSupabase(c) {
-    if (!supabaseClient) return;
+    if (!window.supabaseClient) return;
     try {
-      const { error } = await supabaseClient.from('daily_raw_biometrics').upsert({
+      const { error } = await window.supabaseClient.from('daily_raw_biometrics').upsert({
         log_date: c.log_date,
         intake_kcal: c.intake_kcal,
         intake_protein_g: c.intake_protein_g,
@@ -215,7 +215,7 @@
       if (!confirm('Esto reemplaza el historial LOCAL con datos simulados (no toca Supabase). ¿Continuar?')) return;
       return _seedOrig(false);
     }
-    if (supabaseClient) return; // el sync cargará los datos reales
+    if (window.supabaseClient) return; // el sync cargará los datos reales
     return _seedOrig(false);
   };
 
@@ -227,10 +227,10 @@
     await _qaOrig();
     try {
       const list = $('qa-results-list');
-      if (!list || !supabaseClient) return;
+      if (!list || !window.supabaseClient) return;
       const dateStr = ($('selected-date') || {}).value || getLocalTodayIso();
       const rec = getLocalStore()[dateStr];
-      const { data, error } = await supabaseClient.from('daily_raw_biometrics')
+      const { data, error } = await window.supabaseClient.from('daily_raw_biometrics')
         .select('*').eq('log_date', dateStr).limit(1);
       if (error) throw error;
       const row = data && data[0];
@@ -241,7 +241,7 @@
         // Debug: check if there are rows for nearby dates
         let debugInfo = '';
         try {
-          const { data: nearby } = await supabaseClient.from('daily_raw_biometrics')
+          const { data: nearby } = await window.supabaseClient.from('daily_raw_biometrics')
             .select('log_date').order('log_date', { ascending: false }).limit(5);
           if (nearby && nearby.length) {
             debugInfo = ' Últimas fechas: ' + nearby.map(r => r.log_date).join(', ');
@@ -274,5 +274,6 @@
   };
 
   // Primer sync con el parche activo (el inicial pudo correr con la versión vieja)
-  if (typeof supabaseClient !== 'undefined' && supabaseClient) window.syncFromSupabase();
+// NO auto-ejecutar: initSupabaseFromStorage() en el script principal llama a syncFromSupabase()
+// tras inicializar window.supabaseClient en DOMContentLoaded
 })();
