@@ -5,8 +5,7 @@
 // Usuario real: copia config.template.js a config.js local y edita con TUS claves
 // ============================================================================
 
-/** @type {import('./config.types').ArgonConfig} */
-export const CONFIG = {
+window.CONFIG = {
   // ---------------------------------------------------------------------------
   // SUPABASE (configura el tuyo en supabase.com → Settings → API)
   // ---------------------------------------------------------------------------
