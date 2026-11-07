@@ -3,7 +3,7 @@
 > **PWA de biohacking cuantitativo** — HRV, sueño, nutrición y recuperación en una sola vista.  
 > Motor de cálculo en servidor (Google Apps Script + Supabase), cliente ligero (HTML/JS vanilla + Tailwind).
 
-[![Deploy to GitHub Pages](https://github.com/dapase12/biohackargon/actions/workflows/pages.yml/badge.svg)](https://github.com/dapase12/biohackargon/actions/workflows/pages.yml)
+[![Deploy to GitHub Pages](https://github.com/YOUR_USERNAME/biohackargon/actions/workflows/pages.yml/badge.svg)](https://github.com/YOUR_USERNAME/biohackargon/actions/workflows/pages.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![PWA](https://img.shields.io/badge/PWA-ready-green.svg)
 ![Supabase](https://img.shields.io/badge/Backend-Supabase-3ECF8E.svg)
@@ -13,7 +13,7 @@
 
 ## 🎯 ¿Qué es ARGON?
 
-**ARGON** es una Progressive Web App personal para tracking y análisis de biomarcadores de recuperación y rendimiento. Nace de la necesidad de un **motor de cálculo transparente, basado en evidencia y auditable** — no una "caja negra" como Whoop/Oura/Garmin.
+**ARGON** es una Progressive Web App para tracking y análisis de biomarcadores de recuperación y rendimiento. Nace de la necesidad de un **motor de cálculo transparente, basado en evidencia y auditable** — no una "caja negra" como Whoop/Oura/Garmin.
 
 ### Filosofía
 
@@ -23,7 +23,7 @@
 | **Transparencia total** | Código abierto, motor replicable localmente, sin vendor lock-in |
 | **Individualización** | Baselines personales (14d), SWC = 0.5·SD, calibración mínima 7 días |
 | **Cliente ligero** | El navegador solo renderiza; el cómputo pesado corre en servidor (GAS + Supabase) |
-| **Privacidad first** | Datos en tu Supabase, claves solo en localStorage, RLS activable al final |
+| **Privacidad first** | Datos en tu Supabase, claves solo en localStorage, RLS opcional |
 
 ---
 
@@ -39,7 +39,7 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                          SUPABASE                                │
 │  • daily_raw_biometrics      • computed_daily_scores            │
-│  • webhook_logs              • (RLS ready for multi-user)       │
+│  • webhook_logs              • (RLS opcional para multi-usuario) │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ Webhook / 15 min cron
                            ▼
@@ -99,14 +99,14 @@
 
 ---
 
-## 🚀 Inicio Rápido
+## 🚀 Inicio Rápido (Template)
 
 ### Prerrequisitos
-
 - Cuenta **Supabase** (proyecto nuevo)
 - Cuenta **Google** (para Apps Script)
 - **GitHub** (para Pages + Actions)
-- Dispositivo **Zepp/Health Connect** o entrada manual
+- Dispositivo compatible: **Amazfit Bip 6** + **Balanza CS20M** (u otros con Health Connect)
+- **Google Health Connect** + app de webhook (Tasker, MacroDroid, Automate)
 
 ### 1. Supabase — Esquema
 
@@ -120,31 +120,111 @@
 
 1. Nuevo proyecto en [script.google.com](https://script.google.com)
 2. Copia **`code.txt`** completo al editor
-3. Configura `SUPABASE_URL` y `SUPABASE_ANON_KEY` en *Propiedades de script*
+3. En *Configuración del proyecto* → *Propiedades de script*, añade:
+   - `SUPABASE_URL` = `https://TU_PROJECT.supabase.co`
+   - `SUPABASE_KEY` = `TU_SERVICE_ROLE_KEY` (no anon)
+   - `GEMINI_API_KEY` = `TU_GEMINI_KEY`
+   - `TIMEZONE` = `America/TU_ZONA` (ej: America/Caracas, Europe/Madrid)
+   - `BASAL_SLEEP_NEED_H` = `7.5`
+   - `HABITUAL_WAKE_TIME` = `06:30`
+   - `HEIGHT_M` = `1.75`
 4. Despliega → **Nueva implementación** → Tipo: **Aplicación web**  
    Ejecutar como: **Yo**, Acceso: **Cualquiera** → **Desplegar**
 5. Copia la **URL del webhook** (termina en `/exec`)
 
-### 3. Zepp / Health Connect — Webhook
+### 3. Pipeline de Datos: Amazfit Bip 6 + CS20M → Health Connect → Webhook
 
-- **Zepp**: App → Perfil → Servicios en la nube → Webhook → Pega URL
-- **Health Connect**: Usa app intermedia (Tasker, MacroDroid) → POST JSON a URL
-
-### 4. GitHub Pages — Frontend
-
-```bash
-git clone https://github.com/dapase12/biohackargon.git
-cd biohackargon
-# Edita index.html: busca SUPABASE_URL y SUPABASE_ANON_KEY (líneas ~50-60)
-# Pon tus credenciales de Supabase (anon key pública, segura en cliente)
-git add . && git commit -m "feat: configure Supabase keys" && git push
+```
+┌─────────────┐    Bluetooth    ┌──────────────┐    Sync    ┌─────────────┐
+│ Amazfit     │ ──────────────► │ Zepp App     │ ────────► │ Google      │
+│ Bip 6       │                 │ (iOS/Android)│           │ Health      │
+│             │    (HRV, RHR,   │              │           │ Connect     │
+│  • HRV      │     Sleep,      │              │           │             │
+│  • RHR      │     Steps,      │              │           │             │
+│  • Sleep    │     SpO2, RR)   │              │           │             │
+│  • SpO2     │                 │              │           │             │
+│  • RespRate │                 │              │           │             │
+└─────────────┘                 └──────────────┘           └──────┬──────┘
+                                                                   │
+┌─────────────┐    Bluetooth    ┌──────────────┐                 │
+│ Smart Scale │ ──────────────► │ Zepp App     │ ────────────────┘
+│ CS20M       │    (Weight,     │              │
+│             │     Body Fat,   │              │
+│  • Weight   │     Muscle,     │              │
+│  • Body Fat │     Water,      │              │
+│  • Muscle   │     Bone,       │              │
+│  • Water    │     Visceral)   │              │
+└─────────────┘                 └──────────────┘
+                                       │
+                                       ▼ Health Connect Webhook (POST JSON)
+                              ┌────────────────────┐
+                              │ Google Apps Script │
+                              │ (code.txt)         │
+                              │ • Recibe webhook   │
+                              │ • Procesa datos    │
+                              │ • Calcula recovery │
+                              │ • Guarda Supabase  │
+                              └─────────┬──────────┘
+                                        │
+                                        ▼
+                               ┌────────────────┐
+                               │ Supabase DB    │
+                               │ • daily_raw_   │
+                               │   biometrics   │
+                               │ • computed_    │
+                               │   daily_scores │
+                               └────────────────┘
 ```
 
-5. Settings → Pages → Source: **GitHub Actions** (workflow incluido)
+**Configurar webhook en Health Connect:**
+- **Tasker/MacroDroid/Automate**: Trigger "Health Connect data changed" → HTTP POST a tu URL de GAS
+- Payload JSON incluye: `hrv`, `rhr`, `sleep_stages`, `steps`, `weight`, `body_fat`, etc.
 
-### 5. PWA Install
+### 4. Configuración de Usuario (Frontend)
 
-- Abre `https://dapase12.github.io/biohackargon/` en móvil
+1. Copia `config.template.js` a `config.js` (está en `.gitignore`)
+2. Edita `config.js` con **tus datos personales**:
+
+```javascript
+// config.js - NO COMITEAR
+export const CONFIG = {
+  supabase: {
+    url: 'https://TU_PROJECT.supabase.co',
+    anonKey: 'TU_ANON_KEY_AQUI',
+  },
+  gas: {
+    webhookUrl: 'https://script.google.com/macros/s/TU_SCRIPT_ID/exec',
+  },
+  profile: {
+    timezone: 'America/TU_ZONA',     // ej: America/Caracas, Europe/Madrid
+    birthDate: '1990-01-01',         // YYYY-MM-DD
+    heightM: 1.75,                   // metros
+    basalSleepNeedH: 7.5,            // horas
+    habitualWake: '06:30',           // HH:MM 24h
+    goalWeightKg: 75,                // kg
+    goalDate: '2026-12-31',          // YYYY-MM-DD
+    dailyDeficitKcal: 500,           // kcal
+    biologicalSex: 'M',              // 'M' | 'F'
+  },
+  defaults: { weightKg: 70, bodyFatPct: 20 },
+  ui: { stepsGoal: 8000, accentColor: 'cyan', showLongevityTest: true },
+};
+```
+
+### 5. GitHub Pages — Frontend
+
+```bash
+git clone https://github.com/TU_USUARIO/biohackargon.git
+cd biohackargon
+# config.js ya creado en paso 4
+git add . && git commit -m "feat: configure user profile" && git push
+```
+
+Settings → Pages → Source: **GitHub Actions** (workflow incluido en `.github/workflows/pages.yml`)
+
+### 6. PWA Install
+
+- Abre `https://TU_USUARIO.github.io/biohackargon/` en móvil
 - Menú navegador → **Instalar app** / **Añadir a pantalla de inicio**
 
 ---
@@ -152,11 +232,12 @@ git add . && git commit -m "feat: configure Supabase keys" && git push
 ## 📁 Estructura del Repo
 
 ```
-biohackargon-main/
-├── index.html              # PWA principal (UI + motor cliente legacy)
+biohackargon/
+├── index.html              # PWA principal (UI + motor cliente)
 ├── argon-mbe.js            # Panel MBE+ (carga dinámica desde menú ☰)
 ├── argon-patch.js          # Parches runtime (sync, comidas, seed, QA)
 ├── code.txt                # Motor servidor (Google Apps Script) — FUENTE DE VERDAD
+├── config.template.js      # Template de config (copiar a config.js)
 ├── parchear-code.html      # Herramienta idempotente para actualizar code.txt
 ├── simulate-recovery.js    # Simulador comparativo de algoritmos de recovery
 ├── sw.js                   # Service Worker (cache v3.4)
@@ -166,6 +247,12 @@ biohackargon-main/
 │   └── expand_computed_daily_scores.sql  # Esquema Supabase completo
 ├── .github/workflows/
 │   └── pages.yml           # Deploy automático a GitHub Pages
+├── docs/
+│   ├── QUICKSTART.md       # Guía rápida 10 min
+│   ├── DATA_PIPELINE.md    # Pipeline Amazfit Bip 6 + CS20M → Health Connect
+│   ├── SUPABASE_SETUP.md   # Esquema, RLS, índices
+│   ├── GAS_DEPLOY.md       # Deploy GAS paso a paso
+│   └── GITHUB_PAGES.md     # Deploy Pages, custom domain
 ├── CLAUDE.md               # Contexto para desarrollo asistido
 └── README.md               # Este archivo
 ```
@@ -269,7 +356,7 @@ git push
 ### v6.1 — Consolidación
 - [ ] Cliente 100% thin (solo render, sin motor legacy)
 - [ ] Pesos recovery calibrados 4-6 semanas vs escala subjetiva 1-10
-- [ ] RLS + Supabase Auth para multiusuario
+- [ ] RLS + Supabase Auth opcional para multi-usuario
 
 ### v6.2 — Inteligencia
 - [ ] Detección automática de patrones (overreaching, enfermedad, ciclo menstrual)
@@ -298,9 +385,10 @@ git push
 ## 🔐 Seguridad & Privacidad
 
 - **Sin secrets en repo**: `code.txt` usa `PropertiesService` en GAS; `index.html` usa anon key pública de Supabase (RLS ready)
-- **RLS**: Tablas preparadas para `auth.uid()` — activar al migrar a multiusuario
+- **RLS**: Tablas preparadas para `auth.uid()` — activar si se desea multi-usuario
 - **Datos**: Tuyos, en tu proyecto Supabase. Este repo solo tiene código.
 - **PWA**: Funciona offline (cache first), sync al reconectar
+- **Config**: `config.js` en `.gitignore` — nunca se suben claves personales
 
 ---
 
@@ -311,23 +399,14 @@ git push
 3. `node --check` en JS modificados
 4. PR con descripción: **problema → solución → validación**
 
-> Este es un proyecto personal abierto por transparencia. Issues/PRs bienvenidos pero priorizo mi roadmap.
+> Este es un template abierto por transparencia. Issues/PRs bienvenidos.
 
 ---
 
 ## 📄 Licencia
 
 **MIT License** — úsalo, modifícalo, aprende de él.  
-Atribución apreciada: `ARGON v6.0 by @dapase12`
-
----
-
-## 🙋 Autor
-
-**dapase12** — Médico, biohacker cuantitativo, amante del código limpio.  
-📍 Caracas, Venezuela (UTC-4) | 🇻🇪
-
-> *"Lo que no se mide no se mejora. Lo que se mide mal empeora."* — Lord Kelvin (adaptado)
+Atribución apreciada: `ARGON v6.0`
 
 ---
 

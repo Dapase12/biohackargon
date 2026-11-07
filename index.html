@@ -959,8 +959,8 @@
         <button onclick="closeModal('log-modal')" class="icon-btn text-slate-400 hover:text-white text-sm px-2">✕</button>
       </div>
       <div class="grid grid-cols-2 gap-2.5 text-xs">
-        <div><label class="text-slate-400 block mb-1">Peso Feelfit (kg)</label><input id="in-weight" type="number" step="0.05" placeholder="86.80" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
-        <div><label class="text-slate-400 block mb-1">% Grasa Corporal</label><input id="in-bf" type="number" step="0.1" placeholder="24.1" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">Peso Feelfit (kg)</label><input id="in-weight" type="number" step="0.05" placeholder="70" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
+        <div><label class="text-slate-400 block mb-1">% Grasa Corporal</label><input id="in-bf" type="number" step="0.1" placeholder="20" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
         <div><label class="text-slate-400 block mb-1">% Músculo Esquelético</label><input id="in-muscle" type="number" step="0.1" placeholder="48.9" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
         <div><label class="text-slate-400 block mb-1">Grasa Visceral</label><input id="in-visceral" type="number" step="1" placeholder="11" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
         <div><label class="text-slate-400 block mb-1">TMB Feelfit (kcal)</label><input id="in-tmb" type="number" placeholder="1793" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white" /></div>
@@ -1098,6 +1098,8 @@
        PARTE 2 DE 2 (ARGON v6.0 NATIVE SHELL):
        MOTOR MBE + SWIPER SYNC + BOTTOM SHEETS TÁCTILES + LUCIDE + COACH IA
        ======================================================================== -->
+  <!-- Config de usuario (config.js es gitignored; copiar de config.template.js) -->
+  <script src="config.js"></script>
   <script>
     // Guardián de errores en vivo para evitar bloqueos silenciosos
     window.addEventListener('error', (e) => {
@@ -1265,11 +1267,12 @@
       if (el) el.classList.add('hidden');
     }
 
-    // Corte estricto de medianoche (00:00:00) en hora de Venezuela (America/Caracas)
+    // Corte estricto de medianoche (00:00:00) en zona horaria del usuario (config.js)
     function getLocalTodayIso() {
       try {
+        const tz = window.CONFIG?.profile?.timezone || 'UTC';
         return new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'America/Caracas',
+          timeZone: tz,
           year: 'numeric',
           month: '2-digit',
           day: '2-digit'
@@ -1456,9 +1459,10 @@
 
     // 4. Conexión y Ajustes de Supabase + Google Apps Script URL
     function initSupabaseFromStorage() {
-      const url = (localStorage.getItem('argon_sb_url') || 'https://eqbvzgqumwvksiovboth.supabase.co').trim();
+      // URL y key desde localStorage (configurados en Ajustes) con fallback a CONFIG
+      const url = (localStorage.getItem('argon_sb_url') || (window.CONFIG?.supabase?.url || '')).trim();
       const key = (localStorage.getItem('argon_sb_key') || '').trim();
-      const gasUrl = (localStorage.getItem('argon_gas_url') || '').trim();
+      const gasUrl = (localStorage.getItem('argon_gas_url') || (window.CONFIG?.gas?.webhookUrl || '')).trim();
 
       if (document.getElementById('cfg-url')) document.getElementById('cfg-url').value = url;
       if (document.getElementById('cfg-key')) document.getElementById('cfg-key').value = key;
@@ -2009,8 +2013,8 @@
       const rawInput = {
         ...existing,
         log_date: dateStr,
-        weight_kg: valOrKeep('in-weight', existing.weight_kg || 86.80, true),
-        body_fat_pct: valOrKeep('in-bf', existing.body_fat_pct || 24.1, true),
+        weight_kg: valOrKeep('in-weight', existing.weight_kg || (window.CONFIG?.defaults?.weightKg || 70), true),
+        body_fat_pct: valOrKeep('in-bf', existing.body_fat_pct || (window.CONFIG?.defaults?.bodyFatPct || 20), true),
         skeletal_muscle_pct: valOrKeep('in-muscle', existing.skeletal_muscle_pct || 48.9, true),
         visceral_fat_index: valOrKeep('in-visceral', existing.visceral_fat_index || 11.0, true),
         tmb_kcal: valOrKeep('in-tmb', existing.tmb_kcal || 1793, false),
@@ -2158,15 +2162,15 @@
               record.steps_count = r.steps_count ?? c.steps_count ?? 0;
               record.pickleball_or_gym_minutes = r.pickleball_or_gym_minutes ?? c.pickleball_or_gym_minutes ?? 0;
               // Weight/body fat from raw (Feelfit) preferred over server trend
-              const lastW = prevComp ? prevComp.weight_kg : 86.80;
-              const lastBf = prevComp ? prevComp.body_fat_pct : 24.1;
+              const lastW = prevComp ? prevComp.weight_kg : (window.CONFIG?.defaults?.weightKg || 70);
+              const lastBf = prevComp ? prevComp.body_fat_pct : (window.CONFIG?.defaults?.bodyFatPct || 20);
               record.weight_kg = (r.weight_kg && r.weight_kg >= 65) ? parseFloat(r.weight_kg) : (c.weight_kg ?? lastW);
               record.body_fat_pct = (r.body_fat_pct && r.body_fat_pct >= 10) ? parseFloat(r.body_fat_pct) : (c.body_fat_pct ?? lastBf);
             } else {
               // Thin-client: server has raw but no computed yet. Use raw data directly without local MBE compute.
               // Server will compute asynchronously. UI shows raw values, MBE fields stay empty until server sync.
-              const lastW = prevComp ? prevComp.weight_kg : 86.80;
-              const lastBf = prevComp ? prevComp.body_fat_pct : 24.1;
+              const lastW = prevComp ? prevComp.weight_kg : (window.CONFIG?.defaults?.weightKg || 70);
+              const lastBf = prevComp ? prevComp.body_fat_pct : (window.CONFIG?.defaults?.bodyFatPct || 20);
               record = {
                 ...r,
                 log_date: dStr,
@@ -2478,7 +2482,7 @@
     const jDay = (d) => { const e = jStore()[d] || {}; return { water_ml: e.water_ml || 0, flags: e.flags || {} }; };
     const avg = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
     const nextDay = (d) => { const t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + 1); return t.toISOString().slice(0, 10); };
-    const caracasHour = () => { try { return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Caracas', hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (_) { return new Date().getHours(); } };
+    const caracasHour = () => { try { const tz = window.CONFIG?.profile?.timezone || 'UTC'; return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (_) { return new Date().getHours(); } };
 
     window.showToast = (msg) => {
       let t = $('argon-toast');
@@ -2934,8 +2938,10 @@
   /* ARGON+ Paquete C: perfil/onboarding, entrenamientos, comidas (búsqueda, favoritos, IA) */
   window.argonProfile_ = function () {
     let p = {}; try { p = JSON.parse(localStorage.getItem('argon_profile_v1') || '{}'); } catch (_) {}
-    const wake = localStorage.getItem('argon_wake_time') || '06:00', h = parseFloat(p.height_cm), d = parseFloat(p.deficit);
-    return { birth: /^\d{4}-\d{2}-\d{2}$/.test(p.birth || '') ? p.birth : '1997-11-12', height_m: (h >= 120 && h <= 230) ? h / 100 : 1.73, wake: /^\d{2}:\d{2}$/.test(wake) ? wake : '06:00', deficit: (d >= 250 && d <= 900) ? d : 550 };
+    const wake = localStorage.getItem('argon_wake_time') || (window.CONFIG?.profile?.habitualWake || '06:30');
+    const h = parseFloat(p.height_cm), d = parseFloat(p.deficit);
+    const cfg = window.CONFIG?.profile || {};
+    return { birth: /^\d{4}-\d{2}-\d{2}$/.test(p.birth || '') ? p.birth : (cfg.birthDate || '1990-01-01'), height_m: (h >= 120 && h <= 230) ? h / 100 : (cfg.heightM || 1.75), wake: /^\d{2}:\d{2}$/.test(wake) ? wake : (cfg.habitualWake || '06:30'), deficit: (d >= 250 && d <= 900) ? d : (cfg.dailyDeficitKcal || 500) };
   };
   (function () {
     const $ = (id) => document.getElementById(id);

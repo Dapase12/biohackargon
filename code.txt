@@ -3,7 +3,7 @@
  * PROYECTO ARGON v6.0 FINAL - BACKEND COMPLETO (GOOGLE APPS SCRIPT)
  * Incluye:
  * 1. Acumulación persistente de comidas de Zepp del mismo día (sin pérdida por ventana)
- * 2. Corte estricto a las 00:00 America/Caracas (soporte start_time / startTime)
+ * 2. Corte estricto a las 00:00 zona horaria usuario (configurable, soporte start_time / startTime)
  * 3. Ignora active_calories / total_calories quemadas dentro de Nutrición
  * 4. Blindaje de sueño nocturno (fragmentos <120m no borran la noche completa)
  * 5. Espejo automático en Google Docs (EXPEDIENTE_CLINICO_ARGON_VIVO)
@@ -14,13 +14,15 @@
  */
 
 const ARGON_CONFIG = {
-  SUPABASE_URL: 'https://eqbvzgqumwvksiovboth.supabase.co',
+  // SUPABASE_URL y claves desde PropertiesService (configurar en Apps Script → Project Settings → Script properties)
+  get SUPABASE_URL() { return PropertiesService.getScriptProperties().getProperty('SUPABASE_URL') || ''; },
   get SUPABASE_KEY() { return PropertiesService.getScriptProperties().getProperty('SUPABASE_KEY') || ''; },
   get GEMINI_API_KEY() { return PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || ''; },
-  TIMEZONE: 'America/Caracas',
-  BASAL_SLEEP_NEED_H: 7.50,
-  HABITUAL_WAKE_TIME: '06:00',
-  HEIGHT_M: 1.73
+  // Valores por defecto (pueden sobrescribirse per-user desde la tabla profiles)
+  get TIMEZONE() { return PropertiesService.getScriptProperties().getProperty('TIMEZONE') || 'UTC'; },
+  get BASAL_SLEEP_NEED_H() { return parseFloat(PropertiesService.getScriptProperties().getProperty('BASAL_SLEEP_NEED_H') || '7.5'); },
+  get HABITUAL_WAKE_TIME() { return PropertiesService.getScriptProperties().getProperty('HABITUAL_WAKE_TIME') || '06:30'; },
+  get HEIGHT_M() { return parseFloat(PropertiesService.getScriptProperties().getProperty('HEIGHT_M') || '1.75'); }
 };
 
 /**
@@ -568,8 +570,8 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
   const computedMap = new Map(computedHistoryRows.map(r => [r.log_date, r.strain_score]));
   historyRows.forEach(r => { r.strain_score = computedMap.get(r.log_date) || 0; });
 
-  const lastKnownWeight = historyRows.length > 0 && historyRows[0].weight_kg ? parseFloat(historyRows[0].weight_kg) : 86.80;
-  const lastKnownBf = historyRows.length > 0 && historyRows[0].body_fat_pct ? parseFloat(historyRows[0].body_fat_pct) : 24.4;
+  const lastKnownWeight = historyRows.length > 0 && historyRows[0].weight_kg ? parseFloat(historyRows[0].weight_kg) : ARGON_CONFIG.HEIGHT_M * ARGON_CONFIG.HEIGHT_M * 22;
+  const lastKnownBf = historyRows.length > 0 && historyRows[0].body_fat_pct ? parseFloat(historyRows[0].body_fat_pct) : 20;
 
   const todayWeight = extractedDay.latest_weight_kg || (existing.weight_kg ? parseFloat(existing.weight_kg) : lastKnownWeight);
   const todayBf = extractedDay.latest_bf_pct || (existing.body_fat_pct ? parseFloat(existing.body_fat_pct) : lastKnownBf);
@@ -771,8 +773,9 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       const heightM = PROF.height_m;
 
       // A. BIOIMPEDANCIA FEELFIT
-      const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.weight_kg : 86.80);
-      const rawBf = parseFloat(todayRaw.body_fat_pct) || (prevComputed ? prevComputed.body_fat_pct : 24.1);
+      const defaultW = ARGON_CONFIG.HEIGHT_M * ARGON_CONFIG.HEIGHT_M * 22;
+      const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.weight_kg : defaultW);
+      const rawBf = parseFloat(todayRaw.body_fat_pct) || (prevComputed ? prevComputed.body_fat_pct : 20);
       const ffmPct = +(100.0 - rawBf).toFixed(1);
 
       const fatMassKg = +(rawW * (rawBf / 100.0)).toFixed(2);
@@ -1347,8 +1350,10 @@ function syncExpedienteToGoogleDrive_(force) {
 
     let reportText = `====================================================================\n`;
     reportText += `EXPEDIENTE CLÍNICO Y BIOMÉTRICO EN VIVO - PROYECTO ARGON MBE\n`;
-    reportText += `Última actualización automática: ${nowStr} (America/Caracas)\n`;
-    reportText += `Perfil: Médico Cirujano (28.9 años, Nac: ${argonProfile_().birth}) | Meta: Recomposición Corporal\n`;
+    reportText += `Última actualización automática: ${nowStr} (${ARGON_CONFIG.TIMEZONE})\n`;
+    const prof = argonProfile_();
+    const age = prof.birth ? +((new Date().getTime() - new Date(prof.birth + 'T00:00:00').getTime()) / (365.2425 * 86400000)).toFixed(1) : 'N/A';
+    reportText += `Perfil: Usuario ARGON (${age} años, Nac: ${prof.birth}) | Meta: Recomposición Corporal\n`;
     reportText += `====================================================================\n\n`;
 
     reportText += `[1] ESTADO FISIOLÓGICO Y METABÓLICO DE HOY (${todayComp.log_date})\n`;
@@ -1432,11 +1437,11 @@ function handleArgonCoachChat_(payload) {
     const clinicalContext = {
       diario_hoy: payload.client_context || null,
       perfil_paciente: {
-        profesion: 'Médico Cirujano (Guardias / Rural)',
-        edad_cronologica: 28.94,
+        profesion: 'Usuario ARGON',
+        edad_cronologica: (() => { const b = argonProfile_().birth; return b ? +((new Date().getTime() - new Date(b + 'T00:00:00').getTime()) / (365.2425 * 86400000)).toFixed(2) : 'N/A'; })(),
         fecha_nacimiento: argonProfile_().birth,
-        deportes: 'Entrenamiento de fuerza (pesas) y Pickleball competitivo',
-        meta_7_dic_2026: 'Oxidación lipolítica preservando masa muscular esquelética'
+        deportes: 'Entrenamiento de fuerza y deporte recreativo',
+        meta: 'Recomposición corporal y optimización metabólica'
       },
       estado_hoy: {
         fecha: todayComp.log_date,
@@ -1509,13 +1514,13 @@ function handleArgonCoachChat_(payload) {
     };
 
     const systemInstruction =
-      `Eres el Coach Clínico MBE de ARGON v6.0. Hablas con un colega médico cirujano de 28.9 años. ` +
+      `Eres el Coach Clínico MBE de ARGON v6.0. Hablas con un usuario biohacker cuantitativo. ` +
       `Usa estrictamente principios de Medicina Basada en la Evidencia (fisiología autonómica VFC/lnRMSSD de Plews & Altini, ` +
       `modelo de carga TRIMP/Strain, termodinámica nutricional de Atwater, preservación proteica en déficit y fisiología circadiana de Borbély). ` +
       `Si recovery_score_pct es null, la recuperación está en calibración: indícalo y no inventes un porcentaje. ` +
       `REGLAS DE FORMATO ESTRICTAS: NO uses símbolos '###' ni líneas '---'. Usa numeración limpia (1., 2., 3.), emojis clínicos y **negritas** para resaltar cifras exactas. ` +
       `Sé directo, cuantitativo y accionable: cita sus números reales de hoy (peso, gramos exactos de proteína/carbs/grasa que le faltan hoy, ` +
-      `VFC, deuda de sueño y zona de entrenamiento recomendada para pesas o pickleball). ` +
+      `VFC, deuda de sueño y zona de entrenamiento recomendada). ` +
       `DATOS BIOMÉTRICOS EN VIVO DEL PACIENTE (JSON): ${JSON.stringify(clinicalContext)}`;
 
     const contents = [];
@@ -1687,7 +1692,7 @@ function argonProfile_() {
   try { p = JSON.parse(PropertiesService.getScriptProperties().getProperty('ARGON_PROFILE') || '{}'); } catch (_) {}
   const h = parseFloat(p.height_m), d = parseFloat(p.deficit);
   return {
-    birth: /^\d{4}-\d{2}-\d{2}$/.test(p.birth || '') ? p.birth : '1997-11-12',
+    birth: /^\d{4}-\d{2}-\d{2}$/.test(p.birth || '') ? p.birth : '1990-01-01',
     height_m: (h >= 1.2 && h <= 2.3) ? h : ARGON_CONFIG.HEIGHT_M,
     wake: /^\d{2}:\d{2}$/.test(p.wake || '') ? p.wake : ARGON_CONFIG.HABITUAL_WAKE_TIME,
     deficit: (d >= 250 && d <= 900) ? d : 550

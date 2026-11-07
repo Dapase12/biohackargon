@@ -3,9 +3,11 @@
    Lee Supabase directo (argon_sb_url / argon_sb_key de localStorage). No toca el motor del cliente. */
 (function () {
   'use strict';
-  const TZ = 'America/Caracas';
+  // Zona horaria desde config.js (fallback UTC)
+  const TZ = window.CONFIG?.profile?.timezone || 'UTC';
   const LS = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (_) { return d; } };
-  const cfg = () => ({ url: (localStorage.getItem('argon_sb_url') || 'https://eqbvzgqumwvksiovboth.supabase.co').trim(), key: (localStorage.getItem('argon_sb_key') || '').trim() });
+  // Supabase URL desde localStorage (configurado en Ajustes) con fallback a config.js
+  const cfg = () => ({ url: (localStorage.getItem('argon_sb_url') || (window.CONFIG?.supabase?.url || '')).trim(), key: (localStorage.getItem('argon_sb_key') || '').trim() });
   const st = { raw: [], comp: [], selectedDate: null }; // selectedDate: 'YYYY-MM-DD' o null = hoy
 
   async function sbGet(path) {
@@ -168,7 +170,9 @@
 
   function secLT() {
     const hist = LS('argon_lt_v1', []);
-    const prof = LS('argon_profile_v1', {}); const birth = new Date((prof.birth || '1997-11-12') + 'T12:00:00-04:00');
+    const prof = LS('argon_profile_v1', {});
+    const cfg = window.CONFIG?.profile || {};
+    const birth = new Date((prof.birth || cfg.birthDate || '1990-01-01') + 'T12:00:00');
     const age = (Date.now() - birth.getTime()) / (365.2425 * 86400000), hrMax = Math.round(208 - 0.7 * age);
     const lastT = hist[hist.length - 1];
     const out = lastT ? (() => { const r = ltCalc(lastT.km, lastT.hr); return `<div class="grid grid-cols-3 gap-2 text-center text-xs"><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">LTHR</div><div class="font-mono font-black text-lg text-rose-400">${r.lthr}</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Ritmo 30′</div><div class="font-mono font-black">${pace(r.p30)}/km</div></div><div class="p-2 rounded-xl bg-slate-900"><div class="text-[9px] text-slate-400">Ritmo umbral ≈</div><div class="font-mono font-black">${pace(r.pThr)}/km</div></div></div>` + r.zones.map(z => `<div class="flex justify-between text-[11px] font-mono"><span class="text-slate-300">${z[0]}</span><span>${z[1] ? z[1] + '–' : '<'}${z[2]} lpm</span></div>`).join('') + `<div class="text-[10px] text-slate-400">Último test: ${lastT.date}</div>`; })()

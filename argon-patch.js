@@ -55,8 +55,8 @@
           if (!(num(rClean[k]) > 0)) delete rClean[k];
         });
 
-        const lastW = prevComp ? prevComp.weight_kg : 86.80;
-        const lastBf = prevComp ? prevComp.body_fat_pct : 24.1;
+        const lastW = prevComp ? prevComp.weight_kg : (window.CONFIG?.defaults?.weightKg || 70);
+        const lastBf = prevComp ? prevComp.body_fat_pct : (window.CONFIG?.defaults?.bodyFatPct || 20);
         const w = num(r.weight_kg), bf = num(r.body_fat_pct);
 
         const pick = (k, isInt) => {
