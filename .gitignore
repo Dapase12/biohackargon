@@ -8,8 +8,8 @@ node_modules/
 *.key
 *.pem
 
-# User config (never commit)
-config.js
+# User config (never commit real secrets)
+# config.js  ← demo config.js se deploya a Pages; usuario real usa config.template.js → config.js local
 
 # IDE
 .vscode/
