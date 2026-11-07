@@ -45,6 +45,15 @@
   const empty = t => `<p class="text-[11px] text-amber-300/90">${t}</p>`;
   const ex = r => (r && r.hr_zones_minutes && r.hr_zones_minutes.x) || {};
 
+  // Helper: get data for the currently selected date (falls back to index 0)
+  function getSelectedDay() {
+    const target = st.selectedDate;
+    if (!target) return { raw: st.raw[0], comp: st.comp[0] };
+    const raw = st.raw.find(r => r && r.log_date === target) || st.raw[0];
+    const comp = st.comp.find(c => c && c.log_date === target) || st.comp[0];
+    return { raw, comp };
+  }
+
   // ---------- Selector de fecha ----------
   function secDatePicker() {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
@@ -55,11 +64,12 @@
 
   // ---------- secciones ----------
   function secBed() {
-    const c = st.comp[0]; if (!c || !c.optimal_bedtime_start) return card('Hora de dormir', 'Ventana óptima', empty('Sin datos calculados.'));
+    const { comp: c, raw: r0 } = getSelectedDay();
+    if (!c || !c.optimal_bedtime_start) return card('Hora de dormir', 'Ventana óptima', empty('Sin datos calculados.'));
     const prof = LS('argon_profile_v1', {}); const wake = prof.wake || '06:00';
     const span = 1080, x = m => Math.max(0, Math.min(100, m / span * 100));
     const a = m18(c.optimal_bedtime_start), b = m18(c.optimal_bedtime_end), w = m18(wake);
-    const h = ex(st.raw[0]).hypno; let real = '';
+    const h = ex(r0).hypno; let real = '';
     if (h && h.seg && h.seg.length) {
       const s0 = m18(hhmm(h.t0)), last = h.seg[h.seg.length - 1], len = last[1] + last[2];
       real = `<div class="absolute top-1 h-2 rounded bg-purple-500/80" style="left:${x(s0)}%;width:${Math.max(1, x(s0 + len) - x(s0))}%" title="Sueño real"></div>`;
@@ -70,7 +80,8 @@
   }
 
   function secHypno() {
-    const h = ex(st.raw[0]).hypno;
+    const { raw: r0 } = getSelectedDay();
+    const h = ex(r0).hypno;
     if (!h || !h.seg || !h.seg.length) return card('📊 Hipnograma', 'Fases de la última noche', empty('Aún no hay fases guardadas. Se llenan con el próximo webhook de sueño (requiere Code.txt actualizado).'));
     const last = h.seg[h.seg.length - 1], span = last[1] + last[2], W = 300, row = { A: 0, R: 1, L: 2, D: 3 };
     const col = { A: '#94a3b8', R: '#a855f7', L: '#475569', D: '#3b82f6' };
@@ -81,13 +92,14 @@
   }
 
   function secNaps() {
-    const n = ex(st.raw[0]).naps || [], tot = n.reduce((s, v) => s + v.min, 0);
+    const { raw: r0 } = getSelectedDay();
+    const n = ex(r0).naps || [], tot = n.reduce((s, v) => s + v.min, 0);
     const body = n.length ? n.map(v => `<div class="flex justify-between text-xs"><span>🛌 ${v.t}</span><span class="font-mono text-purple-300">${v.min} min</span></div>`).join('') + `<div class="text-xs font-bold">Total hoy: ${tot} min</div>` : empty('Sin siestas detectadas hoy (se detectan episodios de 10–240 min que empiezan entre 08:00 y 20:00).');
     return card('😴 Siestas', 'Se suman a las horas del día', body + note('Siestas ≤30 min y antes de ~15:00 mejoran alerta con poco efecto sobre el sueño nocturno; >60 min aumentan inercia de sueño (Milner & Cote 2009). En guardia, una siesta profiláctica de 20–30 min reduce errores.'));
   }
 
   function secHrv() {
-    const c = st.comp[0];
+    const { comp: c, raw: r0 } = getSelectedDay();
     if (!c || c.ln_rmssd == null) return card('💓 VFC nocturna vs diurna', 'lnRMSSD (servidor)', empty('Sin datos de VFC computados por el servidor aún.'));
     const lnToday = parseFloat(c.ln_rmssd);
     const lnBase = parseFloat(c.ln_rmssd_14d_mean);
@@ -107,8 +119,8 @@
     const resp = parseFloat(c.resp_rate_brpm);
     const resp14d = parseFloat(c.resp_14d_mean_brpm);
     const spo2 = parseFloat(c.spo2_pct);
-    const nap = ex(st.raw[0]).hrv_nap; const napTxt = nap ? `<div class="text-xs">Siesta: mediana <b class="font-mono">${nap.median} ms</b> · n=${nap.n} <span class="text-slate-400">(no entra en la base)</span></div>` : '';
-    const day = ex(st.raw[0]).hrv_day; const dayTxt = day ? `<div class="text-xs">Diurna (reposo/actividad): mediana <b class="font-mono">${day.median} ms</b> · n=${day.n} · rango ${day.min}–${day.max}</div>` : '<div class="text-[11px] text-slate-400">Sin muestras diurnas guardadas.</div>';
+    const nap = ex(r0).hrv_nap; const napTxt = nap ? `<div class="text-xs">Siesta: mediana <b class="font-mono">${nap.median} ms</b> · n=${nap.n} <span class="text-slate-400">(no entra en la base)</span></div>` : '';
+    const day = ex(r0).hrv_day; const dayTxt = day ? `<div class="text-xs">Diurna (reposo/actividad): mediana <b class="font-mono">${day.median} ms</b> · n=${day.n} · rango ${day.min}–${day.max}</div>` : '<div class="text-[11px] text-slate-400">Sin muestras diurnas guardadas.</div>';
     const stat = recScore != null ? (recScore >= 67 ? ['Recuperado', 'text-emerald-400'] : recScore >= 34 ? ['Equilibrado', 'text-cyan-300'] : ['Fatiga/estrés', 'text-amber-400']) : ['Calibrando', 'text-slate-400'];
     const norm = rhr > 0 ? (rmssd / (60000 / rhr) * 100).toFixed(1) : '--';
     return card('💓 VFC nocturna vs diurna', 'Datos del servidor (lnRMSSD 7d vs base 14d, SWC=0.5·SD)',
@@ -120,6 +132,7 @@
   }
 
   function secWorkouts() {
+    const { raw: r0 } = getSelectedDay();
     const list = [];
     st.raw.slice(0, 7).forEach(r => (ex(r).workouts || []).forEach(w => list.push(Object.assign({ date: r.log_date }, w))));
     list.sort((a, b) => (b.end_ms || 0) - (a.end_ms || 0));
@@ -127,18 +140,19 @@
     const rr = [];
     st.raw.slice(1, 8).forEach(r => { const z = ex(r).active_kcal, c = st.comp.find(q => q.log_date === r.log_date), tmb = parseFloat(r.tmb_kcal); if (z && c && tmb && c.dynamic_tdee_kcal) { const ap = c.dynamic_tdee_kcal - tmb * 1.05; if (ap > 50) rr.push([z, ap]); } });
     const calTxt = rr.length >= 3 ? `<div class="text-[11px] text-amber-300">Calibración: kcal "activas" de Zepp ≈ ×${(mean(rr.map(q => q[0])) / mean(rr.map(q => q[1]))).toFixed(2)} vs estimación ARGON (${rr.length} días). La dieta usa la de ARGON.</div>` : '';
-    return card('🏃 Entrenamientos recientes (Zepp)', 'Últimos 7 días' + (ex(st.raw[0]).active_kcal ? ' · kcal activas hoy (Zepp): ' + ex(st.raw[0]).active_kcal : ''), body + calTxt + note('Zepp no envía kcal por sesión: las marcadas con ~ se estiman con la FC (Keytel 2005, fórmula masculina; error típico ±20–30%, tiende a sobreestimar con FC baja). No se suman a la ingesta ni se usan para "comer lo quemado".'));
+    return card('🏃 Entrenamientos recientes (Zepp)', 'Últimos 7 días' + (ex(r0).active_kcal ? ' · kcal activas día seleccionado (Zepp): ' + ex(r0).active_kcal : ''), body + calTxt + note('Zepp no envía kcal por sesión: las marcadas con ~ se estiman con la FC (Keytel 2005, fórmula masculina; error típico ±20–30%, tiende a sobreestimar con FC baja). No se suman a la ingesta ni se usan para "comer lo quemado".'));
   }
 
   function secSteps() {
-    const goal = LS('argon_steps_goal', 8000), today = parseInt((st.raw[0] || {}).steps_count, 10) || 0;
+    const { raw: r0 } = getSelectedDay();
+    const goal = LS('argon_steps_goal', 8000), today = parseInt((r0 || {}).steps_count, 10) || 0;
     const last7 = st.raw.slice(0, 7).map(r => parseInt(r.steps_count, 10) || 0), hit = last7.filter(v => v >= goal).length;
     const pct = Math.min(100, today / goal * 100), C = 251.2;
     return card('👣 Pasos', 'Meta diaria editable', `<div class="flex items-center gap-4"><svg viewBox="0 0 100 100" class="w-20 h-20"><circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="9"/><circle cx="50" cy="50" r="40" fill="none" stroke="#22d3ee" stroke-width="9" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${(C - pct / 100 * C).toFixed(1)}" transform="rotate(-90 50 50)"/><text x="50" y="55" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">${Math.round(pct)}%</text></svg><div class="text-xs space-y-1"><div class="font-mono font-black text-lg">${today.toLocaleString()} <span class="text-slate-400 text-xs">/ <input id="mbe-goal" type="number" value="${goal}" class="w-16 bg-slate-800 rounded px-1 text-white"></span></div><div class="text-slate-400">Media 7 d: ${Math.round(mean(last7)).toLocaleString()} · meta cumplida ${hit}/7 días</div></div></div>` + note('Meta por defecto 8 000: en adultos <60 años el riesgo de mortalidad se estabiliza hacia 8 000–10 000 pasos/día (Paluch, Lancet Public Health 2022); 8 000 vs 4 000 se asoció a ~51% menos mortalidad total (Saint-Maurice, JAMA 2020). Es asociación observacional.'));
   }
 
   function secRetrain() {
-    const c = st.comp[0], r0 = st.raw[0];
+    const { comp: c, raw: r0 } = getSelectedDay();
     if (!c) return card('⏱️ Volver a entrenar', 'Heurística', empty('Sin datos.'));
     let last = null;
     st.raw.slice(0, 4).forEach(r => (ex(r).workouts || []).forEach(w => { if (w.end_ms && (!last || w.end_ms > last.end_ms)) last = w; }));
@@ -164,7 +178,7 @@
 
   // ---------- Edad Fisiológica ARGON (servidor) ----------
   function secArgonAge() {
-    const c = st.comp[0];
+    const { comp: c } = getSelectedDay();
     if (!c || c.chronological_age == null) return card('🧬 Edad Fisiológica ARGON', 'Modelo multivariante (servidor)', empty('Sin datos computados por el servidor aún.'));
     const chrono = parseFloat(c.chronological_age);
     const physio = parseFloat(c.argon_physiological_age);

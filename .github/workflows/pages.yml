@@ -1,0 +1,61 @@
+# Deploy to GitHub Pages
+# Permisos mínimos requeridos:
+# Settings → Actions → General → Workflow permissions: "Read and write permissions"
+# Settings → Pages → Build and deployment → Source: "GitHub Actions"
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Validate syntax
+        run: |
+          node --check argon-mbe.js
+          node --check simulate-recovery.js
+          node -e "JSON.parse(require('fs').readFileSync('manifest.json'))"
+          echo "✅ All syntax checks passed"
+
+      - name: Run recovery simulation (smoke test)
+        run: |
+          node simulate-recovery.js 2>&1 | tail -30
+          echo "✅ Simulation completed"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
