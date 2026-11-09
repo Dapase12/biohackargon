@@ -81,10 +81,17 @@
           meals_log_json: Array.isArray(r.meals_log_json) ? r.meals_log_json : []
         };
 
-        const recalc = computeArgonDayScore(merged, [...historyRaw].reverse(), prevComp);
-        store[dStr] = recalc;
-        historyRaw.push(merged);
-        prevComp = recalc;
+        // thin-client: usa computed_daily_scores del servidor (ya computado)
+        const serverComp = compMap[dStr];
+        if (serverComp) {
+          store[dStr] = { ...merged, ...serverComp };
+          historyRaw.push({ ...merged, ...serverComp });
+          prevComp = { ...merged, ...serverComp };
+        } else {
+          store[dStr] = merged;
+          historyRaw.push(merged);
+          prevComp = merged;
+        }
       });
 
       saveLocalStore(store);
@@ -155,11 +162,11 @@
     };
 
     const pastList = Object.keys(store).filter(d => d < dateStr).sort().reverse().map(d => store[d]);
-    const recomputed = computeArgonDayScore(updatedRaw, pastList, pastList[0] || null);
-    store[dateStr] = recomputed;
+    // thin-client: optimistic update raw only; server recomputes scores
+    store[dateStr] = updatedRaw;
     saveLocalStore(store);
     loadDayData(dateStr);
-    await window.pushMealsToSupabase(recomputed);
+    await window.pushMealsToSupabase(updatedRaw);
   }
 
   window.quickAddMeal = function (addKcal, addProt, addCarbs, addFat, customLabel) {
