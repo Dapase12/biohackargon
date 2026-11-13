@@ -100,6 +100,7 @@ const corsHeaders = {
 };
 
 // Verify JWT token
+// deno-lint-ignore no-explicit-any
 async function verifyAuth(req: Request, supabase: any): Promise<string | null> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {

@@ -54,6 +54,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// deno-lint-ignore no-explicit-any
 async function verifyAuth(req: Request, supabase: any): Promise<string | null> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return null;
@@ -161,6 +162,7 @@ function ctlAtlTsb(dailyTrimp: number[], ctlDays = 42, atlDays = 7): { ctl: numb
 }
 
 // Get recent daily TRIMP from Supabase
+// deno-lint-ignore no-explicit-any
 async function getRecentTrimp(supabase: any, userId: string, days: number): Promise<number[]> {
   const { data, error } = await supabase
     .from("computed_daily_scores")
@@ -233,7 +235,8 @@ serve(async (req: Request) => {
       sex,
       wake_minutes = 960,
       quiet_hrr,
-      exercise_type,
+      // exercise_type reserved for future use
+      _exercise_type: exercise_type,
     } = payload;
 
     // Calculate TRIMP
