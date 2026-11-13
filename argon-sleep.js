@@ -131,7 +131,11 @@
   }
 
   async function getCurrentUserId() {
-    // Try to get from auth (if using Supabase auth)
+    // 1. Try localStorage (manually configured in Settings)
+    const stored = localStorage.getItem('argon_user_id');
+    if (stored && stored.trim()) return stored.trim();
+
+    // 2. Fallback: Try Supabase auth (requires valid JWT, not anon key)
     const c = cfg();
     if (!c.key) return '';
 
