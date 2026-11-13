@@ -646,6 +646,45 @@
             <div id="apex-telemetry-chart" class="w-full min-h-[255px]"></div>
           </section>
 
+          <!-- Hipnograma (Sleep Staging) -->
+          <section class="native-card p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <h2 class="text-xs font-extrabold uppercase tracking-wider text-purple-300">📊 Hipnograma (Etapas de Sueño)</h2>
+              <span class="text-[10px] text-slate-400">0=Despierto · 1=NREM · 2=REM · Azul oscuro=Profundo</span>
+            </div>
+            <div id="sleep-hypnogram" class="min-h-[120px]"></div>
+          </section>
+
+          <!-- Puntuaciones de Sueño (Sleep Scores) -->
+          <section class="native-card p-4 space-y-3">
+            <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">🏆 Puntuaciones de Sueño</h2>
+            <div id="sleep-scores" class="space-y-2"></div>
+          </section>
+
+          <!-- Gráficas por Época (HR, HRV, Movimiento) -->
+          <section class="native-card p-4 space-y-3">
+            <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">📉 Telemetría por Época (30s)</h2>
+            <div id="sleep-epoch-charts" class="w-full min-h-[320px]"></div>
+          </section>
+
+          <!-- Tendencias de VFC (14-30 días) -->
+          <section class="native-card p-4 space-y-3">
+            <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">📈 Tendencias VFC (30 días)</h2>
+            <div id="sleep-hrv-trends" class="w-full min-h-[280px]"></div>
+          </section>
+
+          <!-- Perfil Personal de Sueño (Baselines) -->
+          <section class="native-card p-4 space-y-3">
+            <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">🧬 Perfil Personal de Sueño</h2>
+            <div id="sleep-profile-baselines" class="space-y-2"></div>
+          </section>
+
+          <!-- Tendencias de Arquitectura del Sueño -->
+          <section class="native-card p-4 space-y-3">
+            <h2 class="text-xs font-extrabold uppercase tracking-wider text-white">📊 Tendencias Arquitectura del Sueño (30 días)</h2>
+            <div id="sleep-trend-charts" class="w-full min-h-[300px]"></div>
+          </section>
+
         </div>
 
         <!-- ==================================================================
@@ -1073,6 +1112,9 @@
       if (argonSwiper) argonSwiper.slideTo(index, 300);
       updateBottomNavActiveState(index);
       window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      // Dispatch event for modules listening to tab changes (e.g., sleep staging)
+      window.dispatchEvent(new CustomEvent('argon-tab-change', { detail: index }));
     }
 
     function updateBottomNavActiveState(activeIdx) {
@@ -1308,6 +1350,10 @@
       if (dates.length === 0 && !(localStorage.getItem('argon_sb_key') || '').trim()) {
       } else {
         loadDayData(todayStr);
+        // Trigger sleep data loading if on sleep tab or if sleep module is ready
+        if (window.argonSleep && typeof window.argonSleep.load === 'function') {
+          window.argonSleep.load(todayStr);
+        }
       }
     });
 
@@ -1894,6 +1940,10 @@
         const allSorted = sortedDates.map(d => store[d]);
         document.getElementById('selected-date').value = cached.log_date;
         renderDashboard(cached, allSorted);
+        // Reload sleep staging data for the selected date
+        if (window.argonSleep && typeof window.argonSleep.load === 'function') {
+          window.argonSleep.load(dateStr);
+        }
         return;
       }
       // 2. Fallback to localStorage
@@ -1904,6 +1954,10 @@
       if (record) {
         document.getElementById('selected-date').value = record.log_date;
         renderDashboard(record, allSorted);
+        // Reload sleep staging data for the selected date
+        if (window.argonSleep && typeof window.argonSleep.load === 'function') {
+          window.argonSleep.load(dateStr);
+        }
       }
     }
 
@@ -2197,6 +2251,10 @@
 
           saveLocalStore(store);
           loadDayData(todayIso);
+          // Also load sleep staging data
+          if (window.argonSleep && typeof window.argonSleep.load === 'function') {
+            window.argonSleep.load(todayIso);
+          }
           document.getElementById('sync-status-text').textContent = `Cloud Activo (${allDates.length}d)`;
         }
       } catch (e) {
@@ -3238,6 +3296,7 @@
     renderDashboard = function (rec, all) { _rd(rec, all); try { renderWkCard(); renderMealCard(); } catch (e) { console.error('ARGON+C', e); } };
   })();
   </script>
+  <script src="argon-sleep.js"></script>
   <script src="argon-mbe.js"></script>
 </body>
 </html>

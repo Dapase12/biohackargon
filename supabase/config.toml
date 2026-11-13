@@ -1,0 +1,91 @@
+# Supabase Configuration for Argon Biohacking Platform
+# Run: supabase start (local) or supabase deploy --project-ref <ref> (remote)
+
+project_id = "argon-biohack"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 16
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+pop_port = 54325
+
+[auth]
+enabled = true
+port = 54326
+jwt_expiry = 3600
+enable_signup = true
+enable_anonymous_sign_ins = false
+email_template_folder = "supabase/templates"
+
+[auth.email]
+enable_confirmations = false
+double_confirm_changes = false
+secure_email_change = false
+
+[auth.sms]
+enable_signup = false
+enable_confirmations = false
+
+[auth.external]
+enabled_providers = ["google", "apple"]
+
+[edge-runtime]
+enabled = true
+port = 54327
+
+[functions]
+# Sleep staging webhook
+sleep-webhook = {
+  path = "sleep-webhook",
+  entrypoint = "index.ts",
+  verify_jwt = true,
+  import_map = "supabase/functions/sleep-webhook/import_map.json"
+}
+
+# Strain/TRIMP webhook
+strain-webhook = {
+  path = "strain-webhook",
+  entrypoint = "index.ts",
+  verify_jwt = true,
+  import_map = "supabase/functions/strain-webhook/import_map.json"
+}
+
+# Optional: Python pipeline service (if deployed separately)
+# python-pipeline = {
+#   path = "python-pipeline",
+#   entrypoint = "main.py",
+#   verify_jwt = true
+# }
+
+[storage]
+enabled = true
+port = 54328
+file_size_limit = "50MiB"
+
+[realtime]
+enabled = true
+port = 54329
+ip_version = "ipv4"
+
+[analytics]
+enabled = false
+
+[logs]
+enabled = true
+level = "info"
+retention_days = 7

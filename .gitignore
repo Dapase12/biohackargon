@@ -1,47 +1,22 @@
-# Dependencies
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+.pytest_cache/
+.mypy_cache/
+validation/reports/
+
+# Node
 node_modules/
-
-# Environment & Secrets
-.env
-.env.local
-.env.*.local
-*.key
-*.pem
-
-# User config (never commit real secrets)
-# config.js  ← demo config.js se deploya a Pages; usuario real usa config.template.js → config.js local
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
-npm-debug.log*
-
-# Build / Dist (not used but safe)
-dist/
-build/
-
-# Local data / Supabase cache
-*.sqlite
-*.db
-localStorage.json
-
-# Temporary
-*.tmp
-*.temp
-*.bak
-
-# Testing
-coverage/
-.nyc_output/
-
-# TypeScript (if added)
-*.tsbuildinfo
+# Local config
+config.js

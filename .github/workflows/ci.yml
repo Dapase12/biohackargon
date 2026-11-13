@@ -1,0 +1,153 @@
+# CI Pipeline for Argon Biohacking Platform
+# Runs on every push and PR
+
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Python package tests
+  python-tests:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: python/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          pip install -e .[dev]
+          pip install pytest pytest-cov pytest-asyncio
+
+      - name: Run linting (ruff)
+        run: ruff check argon_algorithms tests validation
+
+      - name: Run type checking (mypy)
+        run: mypy argon_algorithms
+
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ -v --cov=argon_algorithms --cov-report=xml --cov-fail-under=80
+          pytest validation/ -v
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./python/coverage.xml
+          flags: python
+          name: python-coverage
+
+  # Edge Functions linting
+  edge-functions-lint:
+    name: Edge Functions Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.40.0
+
+      - name: Lint Edge Functions
+        run: |
+          deno lint supabase/functions/sleep-webhook/index.ts
+          deno lint supabase/functions/strain-webhook/index.ts
+
+      - name: Check formatting
+        run: |
+          deno fmt --check supabase/functions/sleep-webhook/index.ts
+          deno fmt --check supabase/functions/strain-webhook/index.ts
+
+  # Deploy Edge Functions (on main branch only)
+  deploy-edge-functions:
+    name: Deploy Edge Functions
+    needs: [python-tests, edge-functions-lint]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy Edge Functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          supabase functions deploy sleep-webhook --project-ref $SUPABASE_PROJECT_REF
+          supabase functions deploy strain-webhook --project-ref $SUPABASE_PROJECT_REF
+
+      - name: Set Edge Function secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          supabase secrets set PYTHON_PIPELINE_URL="${{ secrets.PYTHON_PIPELINE_URL }}" --project-ref $SUPABASE_PROJECT_REF
+
+  # Deploy to GitHub Pages (existing workflow, kept for reference)
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate syntax
+        run: |
+          node --check argon-mbe.js
+          node --check simulate-recovery.js
+          node -e "JSON.parse(require('fs').readFileSync('manifest.json'))"
+          echo "✅ All syntax checks passed"
+
+      - name: Run recovery simulation (smoke test)
+        run: |
+          node simulate-recovery.js 2>&1 | tail -30
+          echo "✅ Simulation completed"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
