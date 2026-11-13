@@ -155,7 +155,7 @@ function parseRRSeries(rrData: Array<{ ts_ms: number | number[]; rr_ms: number[]
 // Call Python pipeline via HTTP (since we can't import Python directly)
 // In production, this would call a separate Python service or use a WASM build
 // For now, we implement the core logic in TypeScript or call a deployed service
-async function processSleepData(raw: RawSleepData, supabaseUrl: string, supabaseKey: string): Promise<PipelineResult> {
+async function processSleepData(raw: RawSleepData, supabaseUrl: string, _supabaseKey: string): Promise<PipelineResult> {
   // For now, we'll call a Python service endpoint
   // In the future, we could use Pyodide/WASM or a dedicated Python service
 
