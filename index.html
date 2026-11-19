@@ -2161,7 +2161,7 @@
         // 2. Llamar endpoint servidor para recalcular MBE (single source of truth)
         document.getElementById('sync-status-text').textContent = 'Recalculando MBE en servidor...';
         const webappUrl = localStorage.getItem('ARGON_WEBAPP_URL');
-        if (webappUrl) {
+        if (webappUrl && webappUrl.trim()) {
           try {
             const resp = await fetch(webappUrl, {
               method: 'POST',
@@ -2176,6 +2176,7 @@
             document.getElementById('sync-status-text').textContent = 'Sync raw OK, recalc pendiente';
           }
         } else {
+          showToast('Configura ARGON_WEBAPP_URL en Ajustes');
           document.getElementById('sync-status-text').textContent = 'Sync raw OK (configura ARGON_WEBAPP_URL)';
         }
       } catch (err) {
@@ -2210,7 +2211,7 @@
 
             // Prefer server-computed data (thin-client). Fallback to client recompute if missing.
             let record;
-            if (c && c.recovery_score !== null && c.recovery_score !== undefined) {
+            if (c && c.recovery_score != null) {
               // Server has full MBE data — use it directly
               record = { ...c, log_date: dStr };
               // Merge raw fields that server doesn't compute (meals, etc.)
@@ -2528,9 +2529,10 @@
       }
     }
   </script>
-  <script src="argon-patch.js"></script>
+  <script type="module" src="argon-patch.js"></script>
 
-  <script>
+  <script type="module">
+  import { config } from './src/config/index.ts';
   /* ARGON+ : Tendencias, Insights, Diario, Hidratación, PTR, Toast */
   (function () {
     const JKEY = 'argon_journal_v1';
@@ -2691,7 +2693,7 @@
   })();
   </script>
 
-  <script>
+  <script type="module">
   /* ARGON+ Paquete A: menú lateral + speed-dial + header */
   (function () {
     const $ = (id) => document.getElementById(id);
@@ -2774,7 +2776,7 @@
   })();
   </script>
 
-  <script>
+  <script type="module">
   /* ARGON+ Paquete B: ventanas de detalle, anillos con gradiente, números animados, skeleton, confeti */
   (function () {
     const $ = (id) => document.getElementById(id);
@@ -3302,7 +3304,8 @@
     renderDashboard = function (rec, all) { _rd(rec, all); try { renderWkCard(); renderMealCard(); } catch (e) { console.error('ARGON+C', e); } };
   })();
   </script>
-  <script src="argon-sleep.js"></script>
-  <script src="argon-mbe.js"></script>
+  <script type="module" src="main-app.js"></script>
+  <script type="module" src="argon-sleep.js"></script>
+  <script type="module" src="argon-mbe.js"></script>
 </body>
 </html>

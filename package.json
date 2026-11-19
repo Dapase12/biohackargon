@@ -1,0 +1,49 @@
+{
+  "name": "argon-biohack-pwa",
+  "version": "6.0.0",
+  "description": "ARGON v6.0 Biohacking PWA - Test Infrastructure",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:unit": "node --max-old-space-size=4096 node_modules/vitest/vitest.mjs run tests/unit",
+    "test:integration": "node --max-old-space-size=4096 node_modules/vitest/vitest.mjs run tests/integration",
+    "test:e2e": "playwright test",
+    "test:coverage": "node --max-old-space-size=4096 node_modules/vitest/vitest.mjs run --coverage",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "build": "node esbuild.config.js",
+    "dev": "npx http-server dist -p 8080 -c-1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0",
+    "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^2.0.0",
+    "esbuild": "^0.28.2",
+    "jsdom": "^24.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.1",
+    "zod": "^4.6.7"
+  },
+  "main": "argon-mbe.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dapase12/biohackargon.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dapase12/biohackargon/issues"
+  },
+  "homepage": "https://github.com/dapase12/biohackargon#readme"
+}

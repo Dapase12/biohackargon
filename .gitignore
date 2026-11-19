@@ -10,6 +10,15 @@ validation/reports/
 # Node
 node_modules/
 
+# Build outputs
+dist/
+build/
+
+# Test outputs
+coverage/
+test-results/
+*.lcov
+
 # IDE
 .vscode/
 .idea/
@@ -20,3 +29,10 @@ Thumbs.db
 
 # Local config
 config.js
+
+# Supabase temp
+supabase/.temp/
+
+# Playwright
+playwright-report/
+test-results/
