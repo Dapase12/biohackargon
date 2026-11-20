@@ -20237,7 +20237,7 @@ async function syncFromSupabase() {
     });
     const today = todayIso();
     const allDates = Array.from(/* @__PURE__ */ new Set([...Object.keys(rawMap), ...Object.keys(compMap), today])).sort();
-    const store = config2.getLocalStore();
+    const store = window.getLocalStore();
     Object.keys(store).forEach((d) => {
       if (d >= since && !allDates.includes(d)) delete store[d];
     });
@@ -20288,7 +20288,7 @@ async function syncFromSupabase() {
         prevComp = merged;
       }
     });
-    config2.saveLocalStore(store);
+    window.saveLocalStore(store);
     const cur = $("selected-date")?.value;
     loadDayData(store[cur] ? cur : today);
     setStatus(`Cloud Activo (${allDates.length}d)`);
@@ -20329,7 +20329,7 @@ async function pushMealsToSupabase(c) {
 window.pushMealsToSupabase = pushMealsToSupabase;
 async function mutateMeals(mutator) {
   const dateStr = $("selected-date")?.value || todayIso();
-  const store = config2.getLocalStore();
+  const store = window.getLocalStore();
   const current = store[dateStr];
   if (!current) return;
   const meals = Array.isArray(current.meals_log_json) ? [...current.meals_log_json] : [];
@@ -20350,7 +20350,7 @@ async function mutateMeals(mutator) {
     meals_log_json: next.meals
   };
   store[dateStr] = updatedRaw;
-  config2.saveLocalStore(store);
+  window.saveLocalStore(store);
   loadDayData(dateStr);
   await pushMealsToSupabase(updatedRaw);
 }
@@ -20413,7 +20413,7 @@ window.runQualityAuditModal = async function() {
     const list = $("qa-results-list");
     if (!list || !supabaseClient) return;
     const dateStr = $("selected-date")?.value || todayIso();
-    const store = config2.getLocalStore();
+    const store = window.getLocalStore();
     const rec = store[dateStr];
     const { data, error: error62 } = await supabaseClient.from("daily_raw_biometrics").select("*").eq("log_date", dateStr).limit(1);
     if (error62) throw error62;

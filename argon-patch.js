@@ -44,7 +44,7 @@ async function syncFromSupabase() {
     const today = todayIso();
     const allDates = Array.from(new Set([...Object.keys(rawMap), ...Object.keys(compMap), today])).sort();
 
-    const store = config.getLocalStore();
+    const store = window.getLocalStore();
     // Elimina días simulados (seed) dentro de la ventana que no existen en la nube
     Object.keys(store).forEach(d => { if (d >= since && !allDates.includes(d)) delete store[d]; });
 
@@ -102,7 +102,7 @@ async function syncFromSupabase() {
       }
     });
 
-    config.saveLocalStore(store);
+    window.saveLocalStore(store);
     const cur = ($('selected-date') as HTMLInputElement)?.value;
     loadDayData(store[cur] ? cur : today);
     setStatus(`Cloud Activo (${allDates.length}d)`);
@@ -151,7 +151,7 @@ async function pushMealsToSupabase(c: any) {
 
 async function mutateMeals(mutator: (meals: any[], totals: any) => { meals: any[]; totals: any } | null) {
   const dateStr = ($('selected-date') as HTMLInputElement)?.value || todayIso();
-  const store = config.getLocalStore();
+  const store = window.getLocalStore();
   const current = store[dateStr];
   if (!current) return;
 
@@ -176,7 +176,7 @@ async function mutateMeals(mutator: (meals: any[], totals: any) => { meals: any[
 
   // thin-client: optimistic update raw only; server recomputes scores
   store[dateStr] = updatedRaw;
-  config.saveLocalStore(store);
+  window.saveLocalStore(store);
   loadDayData(dateStr);
   await pushMealsToSupabase(updatedRaw);
 }
@@ -248,7 +248,7 @@ const _qaOrig = (window as any).runQualityAuditModal;
     const list = $('qa-results-list');
     if (!list || !supabaseClient) return;
     const dateStr = ($('selected-date') as HTMLInputElement)?.value || todayIso();
-    const store = config.getLocalStore();
+    const store = window.getLocalStore();
     const rec = store[dateStr];
     const { data, error } = await supabaseClient.from('daily_raw_biometrics')
       .select('*').eq('log_date', dateStr).limit(1);
