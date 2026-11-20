@@ -83,10 +83,33 @@ async function request<T>(
     query = query.eq('user_id', userId);
   }
 
-  // Additional filters
+  // Additional filters - support PostgREST operators (eq., gte., gt., lte., lt., like., ilike., in., etc.)
   if (params.filters) {
     Object.entries(params.filters).forEach(([key, value]) => {
-      query = query.eq(key, value);
+      if (value.startsWith('gte.')) {
+        query = query.gte(key, value.slice(4));
+      } else if (value.startsWith('gt.')) {
+        query = query.gt(key, value.slice(3));
+      } else if (value.startsWith('lte.')) {
+        query = query.lte(key, value.slice(4));
+      } else if (value.startsWith('lt.')) {
+        query = query.lt(key, value.slice(3));
+      } else if (value.startsWith('like.')) {
+        query = query.like(key, value.slice(5));
+      } else if (value.startsWith('ilike.')) {
+        query = query.ilike(key, value.slice(6));
+      } else if (value.startsWith('in.')) {
+        query = query.in(key, value.slice(3).split(','));
+      } else if (value.startsWith('neq.')) {
+        query = query.neq(key, value.slice(4));
+      } else if (value.startsWith('is.')) {
+        query = query.is(key, value.slice(3));
+      } else if (value.startsWith('eq.')) {
+        query = query.eq(key, value.slice(3));
+      } else {
+        // Default to exact match (no prefix)
+        query = query.eq(key, value);
+      }
     });
   }
 
