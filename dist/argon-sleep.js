@@ -552,7 +552,8 @@ async function request(table, params = {}) {
   const userId = getUserId();
   const qb = client;
   let query = qb.from(table).select(params.select || "*");
-  if (userId && table !== "webhook_logs") {
+  const tablesWithUserId = ["sleep_user_profiles", "user_clinical_profile"];
+  if (userId && tablesWithUserId.includes(table)) {
     query = query.eq("user_id", userId);
   }
   if (params.filters) {

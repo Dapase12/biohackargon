@@ -77,8 +77,9 @@ async function request<T>(
   const qb: any = client;
   let query = qb.from(table).select(params.select || '*');
 
-  // Auto-filter by user_id if table has the column and user is set
-  if (userId && table !== 'webhook_logs') {
+  // Auto-filter by user_id ONLY for tables that have the column
+  const tablesWithUserId = ['sleep_user_profiles', 'user_clinical_profile'];
+  if (userId && tablesWithUserId.includes(table as string)) {
     query = query.eq('user_id', userId);
   }
 
