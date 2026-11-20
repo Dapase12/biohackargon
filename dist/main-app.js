@@ -20885,15 +20885,16 @@ if (typeof window !== "undefined") {
 // src/components/app/sync-helpers.ts
 var SUPABASE_URL = config2.supabase?.url || "";
 var SUPABASE_ANON_KEY = config2.supabase?.anonKey || "";
+var STORAGE_KEY_RECORDS = "argon_graphos_records_v54";
 function getLocalStore3() {
   try {
-    return JSON.parse(localStorage.getItem("argon_local_store") || "{}");
+    return JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || "{}");
   } catch {
     return {};
   }
 }
 function setLocalStore(data) {
-  localStorage.setItem("argon_local_store", JSON.stringify(data));
+  localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(data));
 }
 function showToast4(msg) {
   if (typeof window !== "undefined" && window.showToast) {
@@ -21116,7 +21117,7 @@ if (typeof window !== "undefined") {
 // main-app.js
 var CACHE_KEY_PREFIX = "argon:cache:";
 var CACHE_TTL_MS = 5 * 60 * 1e3;
-var STORAGE_KEY_RECORDS = "argon_graphos_records_v54";
+var STORAGE_KEY_RECORDS2 = "argon_graphos_records_v54";
 function getCache(dateStr) {
   try {
     const item = localStorage.getItem(CACHE_KEY_PREFIX + dateStr);
@@ -21147,13 +21148,13 @@ function clearCache() {
 }
 function getLocalStore4() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || "{}");
+    return JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS2) || "{}");
   } catch {
     return {};
   }
 }
 function saveLocalStore(store) {
-  localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(store));
+  localStorage.setItem(STORAGE_KEY_RECORDS2, JSON.stringify(store));
 }
 function s(obj, key, def = "--") {
   const v = obj?.[key];

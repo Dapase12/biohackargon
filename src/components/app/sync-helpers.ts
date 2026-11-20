@@ -9,12 +9,14 @@ import { config } from '@/config';
 const SUPABASE_URL = config.supabase?.url || '';
 const SUPABASE_ANON_KEY = config.supabase?.anonKey || '';
 
+const STORAGE_KEY_RECORDS = 'argon_graphos_records_v54';
+
 function getLocalStore(): Record<string, any> {
-  try { return JSON.parse(localStorage.getItem('argon_local_store') || '{}'); } catch { return {}; }
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || '{}'); } catch { return {}; }
 }
 
 function setLocalStore(data: Record<string, any>): void {
-  localStorage.setItem('argon_local_store', JSON.stringify(data));
+  localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(data));
 }
 
 function showToast(msg: string): void {
