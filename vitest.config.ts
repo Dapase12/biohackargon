@@ -30,10 +30,25 @@ export default defineConfig({
         'node_modules/**',
         'dist/**',
         '*.config.ts',
+        '*.config.js',
         'index.html',
         'tests/**',
         'sw.js',
-        'manifest.json'
+        'manifest.json',
+        'supabase/**',
+        '*.js',
+        '*.mjs',
+        '*.cjs',
+        'python/**',
+        'gas_*.js',
+        'src/api/**',
+        'src/components/app/**',
+        'src/components/mbe/**',
+        'src/components/sleep/**',
+        'src/config/**',
+        'src/types/**',
+        'src/constants/**',
+        'src/utils/**'
       ]
     },
     clearMocks: true,
@@ -41,7 +56,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, '.')
+      '@': path.resolve(__dirname, './src')
     }
   }
 })

@@ -162,6 +162,10 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+-- Drop existing triggers if they exist (idempotent)
+DROP TRIGGER IF EXISTS update_sleep_segmentations_updated_at ON sleep_segmentations;
+DROP TRIGGER IF EXISTS update_sleep_user_profiles_updated_at ON sleep_user_profiles;
+
 CREATE TRIGGER update_sleep_segmentations_updated_at
     BEFORE UPDATE ON sleep_segmentations
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -175,6 +179,18 @@ ALTER TABLE sleep_segmentations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sleep_epoch_features ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sleep_user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sleep_night_observations ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies (idempotent)
+DROP POLICY IF EXISTS "Users can view own sleep_segmentations" ON sleep_segmentations;
+DROP POLICY IF EXISTS "Users can insert own sleep_segmentations" ON sleep_segmentations;
+DROP POLICY IF EXISTS "Users can update own sleep_segmentations" ON sleep_segmentations;
+DROP POLICY IF EXISTS "Users can view own sleep_epoch_features" ON sleep_epoch_features;
+DROP POLICY IF EXISTS "Users can insert own sleep_epoch_features" ON sleep_epoch_features;
+DROP POLICY IF EXISTS "Users can view own sleep_user_profiles" ON sleep_user_profiles;
+DROP POLICY IF EXISTS "Users can insert own sleep_user_profiles" ON sleep_user_profiles;
+DROP POLICY IF EXISTS "Users can update own sleep_user_profiles" ON sleep_user_profiles;
+DROP POLICY IF EXISTS "Users can view own sleep_night_observations" ON sleep_night_observations;
+DROP POLICY IF EXISTS "Users can insert own sleep_night_observations" ON sleep_night_observations;
 
 -- Políticas: usuarios solo ven sus propios datos
 CREATE POLICY "Users can view own sleep_segmentations"

@@ -1,0 +1,1801 @@
+{
+  "timestamp": "2026-11-12T14:49:23.554369",
+  "total_tests": 39,
+  "passed": 32,
+  "failed": 0,
+  "skipped": 7,
+  "errors": 0,
+  "total_time_ms": 1928.7756997218821,
+  "results": [
+    {
+      "algorithm": "hrs",
+      "test_name": "basic_8bit_hr_only",
+      "status": "pass",
+      "python_output": {
+        "hr": 72,
+        "rrMs": [],
+        "contact": null
+      },
+      "expected_output": {
+        "hr": 72,
+        "rrMs": [],
+        "contact": null
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.03579998156055808,
+      "metadata": {
+        "input_bytes": [
+          0,
+          72
+        ],
+        "description": "8-bit HR, no RR, contact not supported",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "basic_8bit_hr_contact_not_supported",
+      "status": "pass",
+      "python_output": {
+        "hr": 72,
+        "rrMs": [],
+        "contact": null
+      },
+      "expected_output": {
+        "hr": 72,
+        "rrMs": [],
+        "contact": null
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.020099978428333998,
+      "metadata": {
+        "input_bytes": [
+          2,
+          72
+        ],
+        "description": "8-bit HR, contact bits=01 (not supported)",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "basic_8bit_hr_contact_supported_no_contact",
+      "status": "pass",
+      "python_output": {
+        "hr": 72,
+        "rrMs": [],
+        "contact": false
+      },
+      "expected_output": {
+        "hr": 72,
+        "rrMs": [],
+        "contact": false
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.01270000939257443,
+      "metadata": {
+        "input_bytes": [
+          4,
+          72
+        ],
+        "description": "8-bit HR, contact supported but no contact",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "basic_8bit_hr_contact_supported_contact",
+      "status": "pass",
+      "python_output": {
+        "hr": 72,
+        "rrMs": [],
+        "contact": true
+      },
+      "expected_output": {
+        "hr": 72,
+        "rrMs": [],
+        "contact": true
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.005799985956400633,
+      "metadata": {
+        "input_bytes": [
+          6,
+          72
+        ],
+        "description": "8-bit HR, contact supported and contact detected",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "wide_16bit_hr_invalid_high",
+      "status": "skip",
+      "python_output": null,
+      "expected_output": null,
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.0036999990697950125,
+      "metadata": {
+        "input_bytes": [
+          1,
+          132,
+          3
+        ],
+        "description": "16-bit HR value 900 bpm - should be rejected as >300",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "wide_16bit_hr_valid",
+      "status": "pass",
+      "python_output": {
+        "hr": 300,
+        "rrMs": [],
+        "contact": null
+      },
+      "expected_output": {
+        "hr": 300,
+        "rrMs": [],
+        "contact": null
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.006599992047995329,
+      "metadata": {
+        "input_bytes": [
+          1,
+          44,
+          1
+        ],
+        "description": "16-bit HR value 300 bpm - max valid",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "wide_16bit_hr_zero_rejected",
+      "status": "skip",
+      "python_output": null,
+      "expected_output": null,
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.0017999846022576094,
+      "metadata": {
+        "input_bytes": [
+          1,
+          0,
+          0
+        ],
+        "description": "16-bit HR value 0 - should be rejected",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "with_energy_expended",
+      "status": "pass",
+      "python_output": {
+        "hr": 72,
+        "rrMs": [],
+        "contact": null
+      },
+      "expected_output": {
+        "hr": 72,
+        "rrMs": [],
+        "contact": null
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.005499983672052622,
+      "metadata": {
+        "input_bytes": [
+          8,
+          72,
+          16,
+          0
+        ],
+        "description": "Energy Expended present (ignored), 8-bit HR",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "with_energy_expended_wide",
+      "status": "skip",
+      "python_output": {
+        "hr": 72,
+        "rrMs": [],
+        "contact": null
+      },
+      "expected_output": null,
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.006399990525096655,
+      "metadata": {
+        "input_bytes": [
+          9,
+          72,
+          0,
+          16,
+          0
+        ],
+        "description": "Energy Expended present with wide HR",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "truncated_energy_expended",
+      "status": "skip",
+      "python_output": null,
+      "expected_output": null,
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.0021999876480549574,
+      "metadata": {
+        "input_bytes": [
+          8,
+          72,
+          16
+        ],
+        "description": "Truncated Energy Expended - should return None",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "single_rr_interval",
+      "status": "pass",
+      "python_output": {
+        "hr": 72,
+        "rrMs": [
+          1000
+        ],
+        "contact": null
+      },
+      "expected_output": {
+        "hr": 72,
+        "rrMs": [
+          1000
+        ],
+        "contact": null
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.010399991879239678,
+      "metadata": {
+        "input_bytes": [
+          16,
+          72,
+          0,
+          4
+        ],
+        "description": "Single RR interval: 1024 ticks = 1000ms",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "multiple_rr_intervals",
+      "status": "pass",
+      "python_output": {
+        "hr": 72,
+        "rrMs": [
+          1000,
+          1000,
+          1156
+        ],
+        "contact": null
+      },
+      "expected_output": {
+        "hr": 72,
+        "rrMs": [
+          1000,
+          1000,
+          1156
+        ],
+        "contact": null
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.01170000177808106,
+      "metadata": {
+        "input_bytes": [
+          16,
+          72,
+          0,
+          4,
+          0,
+          4,
+          160,
+          4
+        ],
+        "description": "Three RR intervals: 1024, 1024, 1184 ticks -> 1000, 1000, 1156ms",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "rr_with_contact",
+      "status": "pass",
+      "python_output": {
+        "hr": 72,
+        "rrMs": [
+          1000
+        ],
+        "contact": true
+      },
+      "expected_output": {
+        "hr": 72,
+        "rrMs": [
+          1000
+        ],
+        "contact": true
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.006399990525096655,
+      "metadata": {
+        "input_bytes": [
+          22,
+          72,
+          0,
+          4
+        ],
+        "description": "RR intervals with contact detected",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "rr_zero_ticks_filtered",
+      "status": "pass",
+      "python_output": {
+        "hr": 72,
+        "rrMs": [
+          1000
+        ],
+        "contact": null
+      },
+      "expected_output": {
+        "hr": 72,
+        "rrMs": [
+          1000
+        ],
+        "contact": null
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.006799993570894003,
+      "metadata": {
+        "input_bytes": [
+          16,
+          72,
+          0,
+          0,
+          0,
+          4
+        ],
+        "description": "Zero ticks RR filtered out",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "truncated_rr_odd_bytes",
+      "status": "skip",
+      "python_output": null,
+      "expected_output": null,
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.0020999868866056204,
+      "metadata": {
+        "input_bytes": [
+          16,
+          72,
+          0
+        ],
+        "description": "Truncated RR (odd bytes) - should return None",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "wide_hr_ee_rr_contact",
+      "status": "pass",
+      "python_output": {
+        "hr": 300,
+        "rrMs": [
+          1000
+        ],
+        "contact": true
+      },
+      "expected_output": {
+        "hr": 300,
+        "rrMs": [
+          1000
+        ],
+        "contact": true
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.006499991286545992,
+      "metadata": {
+        "input_bytes": [
+          31,
+          44,
+          1,
+          16,
+          0,
+          0,
+          4
+        ],
+        "description": "All flags set: wide HR, EE, RR, contact",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "too_short",
+      "status": "skip",
+      "python_output": null,
+      "expected_output": null,
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.0008999777492135763,
+      "metadata": {
+        "input_bytes": [
+          0
+        ],
+        "description": "Too short (<2 bytes)",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "hrs",
+      "test_name": "hr_301_wide_rejected",
+      "status": "skip",
+      "python_output": null,
+      "expected_output": null,
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.0017999846022576094,
+      "metadata": {
+        "input_bytes": [
+          1,
+          45,
+          1
+        ],
+        "description": "Wide HR > 300 rejected",
+        "source": "bluetooth_sig_spec"
+      }
+    },
+    {
+      "algorithm": "trimp",
+      "test_name": "banister_trimp_60min_145bpm_male_30",
+      "status": "pass",
+      "python_output": {
+        "trimp": 88.1,
+        "net_trimp": 88.1
+      },
+      "expected_output": {
+        "trimp": 88.1,
+        "net_trimp": 88.1
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.42799999937415123,
+      "metadata": {
+        "input": {
+          "hr_per_min": [
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145
+          ],
+          "resting_hr": 60,
+          "max_hr": 190,
+          "sex": "male"
+        },
+        "description": "60 min at 145 bpm, male age 30, rest_hr 60",
+        "source": "python_implementation"
+      }
+    },
+    {
+      "algorithm": "trimp",
+      "test_name": "banister_trimp_30min_160bpm_female_25",
+      "status": "pass",
+      "python_output": {
+        "trimp": 73.5,
+        "net_trimp": 73.5
+      },
+      "expected_output": {
+        "trimp": 73.5,
+        "net_trimp": 73.5
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.16659998800605536,
+      "metadata": {
+        "input": {
+          "hr_per_min": [
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160,
+            160
+          ],
+          "resting_hr": 55,
+          "max_hr": 190,
+          "sex": "female"
+        },
+        "description": "30 min at 160 bpm, female age 25, rest_hr 55",
+        "source": "openstrap_dart_calibration"
+      }
+    },
+    {
+      "algorithm": "trimp",
+      "test_name": "banister_trimp_below_exercise_floor",
+      "status": "pass",
+      "python_output": {
+        "trimp": 21.3,
+        "net_trimp": 21.3
+      },
+      "expected_output": {
+        "trimp": 21.3,
+        "net_trimp": 21.3
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.11900000390596688,
+      "metadata": {
+        "input": {
+          "hr_per_min": [
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100
+          ],
+          "resting_hr": 60,
+          "max_hr": 190,
+          "sex": "male"
+        },
+        "description": "HR at 100 bpm (HRR ~0.32) - TRIMP computed but below exercise floor",
+        "source": "openstrap_dart_calibration"
+      }
+    },
+    {
+      "algorithm": "trimp",
+      "test_name": "quiet_hrr_sufficient_data",
+      "status": "pass",
+      "python_output": {
+        "hrr": 0.07692307692307693,
+        "days": 1,
+        "settled": true
+      },
+      "expected_output": {
+        "hrr": 0.077,
+        "days": 1,
+        "settled": true
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.12599999899975955,
+      "metadata": {
+        "input": {
+          "hr_per_min": [
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71,
+            70,
+            71,
+            69,
+            70,
+            72,
+            70,
+            71
+          ],
+          "resting_hr": 60.0,
+          "max_hr": 190.0,
+          "min_minutes": 60
+        },
+        "description": "Sufficient quiet HR samples",
+        "source": "openstrap_dart_calibration"
+      }
+    },
+    {
+      "algorithm": "trimp",
+      "test_name": "quiet_hrr_insufficient_data",
+      "status": "pass",
+      "python_output": {
+        "hrr": null,
+        "days": 0,
+        "settled": false
+      },
+      "expected_output": {
+        "hrr": null,
+        "days": 0,
+        "settled": false
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.019500002963468432,
+      "metadata": {
+        "input": {
+          "hr_per_min": [
+            70,
+            71,
+            70,
+            71,
+            70,
+            71,
+            70,
+            71,
+            70,
+            71,
+            70,
+            71,
+            70,
+            71,
+            70,
+            71,
+            70,
+            71,
+            70,
+            71
+          ],
+          "resting_hr": 60.0,
+          "max_hr": 190.0,
+          "min_minutes": 60
+        },
+        "description": "Insufficient quiet HR samples",
+        "source": "openstrap_dart_calibration"
+      }
+    },
+    {
+      "algorithm": "trimp",
+      "test_name": "baseline_trimp_settled",
+      "status": "pass",
+      "python_output": {
+        "baseline": 204.9,
+        "reliable": true
+      },
+      "expected_output": {
+        "baseline": 204.8,
+        "reliable": true
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.018699996871873736,
+      "metadata": {
+        "input": {
+          "wake_minutes": 600,
+          "quiet_hrr": 0.3,
+          "female": false
+        },
+        "description": "Baseline TRIMP for 10h wake at 0.3 HRR, male",
+        "source": "openstrap_dart_calibration"
+      }
+    },
+    {
+      "algorithm": "trimp",
+      "test_name": "net_trimp_above_quiet",
+      "status": "pass",
+      "python_output": {
+        "net_above_quiet": 67.6
+      },
+      "expected_output": {
+        "net_above_quiet": 67.6
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.1821999903768301,
+      "metadata": {
+        "input": {
+          "hr_per_min": [
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145,
+            145
+          ],
+          "resting_hr": 60.0,
+          "max_hr": 190.0,
+          "quiet_hrr": 0.3,
+          "sex": "male"
+        },
+        "description": "Net TRIMP above quiet for 60 min at 145 bpm",
+        "source": "openstrap_dart_calibration"
+      }
+    },
+    {
+      "algorithm": "trimp",
+      "test_name": "strain_score_low",
+      "status": "pass",
+      "python_output": {
+        "strain": 1.85
+      },
+      "expected_output": {
+        "strain": 1.85
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.011099997209385037,
+      "metadata": {
+        "input": {
+          "net_trimp_above_quiet": 10.0
+        },
+        "description": "Low net TRIMP above quiet (10)",
+        "source": "openstrap_dart_calibration"
+      }
+    },
+    {
+      "algorithm": "trimp",
+      "test_name": "strain_score_medium",
+      "status": "pass",
+      "python_output": {
+        "strain": 10.75
+      },
+      "expected_output": {
+        "strain": 10.75
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.010499992640689015,
+      "metadata": {
+        "input": {
+          "net_trimp_above_quiet": 100.0
+        },
+        "description": "Medium net TRIMP above quiet (100)",
+        "source": "openstrap_dart_calibration"
+      }
+    },
+    {
+      "algorithm": "trimp",
+      "test_name": "strain_score_high",
+      "status": "pass",
+      "python_output": {
+        "strain": 18.68
+      },
+      "expected_output": {
+        "strain": 18.68
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.005399982910603285,
+      "metadata": {
+        "input": {
+          "net_trimp_above_quiet": 300.0
+        },
+        "description": "High net TRIMP above quiet (300)",
+        "source": "openstrap_dart_calibration"
+      }
+    },
+    {
+      "algorithm": "trimp",
+      "test_name": "ctl_atl_tsb_basic",
+      "status": "pass",
+      "python_output": {
+        "ctl": 50.0,
+        "atl": 50.0,
+        "tsb": 0.0
+      },
+      "expected_output": {
+        "ctl": 50.0,
+        "atl": 50.0,
+        "tsb": 0.0
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.05889998283237219,
+      "metadata": {
+        "input": {
+          "daily_trimp": [
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0,
+            50.0
+          ]
+        },
+        "description": "Steady state: CTL=ATL, TSB=0",
+        "source": "openstrap_dart_calibration"
+      }
+    },
+    {
+      "algorithm": "trimp",
+      "test_name": "ctl_atl_tsb_taper",
+      "status": "pass",
+      "python_output": {
+        "ctl": 70.8,
+        "atl": 42.1,
+        "tsb": 28.7
+      },
+      "expected_output": {
+        "ctl": 70.8,
+        "atl": 42.1,
+        "tsb": 28.7
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.03759999526664615,
+      "metadata": {
+        "input": {
+          "daily_trimp": [
+            80.0,
+            80.0,
+            80.0,
+            80.0,
+            80.0,
+            80.0,
+            80.0,
+            80.0,
+            80.0,
+            80.0,
+            80.0,
+            80.0,
+            80.0,
+            80.0,
+            20.0,
+            20.0,
+            20.0,
+            20.0,
+            20.0,
+            20.0,
+            20.0
+          ]
+        },
+        "description": "Taper week: ATL drops, TSB positive",
+        "source": "openstrap_dart_calibration"
+      }
+    },
+    {
+      "algorithm": "sleep_staging",
+      "test_name": "z_angle_flat",
+      "status": "pass",
+      "python_output": 0.0,
+      "expected_output": 0.0,
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.05709999823011458,
+      "metadata": {
+        "input": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 1.0
+        },
+        "description": "Flat on back: z_angle = 0\u00b0",
+        "source": "openstrap_dart"
+      }
+    },
+    {
+      "algorithm": "sleep_staging",
+      "test_name": "z_angle_side",
+      "status": "pass",
+      "python_output": 90.0,
+      "expected_output": 90.0,
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.023600005079060793,
+      "metadata": {
+        "input": {
+          "x": 1.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "description": "On side: z_angle = 90\u00b0",
+        "source": "openstrap_dart"
+      }
+    },
+    {
+      "algorithm": "sleep_staging",
+      "test_name": "z_angle_45_degrees",
+      "status": "pass",
+      "python_output": 45.0,
+      "expected_output": 45.0,
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.016799982404336333,
+      "metadata": {
+        "input": {
+          "x": 0.707,
+          "y": 0.0,
+          "z": 0.707
+        },
+        "description": "45 degrees: z_angle \u2248 45\u00b0",
+        "source": "openstrap_dart"
+      }
+    },
+    {
+      "algorithm": "sleep_staging",
+      "test_name": "z_angle_upside_down",
+      "status": "pass",
+      "python_output": 0.0,
+      "expected_output": 0.0,
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 0.014399993233382702,
+      "metadata": {
+        "input": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": -1.0
+        },
+        "description": "Upside down: z_angle = 0\u00b0 (abs z used)",
+        "source": "openstrap_dart"
+      }
+    },
+    {
+      "algorithm": "sleep_staging",
+      "test_name": "immobility_all_still",
+      "status": "pass",
+      "python_output": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_output": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 1.1337000178173184,
+      "metadata": {
+        "input": {
+          "enmo_count": 100,
+          "epoch_sec": 30,
+          "still_threshold_g": 0.013,
+          "window_sec": 300
+        },
+        "description": "All epochs immobile",
+        "source": "openstrap_dart"
+      }
+    },
+    {
+      "algorithm": "sleep_staging",
+      "test_name": "immobility_all_moving",
+      "status": "pass",
+      "python_output": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expected_output": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 1.0823000047821552,
+      "metadata": {
+        "input": {
+          "enmo_count": 100,
+          "epoch_sec": 30,
+          "still_threshold_g": 0.013,
+          "move_threshold_g": 0.05,
+          "window_sec": 300
+        },
+        "description": "All epochs moving",
+        "source": "openstrap_dart"
+      }
+    },
+    {
+      "algorithm": "sleep_staging",
+      "test_name": "van_hees_clear_sleep",
+      "status": "pass",
+      "python_output": {
+        "sleep_onset_s": 20.0,
+        "sleep_offset_s": 1820.0
+      },
+      "expected_output": {
+        "sleep_onset_s": 20.0,
+        "sleep_offset_s": 1820.0
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 22.417399974074215,
+      "metadata": {
+        "input": {
+          "immobile_count": 1840,
+          "epoch_sec": 30,
+          "in_bed_start_s": 0.0,
+          "in_bed_end_s": 1840.0
+        },
+        "description": "Clear sleep period detected (1800s immobile bout >= 30 min minimum)",
+        "source": "openstrap_dart"
+      }
+    },
+    {
+      "algorithm": "sleep_staging",
+      "test_name": "cardio_epoch_basic",
+      "status": "pass",
+      "python_output": {
+        "features_generated": true
+      },
+      "expected_output": {
+        "features_generated": true
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 1.3004000065848231,
+      "metadata": {
+        "input": {
+          "accel_count": 30,
+          "hr_count": 30,
+          "rr_count": 30,
+          "epoch_sec": 30
+        },
+        "description": "Clean epoch with good HR and RR data",
+        "source": "openstrap_dart"
+      }
+    },
+    {
+      "algorithm": "sleep_staging",
+      "test_name": "segment_sleep_short",
+      "status": "pass",
+      "python_output": {
+        "total_epochs": 60,
+        "has_stages": true
+      },
+      "expected_output": {
+        "total_epochs": 60,
+        "has_stages": true
+      },
+      "difference": null,
+      "error_message": null,
+      "execution_time_ms": 1901.3992999971379,
+      "metadata": {
+        "input": {
+          "in_bed_duration_sec": 1800,
+          "epoch_sec": 30
+        },
+        "description": "Short 30-min sleep session",
+        "source": "openstrap_dart"
+      }
+    }
+  ]
+}

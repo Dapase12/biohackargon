@@ -1937,6 +1937,18 @@
       localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(store));
     }
 
+    function updateTodayButtonVisibility(dateStr) {
+      const btn = document.getElementById('btn-today');
+      if (btn) {
+        const todayStr = getLocalTodayIso();
+        if (dateStr === todayStr) {
+          btn.classList.add('hidden');
+        } else {
+          btn.classList.remove('hidden');
+        }
+      }
+    }
+
     function loadDayData(dateStr) {
       // 1. Try cache (instant, 5min TTL)
       const cached = getCache(dateStr);
@@ -1946,6 +1958,7 @@
         const allSorted = sortedDates.map(d => store[d]);
         document.getElementById('selected-date').value = cached.log_date;
         renderDashboard(cached, allSorted);
+        updateTodayButtonVisibility(cached.log_date);
         // Reload sleep staging data for the selected date
         if (window.argonSleep && typeof window.argonSleep.load === 'function') {
           window.argonSleep.load(dateStr);
@@ -1960,6 +1973,7 @@
       if (record) {
         document.getElementById('selected-date').value = record.log_date;
         renderDashboard(record, allSorted);
+        updateTodayButtonVisibility(record.log_date);
         // Reload sleep staging data for the selected date
         if (window.argonSleep && typeof window.argonSleep.load === 'function') {
           window.argonSleep.load(dateStr);

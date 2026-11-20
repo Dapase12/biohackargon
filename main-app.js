@@ -10,6 +10,7 @@
 import { todayIso, fmtHHMM, addDays } from './src/utils/date.ts';
 import { fmtPct, fmtDuration, kcalOf } from './src/utils/format.ts';
 import { num, mean } from './src/utils/math.ts';
+import { s, sf, si } from './src/utils/helpers.ts';
 import { config } from './src/config/index.ts';
 import { STORAGE_KEYS } from './src/constants/index.ts';
 import { supabaseClient, sbTestConnection, sbLoadRange, sbUpsertRawBiometric } from './src/api/client.ts';
@@ -67,6 +68,52 @@ import {
   openModal,
   closeModal,
 } from './src/components/app/modal-helpers.ts';
+import { renderDashboard } from './src/components/dashboard/index.ts';
+
+// ============================================================
+// CONSTANTS (from original index.html inline scripts)
+// ============================================================
+const CACHE_KEY_PREFIX = 'argon:cache:';
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+const STORAGE_KEY_RECORDS = 'argon_graphos_records_v54';
+
+// ============================================================
+// CACHE / STORE HELPERS (exposed on window for inline handlers)
+// ============================================================
+
+function getCache(dateStr: string): any {
+  try {
+    const item = localStorage.getItem(CACHE_KEY_PREFIX + dateStr);
+    if (!item) return null;
+    const { data, ts } = JSON.parse(item);
+    if (Date.now() - ts > CACHE_TTL_MS) {
+      localStorage.removeItem(CACHE_KEY_PREFIX + dateStr);
+      return null;
+    }
+    return data;
+  } catch { return null; }
+}
+
+function setCache(dateStr: string, data: any): void {
+  try {
+    localStorage.setItem(CACHE_KEY_PREFIX + dateStr, JSON.stringify({ data, ts: Date.now() }));
+  } catch { }
+}
+
+function clearCache(): void {
+  try {
+    Object.keys(localStorage).forEach(k => { if (k.startsWith(CACHE_KEY_PREFIX)) localStorage.removeItem(k); });
+  } catch { }
+}
+
+function getLocalStore(): Record<string, any> {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS) || '{}'); }
+  catch { return {}; }
+}
+
+function saveLocalStore(store: Record<string, any>): void {
+  localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(store));
+}
 
 // ============================================================
 // GLOBAL HELPERS (exposed on window for inline handlers)
@@ -92,6 +139,21 @@ const gas = () => (localStorage.getItem('argon_gas_url') || '').trim();
 (window as any).fmtPct = fmtPct;
 (window as any).fmtDuration = fmtDuration;
 (window as any).kcalOf = kcalOf;
+
+// Expose cache/store/date functions to window for inline handlers
+(window as any).getCache = getCache;
+(window as any).setCache = setCache;
+(window as any).clearCache = clearCache;
+(window as any).getLocalStore = getLocalStore;
+(window as any).saveLocalStore = saveLocalStore;
+(window as any).getLocalTodayIso = getLocalTodayIso;
+(window as any).loadDayData = loadDayData;
+(window as any).stepArgonDate = stepArgonDate;
+(window as any).updateTodayButtonVisibility = updateTodayButtonVisibility;
+(window as any).renderDashboard = renderDashboard;
+(window as any).s = s;
+(window as any).sf = sf;
+(window as any).si = si;
 
 // Expose component functions to window for inline handlers
 (window as any).openProfile = openProfileModal;
@@ -121,6 +183,87 @@ const gas = () => (localStorage.getItem('argon_gas_url') || '').trim();
 (window as any).showToast = showToast;
 (window as any).openModal = openModal;
 (window as any).closeModal = closeModal;
+(window as any).s = s;
+(window as any).sf = sf;
+(window as any).si = si;
+
+// ============================================================
+// DATE NAVIGATION (exposed on window for inline handlers)
+// ============================================================
+
+function getLocalTodayIso(): string {
+  try {
+    const tz = window.CONFIG?.profile?.timezone || 'UTC';
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+  } catch (_) {
+    const d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+  }
+}
+
+function updateTodayButtonVisibility(dateStr: string): void {
+  const btn = document.getElementById('btn-today');
+  if (btn) {
+    const todayStr = getLocalTodayIso();
+    if (dateStr === todayStr) {
+      btn.classList.add('hidden');
+    } else {
+      btn.classList.remove('hidden');
+    }
+  }
+}
+
+function loadDayData(dateStr: string): void {
+  // 1. Try cache (instant, 5min TTL)
+  const cached = getCache(dateStr);
+  if (cached) {
+    const store = getLocalStore();
+    const sortedDates = Object.keys(store).sort();
+    const allSorted = sortedDates.map(d => store[d]);
+    const dateInput = document.getElementById('selected-date') as HTMLInputElement;
+    if (dateInput) dateInput.value = cached.log_date;
+    renderDashboard(cached, allSorted);
+    updateTodayButtonVisibility(cached.log_date);
+    if (window.argonSleep && typeof window.argonSleep.load === 'function') {
+      window.argonSleep.load(dateStr);
+    }
+    return;
+  }
+  // 2. Fallback to localStorage
+  const store = getLocalStore();
+  const sortedDates = Object.keys(store).sort();
+  const allSorted = sortedDates.map(d => store[d]);
+  const record = store[dateStr] || allSorted[allSorted.length - 1];
+  if (record) {
+    const dateInput = document.getElementById('selected-date') as HTMLInputElement;
+    if (dateInput) dateInput.value = record.log_date;
+    renderDashboard(record, allSorted);
+    updateTodayButtonVisibility(record.log_date);
+    if (window.argonSleep && typeof window.argonSleep.load === 'function') {
+      window.argonSleep.load(dateStr);
+    }
+  }
+}
+
+function stepArgonDate(deltaDays: number): void {
+  const input = document.getElementById('selected-date') as HTMLInputElement;
+  if (!input || !input.value) return;
+  const nextIso = addDays(input.value, deltaDays);
+  if (nextIso > getLocalTodayIso()) return;
+  input.value = nextIso;
+  loadDayData(nextIso);
+}
+
+// Expose for global access (legacy inline handlers)
+(window as any).getLocalTodayIso = getLocalTodayIso;
+(window as any).loadDayData = loadDayData;
+(window as any).stepArgonDate = stepArgonDate;
+(window as any).updateTodayButtonVisibility = updateTodayButtonVisibility;
 
 // ============================================================
 // INITIALIZATION

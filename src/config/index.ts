@@ -6,6 +6,7 @@
 
 import { ProfileSchema, type Profile } from '@/api/schemas';
 import { DEFAULTS, STORAGE_KEYS } from '@/constants';
+import { resetClient } from '@/api/client';
 
 // Global window.CONFIG declaration for backward compatibility
 declare global {
@@ -115,7 +116,7 @@ export function saveSupabase(url: string, anonKey: string): void {
   localStorage.setItem(STORAGE_KEYS.SB_KEY, current.supabase.anonKey);
   _config = current;
   // Reset Supabase client so it picks up new credentials
-  import('@/api/client').then(m => m.resetClient?.());
+  resetClient();
 }
 
 /** Save webapp URL */

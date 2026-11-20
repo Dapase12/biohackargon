@@ -29,6 +29,7 @@ async function buildAll() {
       splitting: false,
       loader: { '.js': 'ts', '.ts': 'ts' }, // Treat .js and .ts files as TypeScript
       resolveExtensions: ['.ts', '.js'], // Resolve .ts imports
+      alias: { '@': './src' }, // Resolve @/ path aliases
       external: ['@supabase/supabase-js'], // Keep Supabase as external (loaded from CDN via import map)
       define: {
         'process.env.NODE_ENV': '"production"'

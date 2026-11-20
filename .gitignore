@@ -12,6 +12,8 @@ node_modules/
 
 # Build outputs
 build/
+dist/
+*.map
 
 # Test outputs
 coverage/
