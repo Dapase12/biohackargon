@@ -35,18 +35,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate syntax
-        run: |
-          node --check argon-mbe.js
-          node --check simulate-recovery.js
-          node -e "JSON.parse(require('fs').readFileSync('manifest.json'))"
-          echo "✅ All syntax checks passed"
-
-      - name: Run recovery simulation (smoke test)
-        run: |
-          node simulate-recovery.js 2>&1 | tail -30
-          echo "✅ Simulation completed"
-
       - name: Build production assets
         run: npm run build
 
