@@ -86,6 +86,20 @@ function fmtDuration(min) {
   return h > 0 ? `${h}h ${rem}m` : `${rem}m`;
 }
 
+// src/utils/helpers.ts
+function s(obj, key, def = "--") {
+  const v = obj?.[key];
+  return v === null || v === void 0 || Number.isNaN(v) ? def : v;
+}
+function sf(obj, key, fixed = 1, def = "--") {
+  const v = obj?.[key];
+  return v === null || v === void 0 || Number.isNaN(v) ? def : Number(v).toFixed(fixed);
+}
+function si(obj, key, def = "--") {
+  const v = obj?.[key];
+  return v === null || v === void 0 || Number.isNaN(v) ? def : String(v);
+}
+
 // node_modules/zod/v4/classic/external.js
 var external_exports = {};
 __export(external_exports, {
@@ -21057,13 +21071,15 @@ async function syncFromSupabase(renderAllFn) {
       sbFetch("daily_raw_biometrics?select=*&order=log_date.asc"),
       sbFetch("computed_daily_scores?select=*&order=log_date.asc")
     ]);
+    const rawArray = Array.isArray(raw) ? raw : [];
+    const compArray = Array.isArray(comp) ? comp : [];
     const store = getLocalStore3();
     const byDate = {};
-    for (const r of raw) {
-      byDate[r.log_date] = { ...byDate[r.log_date], ...r };
+    for (const r of rawArray) {
+      if (r && r.log_date) byDate[r.log_date] = { ...byDate[r.log_date], ...r };
     }
-    for (const c of comp) {
-      byDate[c.log_date] = { ...byDate[c.log_date], ...c };
+    for (const c of compArray) {
+      if (c && c.log_date) byDate[c.log_date] = { ...byDate[c.log_date], ...c };
     }
     let count = 0;
     for (const [date5, data] of Object.entries(byDate)) {
@@ -21114,6 +21130,172 @@ if (typeof window !== "undefined") {
   window.showToast = showToast4;
 }
 
+// src/components/dashboard/chrono.ts
+function renderChrono(record2) {
+  const chronoEl = document.getElementById("chrono-age-label");
+  if (chronoEl) chronoEl.textContent = `Edad Cronol\xF3gica: ${(record2.chronological_age || 28.9).toFixed(1)}a`;
+}
+
+// src/components/dashboard/recovery.ts
+var CIRC = 251.2;
+function renderRecovery(record2) {
+  const recPct = record2.recovery_score == null ? 0 : record2.recovery_score;
+  const recRing = document.getElementById("ring-recovery");
+  if (recRing) recRing.style.strokeDashoffset = `${CIRC - recPct / 100 * CIRC}`;
+  const recColor = recPct >= 67 ? "#10B981" : recPct >= 34 ? "#F59E0B" : "#EF4444";
+  if (recRing) recRing.style.stroke = recColor;
+  const valRecovery = document.getElementById("val-recovery");
+  if (valRecovery) valRecovery.textContent = record2.recovery_score == null ? "--%" : `${recPct}%`;
+  const badgeRec = document.getElementById("badge-recovery");
+  if (badgeRec) {
+    badgeRec.textContent = record2.sleep_missing ? "SIN SUE\xD1O" : record2.hrv_missing ? "SIN VFC" : record2.calibrating ? "CALIBRANDO" : recPct >= 67 ? "\xD3PTIMO" : recPct >= 34 ? "MODERADO" : "FATIGA SNC";
+    badgeRec.style.color = recColor;
+  }
+  const subRecovery = document.getElementById("sub-recovery");
+  if (subRecovery) subRecovery.textContent = `VFC: ${s(record2, "rmssd_ms", "--")} ms`;
+}
+
+// src/components/dashboard/strain.ts
+var CIRC2 = 251.2;
+function renderStrain(record2) {
+  const strainVal = s(record2, "strain_score", "0");
+  const ringStrain = document.getElementById("ring-strain");
+  if (ringStrain) ringStrain.style.strokeDashoffset = `${CIRC2 - Math.min(21, strainVal) / 21 * CIRC2}`;
+  const valStrain = document.getElementById("val-strain");
+  if (valStrain) valStrain.textContent = sf(record2, "strain_score", 1);
+  const ringStrainEl = document.getElementById("ring-strain");
+  if (ringStrainEl) {
+    const maxStrain = s(record2, "recommended_max_strain", "21");
+    ringStrainEl.style.stroke = strainVal > maxStrain ? "#EF4444" : strainVal >= maxStrain * 0.8 ? "#F59E0B" : "#06B6D4";
+  }
+  const badgeStrainTarget = document.getElementById("badge-strain-target");
+  if (badgeStrainTarget) badgeStrainTarget.textContent = `Meta: ${s(record2, "recommended_max_strain", "21")}`;
+  const subStrain = document.getElementById("sub-strain");
+  if (subStrain) subStrain.textContent = `${Number(s(record2, "steps_count", 0)).toLocaleString("es-ES")} pasos`;
+}
+
+// src/components/dashboard/sleep.ts
+var CIRC3 = 251.2;
+function renderSleep(record2) {
+  const sleepPct = Math.round(s(record2, "sleep_architecture_score", "0"));
+  const ringSleep = document.getElementById("ring-sleep");
+  if (ringSleep) ringSleep.style.strokeDashoffset = `${CIRC3 - sleepPct / 100 * CIRC3}`;
+  const valSleep = document.getElementById("val-sleep");
+  if (valSleep) valSleep.textContent = record2.sleep_missing ? "--" : `${sleepPct}%`;
+  const badgeSleepEff = document.getElementById("badge-sleep-eff");
+  if (badgeSleepEff) badgeSleepEff.textContent = `Efic: ${Math.round(s(record2, "sleep_efficiency_pct", "0"))}%`;
+  const subSleep = document.getElementById("sub-sleep");
+  if (subSleep) subSleep.textContent = `Deuda: ${s(record2, "cumulative_sleep_debt_hours", "0")}h`;
+}
+
+// src/components/dashboard/clinical.ts
+function renderClinical(record2) {
+  const clinicalNotes = document.getElementById("clinical-coach-notes");
+  if (clinicalNotes) clinicalNotes.textContent = s(record2, "clinical_coach_notes", "Sin datos");
+}
+
+// src/components/dashboard/week.ts
+function renderWeek(record2, allRecordsSorted) {
+  const wk = document.getElementById("week-strip");
+  if (!wk || !allRecordsSorted?.length) return;
+  const recordDate = record2?.log_date;
+  const last7 = allRecordsSorted.filter((r) => !recordDate || r.log_date <= recordDate).slice(-7);
+  wk.innerHTML = last7.map((r) => {
+    const v = s(r, "recovery_score", 0);
+    const c = v >= 67 ? "#10B981" : v >= 34 ? "#F59E0B" : "#EF4444";
+    const sel2 = recordDate && r.log_date === recordDate;
+    const dow = ["D", "L", "M", "M", "J", "V", "S"][(/* @__PURE__ */ new Date(r.log_date + "T12:00:00")).getDay()];
+    return `<div class="flex flex-col items-center flex-1 ${sel2 ? "" : "opacity-70"}"><span class="text-[9px] font-mono text-slate-300">${v}</span><div class="w-full max-w-[26px] rounded-md mt-0.5" style="height:${Math.max(6, Math.round(v * 0.38))}px;background:${c}"></div><span class="text-[9px] mt-1 ${sel2 ? "text-cyan-300 font-bold" : "text-slate-500"}">${dow}</span></div>`;
+  }).join("");
+}
+
+// src/components/dashboard/body.ts
+function renderBody(record2) {
+  const weightTrend = document.getElementById("weight-trend");
+  if (weightTrend) weightTrend.textContent = `${sf(record2, "weight_kg", 2)} kg`;
+  const ffmLabel = document.getElementById("ffm-label");
+  if (ffmLabel) ffmLabel.textContent = `Sin grasa: ${s(record2, "ffm_kg")}kg | EWMA: ${s(record2, "trend_weight_kg")}`;
+  const bfTrend = document.getElementById("bf-trend");
+  if (bfTrend) bfTrend.textContent = `${sf(record2, "body_fat_pct", 1)}%`;
+  const fatKgLabel = document.getElementById("fat-kg-label");
+  if (fatKgLabel) fatKgLabel.textContent = `Grasa: ${s(record2, "fat_mass_kg")} kg | IMC: ${sf(record2, "bmi", 1)}`;
+  const metricMuscle = document.getElementById("metric-muscle");
+  if (metricMuscle) metricMuscle.textContent = `${sf(record2, "skeletal_muscle_pct", 1)}%`;
+  const muscleMassSub = document.getElementById("muscle-mass-sub");
+  if (muscleMassSub) muscleMassSub.textContent = `Muscular: ${s(record2, "muscle_mass_kg")} kg`;
+  const metricVisceral = document.getElementById("metric-visceral");
+  if (metricVisceral) metricVisceral.textContent = `${s(record2, "visceral_fat_index")}`;
+  const metricWater = document.getElementById("metric-water");
+  if (metricWater) metricWater.textContent = `${sf(record2, "body_water_pct", 1)}%`;
+  const waterProtSub = document.getElementById("water-prot-sub");
+  if (waterProtSub) waterProtSub.textContent = `${s(record2, "water_mass_kg")} kg`;
+  const metricTmb = document.getElementById("metric-tmb");
+  if (metricTmb) metricTmb.textContent = `${s(record2, "tmb_kcal")} kcal`;
+  const tmbSub = document.getElementById("tmb-sub");
+  if (tmbSub) tmbSub.textContent = `\xD3sea: ${s(record2, "bone_mass_kg")}kg`;
+}
+
+// src/components/dashboard/nutrition.ts
+function renderNutrition(record2) {
+  const dynamicTdee = s(record2, "dynamic_tdee_kcal", "2400");
+  const targetKcal = s(record2, "target_kcal", "2000");
+  const deficitToday = Math.max(250, dynamicTdee - targetKcal);
+  const weeklyFatLossKg = +(deficitToday * 7 / 7700).toFixed(2);
+  const remainingKcal = Math.max(0, targetKcal - s(record2, "intake_kcal", "0"));
+  const remainingPill = document.getElementById("remaining-kcal-pill");
+  if (remainingPill) remainingPill.textContent = `Restan: ${remainingKcal} kcal`;
+  const nutriTdee = document.getElementById("nutri-tdee");
+  if (nutriTdee) nutriTdee.textContent = `${dynamicTdee} kcal`;
+  const nutriDeficit = document.getElementById("nutri-deficit");
+  if (nutriDeficit) nutriDeficit.textContent = `-${deficitToday} kcal`;
+  const fatLossRate = document.getElementById("fat-loss-rate");
+  if (fatLossRate) fatLossRate.textContent = `-${weeklyFatLossKg} kg/sem`;
+  const nutriTarget = document.getElementById("nutri-target-kcal");
+  if (nutriTarget) nutriTarget.textContent = `${targetKcal} kcal`;
+  const nutriIntake = document.getElementById("nutri-intake-kcal");
+  if (nutriIntake) nutriIntake.textContent = `Comido: ${s(record2, "intake_kcal", "0")}`;
+  const tefEl = document.getElementById("nutri-tef");
+  if (tefEl) tefEl.textContent = `${s(record2, "tef_kcal", "0")} kcal`;
+  const empSub = document.getElementById("nutri-emp-sub");
+  if (empSub) empSub.textContent = s(record2, "empirical_tdee_kcal", "") ? `Emp\xEDrico 14d: ${s(record2, "empirical_tdee_kcal", "")}` : "TMB+Pasos+Ej";
+  const macroProtText = document.getElementById("macro-prot-text");
+  if (macroProtText) macroProtText.textContent = `${s(record2, "intake_protein_g", "0")} / ${s(record2, "target_protein_g", "0")} g`;
+  const macroCarbText = document.getElementById("macro-carb-text");
+  if (macroCarbText) macroCarbText.textContent = `${s(record2, "intake_carbs_g", "0")} / ${s(record2, "target_carbs_g", "0")} g`;
+  const macroFatText = document.getElementById("macro-fat-text");
+  if (macroFatText) macroFatText.textContent = `${s(record2, "intake_fat_g", "0")} / ${s(record2, "target_fat_g", "0")} g`;
+  const protTarget = s(record2, "target_protein_g", "1");
+  const carbTarget = s(record2, "target_carbs_g", "1");
+  const fatTarget = s(record2, "target_fat_g", "1");
+  const barProt = document.getElementById("bar-prot");
+  if (barProt) barProt.style.width = `${Math.min(100, s(record2, "intake_protein_g", "0") / Math.max(1, protTarget) * 100)}%`;
+  const barCarb = document.getElementById("bar-carb");
+  if (barCarb) barCarb.style.width = `${Math.min(100, s(record2, "intake_carbs_g", "0") / Math.max(1, carbTarget) * 100)}%`;
+  const barFat = document.getElementById("bar-fat");
+  if (barFat) barFat.style.width = `${Math.min(100, s(record2, "intake_fat_g", "0") / Math.max(1, fatTarget) * 100)}%`;
+  const protGap = Math.max(0, protTarget - s(record2, "intake_protein_g", "0"));
+  const kcalLeftNow = Math.max(0, targetKcal - s(record2, "intake_kcal", "0"));
+  const pAlert = document.getElementById("protein-alert");
+  if (pAlert) {
+    if (protGap >= 10 && kcalLeftNow < protGap * 4) {
+      pAlert.classList.remove("hidden");
+      pAlert.textContent = `\u26A0\uFE0F Faltan ${protGap} g de prote\xEDna (~${protGap * 4} kcal) y solo quedan ${kcalLeftNow} kcal. Prioriza prote\xEDna magra o whey y recorta carbohidratos/grasa.`;
+    } else pAlert.classList.add("hidden");
+  }
+}
+
+// src/components/dashboard/index.ts
+function renderDashboard(record2, allRecordsSorted) {
+  renderChrono(record2);
+  renderRecovery(record2);
+  renderStrain(record2);
+  renderSleep(record2);
+  renderClinical(record2);
+  renderWeek(record2, allRecordsSorted);
+  renderBody(record2);
+  renderNutrition(record2);
+}
+
 // main-app.js
 var CACHE_KEY_PREFIX = "argon:cache:";
 var CACHE_TTL_MS = 5 * 60 * 1e3;
@@ -21155,137 +21337,6 @@ function getLocalStore4() {
 }
 function saveLocalStore(store) {
   localStorage.setItem(STORAGE_KEY_RECORDS2, JSON.stringify(store));
-}
-function s(obj, key, def = "--") {
-  const v = obj?.[key];
-  return v === null || v === void 0 || Number.isNaN(v) ? def : v;
-}
-function sf(obj, key, fixed = 1, def = "--") {
-  const v = obj?.[key];
-  return v === null || v === void 0 || Number.isNaN(v) ? def : Number(v).toFixed(fixed);
-}
-function si(obj, key, def = "--") {
-  const v = obj?.[key];
-  return v === null || v === void 0 || Number.isNaN(v) ? def : String(v);
-}
-function renderDashboard(record2, allRecordsSorted) {
-  const circ = 251.2;
-  const chronoEl = document.getElementById("chrono-age-label");
-  if (chronoEl) chronoEl.textContent = `Edad Cronol\xF3gica: ${(record2.chronological_age || 28.9).toFixed(1)}a`;
-  const recPct = record2.recovery_score == null ? 0 : record2.recovery_score;
-  const recRing = document.getElementById("ring-recovery");
-  if (recRing) recRing.style.strokeDashoffset = circ - recPct / 100 * circ;
-  const recColor = recPct >= 67 ? "#10B981" : recPct >= 34 ? "#F59E0B" : "#EF4444";
-  if (recRing) recRing.style.stroke = recColor;
-  const valRecovery = document.getElementById("val-recovery");
-  if (valRecovery) valRecovery.textContent = record2.recovery_score == null ? "--%" : `${recPct}%`;
-  const badgeRec = document.getElementById("badge-recovery");
-  if (badgeRec) {
-    badgeRec.textContent = record2.sleep_missing ? "SIN SUE\xD1O" : record2.hrv_missing ? "SIN VFC" : record2.calibrating ? "CALIBRANDO" : recPct >= 67 ? "\xD3PTIMO" : recPct >= 34 ? "MODERADO" : "FATIGA SNC";
-    badgeRec.style.color = recColor;
-  }
-  const subRecovery = document.getElementById("sub-recovery");
-  if (subRecovery) subRecovery.textContent = `VFC: ${s(record2, "rmssd_ms")} ms`;
-  const strainVal = s(record2, "strain_score", 0);
-  const ringStrain = document.getElementById("ring-strain");
-  if (ringStrain) ringStrain.style.strokeDashoffset = circ - Math.min(21, strainVal) / 21 * circ;
-  const valStrain = document.getElementById("val-strain");
-  if (valStrain) valStrain.textContent = sf(record2, "strain_score", 1);
-  const ringStrainEl = document.getElementById("ring-strain");
-  if (ringStrainEl) ringStrainEl.style.stroke = strainVal > s(record2, "recommended_max_strain", 21) ? "#EF4444" : strainVal >= s(record2, "recommended_max_strain", 21) * 0.8 ? "#F59E0B" : "#06B6D4";
-  const badgeStrainTarget = document.getElementById("badge-strain-target");
-  if (badgeStrainTarget) badgeStrainTarget.textContent = `Meta: ${s(record2, "recommended_max_strain", 21)}`;
-  const subStrain = document.getElementById("sub-strain");
-  if (subStrain) subStrain.textContent = `${s(record2, "steps_count", 0).toLocaleString()} pasos`;
-  const sleepPct = Math.round(s(record2, "sleep_architecture_score", 0));
-  const ringSleep = document.getElementById("ring-sleep");
-  if (ringSleep) ringSleep.style.strokeDashoffset = circ - sleepPct / 100 * circ;
-  const valSleep = document.getElementById("val-sleep");
-  if (valSleep) valSleep.textContent = record2.sleep_missing ? "--" : `${sleepPct}%`;
-  const badgeSleepEff = document.getElementById("badge-sleep-eff");
-  if (badgeSleepEff) badgeSleepEff.textContent = `Efic: ${Math.round(s(record2, "sleep_efficiency_pct", 0))}%`;
-  const subSleep = document.getElementById("sub-sleep");
-  if (subSleep) subSleep.textContent = `Deuda: ${s(record2, "cumulative_sleep_debt_hours", 0)}h`;
-  const clinicalNotes = document.getElementById("clinical-coach-notes");
-  if (clinicalNotes) clinicalNotes.textContent = s(record2, "clinical_coach_notes", "Sin datos");
-  const wk = document.getElementById("week-strip");
-  if (wk) {
-    const last7 = allRecordsSorted.filter((r) => r.log_date <= record2.log_date).slice(-7);
-    wk.innerHTML = last7.map((r) => {
-      const v = s(r, "recovery_score", 0);
-      const c = v >= 67 ? "#10B981" : v >= 34 ? "#F59E0B" : "#EF4444";
-      const sel2 = r.log_date === record2.log_date;
-      const dow = ["D", "L", "M", "M", "J", "V", "S"][(/* @__PURE__ */ new Date(r.log_date + "T12:00:00")).getDay()];
-      return `<div class="flex flex-col items-center flex-1 ${sel2 ? "" : "opacity-70"}"><span class="text-[9px] font-mono text-slate-300">${v}</span><div class="w-full max-w-[26px] rounded-md mt-0.5" style="height:${Math.max(6, Math.round(v * 0.38))}px;background:${c}"></div><span class="text-[9px] mt-1 ${sel2 ? "text-cyan-300 font-bold" : "text-slate-500"}">${dow}</span></div>`;
-    }).join("");
-  }
-  const weightTrend = document.getElementById("weight-trend");
-  if (weightTrend) weightTrend.textContent = `${sf(record2, "weight_kg", 2)} kg`;
-  const ffmLabel = document.getElementById("ffm-label");
-  if (ffmLabel) ffmLabel.textContent = `Sin grasa: ${s(record2, "ffm_kg")}kg | EWMA: ${s(record2, "trend_weight_kg")}`;
-  const bfTrend = document.getElementById("bf-trend");
-  if (bfTrend) bfTrend.textContent = `${sf(record2, "body_fat_pct", 1)}%`;
-  const fatKgLabel = document.getElementById("fat-kg-label");
-  if (fatKgLabel) fatKgLabel.textContent = `Grasa: ${s(record2, "fat_mass_kg")} kg | IMC: ${sf(record2, "bmi", 1)}`;
-  const metricMuscle = document.getElementById("metric-muscle");
-  if (metricMuscle) metricMuscle.textContent = `${sf(record2, "skeletal_muscle_pct", 1)}%`;
-  const muscleMassSub = document.getElementById("muscle-mass-sub");
-  if (muscleMassSub) muscleMassSub.textContent = `Muscular: ${s(record2, "muscle_mass_kg")} kg`;
-  const metricVisceral = document.getElementById("metric-visceral");
-  if (metricVisceral) metricVisceral.textContent = `${s(record2, "visceral_fat_index")}`;
-  const metricWater = document.getElementById("metric-water");
-  if (metricWater) metricWater.textContent = `${sf(record2, "body_water_pct", 1)}%`;
-  const waterProtSub = document.getElementById("water-prot-sub");
-  if (waterProtSub) waterProtSub.textContent = `${s(record2, "water_mass_kg")} kg`;
-  const metricTmb = document.getElementById("metric-tmb");
-  if (metricTmb) metricTmb.textContent = `${s(record2, "tmb_kcal")} kcal`;
-  const tmbSub = document.getElementById("tmb-sub");
-  if (tmbSub) tmbSub.textContent = `\xD3sea: ${s(record2, "bone_mass_kg")}kg`;
-  const dynamicTdee = s(record2, "dynamic_tdee_kcal", 2400);
-  const targetKcal = s(record2, "target_kcal", 2e3);
-  const deficitToday = Math.max(250, dynamicTdee - targetKcal);
-  const weeklyFatLossKg = +(deficitToday * 7 / 7700).toFixed(2);
-  const remainingKcal = Math.max(0, targetKcal - s(record2, "intake_kcal", 0));
-  const remainingPill = document.getElementById("remaining-kcal-pill");
-  if (remainingPill) remainingPill.textContent = `Restan: ${remainingKcal} kcal`;
-  const nutriTdee = document.getElementById("nutri-tdee");
-  if (nutriTdee) nutriTdee.textContent = `${dynamicTdee} kcal`;
-  const nutriDeficit = document.getElementById("nutri-deficit");
-  if (nutriDeficit) nutriDeficit.textContent = `-${deficitToday} kcal`;
-  const fatLossRate = document.getElementById("fat-loss-rate");
-  if (fatLossRate) fatLossRate.textContent = `-${weeklyFatLossKg} kg/sem`;
-  const nutriTarget = document.getElementById("nutri-target-kcal");
-  if (nutriTarget) nutriTarget.textContent = `${targetKcal} kcal`;
-  const nutriIntake = document.getElementById("nutri-intake-kcal");
-  if (nutriIntake) nutriIntake.textContent = `Comido: ${s(record2, "intake_kcal", 0)}`;
-  const tefEl = document.getElementById("nutri-tef");
-  if (tefEl) tefEl.textContent = `${s(record2, "tef_kcal", 0)} kcal`;
-  const empSub = document.getElementById("nutri-emp-sub");
-  if (empSub) empSub.textContent = s(record2, "empirical_tdee_kcal") ? `Emp\xEDrico 14d: ${s(record2, "empirical_tdee_kcal")}` : "TMB+Pasos+Ej";
-  const macroProtText = document.getElementById("macro-prot-text");
-  if (macroProtText) macroProtText.textContent = `${s(record2, "intake_protein_g", 0)} / ${s(record2, "target_protein_g", 0)} g`;
-  const macroCarbText = document.getElementById("macro-carb-text");
-  if (macroCarbText) macroCarbText.textContent = `${s(record2, "intake_carbs_g", 0)} / ${s(record2, "target_carbs_g", 0)} g`;
-  const macroFatText = document.getElementById("macro-fat-text");
-  if (macroFatText) macroFatText.textContent = `${s(record2, "intake_fat_g", 0)} / ${s(record2, "target_fat_g", 0)} g`;
-  const protTarget = s(record2, "target_protein_g", 1);
-  const carbTarget = s(record2, "target_carbs_g", 1);
-  const fatTarget = s(record2, "target_fat_g", 1);
-  const barProt = document.getElementById("bar-prot");
-  if (barProt) barProt.style.width = `${Math.min(100, s(record2, "intake_protein_g", 0) / Math.max(1, protTarget) * 100)}%`;
-  const barCarb = document.getElementById("bar-carb");
-  if (barCarb) barCarb.style.width = `${Math.min(100, s(record2, "intake_carbs_g", 0) / Math.max(1, carbTarget) * 100)}%`;
-  const barFat = document.getElementById("bar-fat");
-  if (barFat) barFat.style.width = `${Math.min(100, s(record2, "intake_fat_g", 0) / Math.max(1, fatTarget) * 100)}%`;
-  const protGap = Math.max(0, protTarget - s(record2, "intake_protein_g", 0));
-  const kcalLeftNow = Math.max(0, targetKcal - s(record2, "intake_kcal", 0));
-  const pAlert = document.getElementById("protein-alert");
-  if (pAlert) {
-    if (protGap >= 10 && kcalLeftNow < protGap * 4) {
-      pAlert.classList.remove("hidden");
-      pAlert.textContent = `\u26A0\uFE0F Faltan ${protGap} g de prote\xEDna (~${protGap * 4} kcal) y solo quedan ${kcalLeftNow} kcal. Prioriza prote\xEDna magra o whey y recorta carbohidratos/grasa.`;
-    } else pAlert.classList.add("hidden");
-  }
 }
 var $ = (id) => document.getElementById(id);
 var E = (s2) => String(s2 == null ? "" : s2).replace(/[&<>"']/g, (c) => ({ "&": "&", "<": "<", ">": ">", '"': '"', "'": "'" })[c]);
@@ -21351,6 +21402,9 @@ window.pushAllToSupabase = pushAllToSupabase;
 window.showToast = showToast4;
 window.openModal = openModal;
 window.closeModal = closeModal;
+window.s = s;
+window.sf = sf;
+window.si = si;
 function getLocalTodayIso() {
   try {
     const tz = window.CONFIG?.profile?.timezone || "UTC";

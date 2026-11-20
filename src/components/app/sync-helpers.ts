@@ -220,14 +220,18 @@ export async function syncFromSupabase(renderAllFn?: () => void): Promise<void> 
       sbFetch('computed_daily_scores?select=*&order=log_date.asc'),
     ]);
 
+    // Defensive: ensure responses are arrays
+    const rawArray = Array.isArray(raw) ? raw : [];
+    const compArray = Array.isArray(comp) ? comp : [];
+
     const store = getLocalStore();
     const byDate: Record<string, any> = {};
 
-    for (const r of raw) {
-      byDate[r.log_date] = { ...byDate[r.log_date], ...r };
+    for (const r of rawArray) {
+      if (r && r.log_date) byDate[r.log_date] = { ...byDate[r.log_date], ...r };
     }
-    for (const c of comp) {
-      byDate[c.log_date] = { ...byDate[c.log_date], ...c };
+    for (const c of compArray) {
+      if (c && c.log_date) byDate[c.log_date] = { ...byDate[c.log_date], ...c };
     }
 
     let count = 0;
