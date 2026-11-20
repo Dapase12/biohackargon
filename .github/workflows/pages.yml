@@ -26,11 +26,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node (para validación sintaxis)
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          # Sin cache: npm — proyecto vanilla JS sin package.json
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Validate syntax
         run: |
@@ -44,10 +47,13 @@ jobs:
           node simulate-recovery.js 2>&1 | tail -30
           echo "✅ Simulation completed"
 
+      - name: Build production assets
+        run: npm run build
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: dist
 
   deploy:
     needs: build
