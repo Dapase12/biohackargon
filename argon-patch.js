@@ -15,30 +15,36 @@
 import { num } from './src/utils/math.ts';
 import { todayIso } from './src/utils/date.ts';
 import { config } from './src/config/index.ts';
-import { supabaseClient, sbTestConnection } from './src/api/client.ts';
+import { getClient } from './src/api/client.ts';
 
-const $ = (id: string) => document.getElementById(id);
-const setStatus = (t: string) => { const el = $('sync-status-text'); if (el) el.textContent = t; };
+const $ = (id) => document.getElementById(id);
+const setStatus = (t) => { const el = $('sync-status-text'); if (el) el.textContent = t; };
+
+// Helper to safely get Supabase client (returns null if not configured)
+function getSbClient() {
+  try { return getClient(); } catch { return null; }
+}
 
 // ---------------------------------------------------------------------------
 // 1. SYNC: últimos 45 días (DESC) y reordenado ASC en cliente
 // ---------------------------------------------------------------------------
 async function syncFromSupabase() {
-  if (!supabaseClient) return;
+  const sb = getSbClient();
+  if (!sb) return;
   try {
     setStatus('Sincronizando DAG...');
     const since = new Date(Date.now() - 45 * 86400000).toISOString().split('T')[0];
 
-    const q = (t: string) => supabaseClient.from(t).select('*')
+    const q = (t) => sb.from(t).select('*')
       .gte('log_date', since).order('log_date', { ascending: false }).limit(60);
 
     const [rawRes, compRes] = await Promise.all([q('daily_raw_biometrics'), q('computed_daily_scores')]);
     if (rawRes.error) throw rawRes.error;
     if (compRes.error) throw compRes.error;
 
-    const rawMap: Record<string, any> = {};
+    const rawMap = {};
     (rawRes.data || []).forEach(r => { rawMap[r.log_date] = r; });
-    const compMap: Record<string, any> = {};
+    const compMap = {};
     (compRes.data || []).forEach(c => { compMap[c.log_date] = c; });
 
     const today = todayIso();
@@ -48,15 +54,15 @@ async function syncFromSupabase() {
     // Elimina días simulados (seed) dentro de la ventana que no existen en la nube
     Object.keys(store).forEach(d => { if (d >= since && !allDates.includes(d)) delete store[d]; });
 
-    const historyRaw: any[] = [];
-    let prevComp: any = null;
+    const historyRaw = [];
+    let prevComp = null;
 
     allDates.forEach(dStr => {
       const r = rawMap[dStr] || {};
       const c = compMap[dStr] || {};
 
       // Quita nulls para que no pisen valores; ceros inválidos de sensores = sin dato
-      const rClean: Record<string, any> = {};
+      const rClean = {};
       Object.keys(r).forEach(k => { if (r[k] !== null && r[k] !== undefined) rClean[k] = r[k]; });
       ['rmssd_ms', 'rhr_bpm', 'resp_rate_brpm', 'spo2_pct'].forEach(k => {
         if (!(num(rClean[k]) > 0)) delete rClean[k];
@@ -67,7 +73,7 @@ async function syncFromSupabase() {
       const w = num(r.weight_kg);
       const bf = num(r.body_fat_pct);
 
-      const pick = (k: string, isInt: boolean) => {
+      const pick = (k, isInt) => {
         const rv = num(r[k]);
         const v = rv !== null ? rv : (num(c[k]) ?? 0);
         return isInt ? Math.round(v) : v;
@@ -103,7 +109,7 @@ async function syncFromSupabase() {
     });
 
     window.saveLocalStore(store);
-    const cur = ($('selected-date') as HTMLInputElement)?.value;
+    const cur = ($('selected-date'))?.value;
     loadDayData(store[cur] ? cur : today);
     setStatus(`Cloud Activo (${allDates.length}d)`);
     const dot = $('status-dot');
@@ -117,7 +123,7 @@ async function syncFromSupabase() {
 }
 
 // Exponer globalmente para compatibilidad
-(window as any).syncFromSupabase = syncFromSupabase;
+window.syncFromSupabase = syncFromSupabase;
 
 // Auto-sync al volver a la app y cada 5 min
 document.addEventListener('visibilitychange', () => {
@@ -128,10 +134,11 @@ setInterval(() => { if (document.visibilityState === 'visible') syncFromSupabase
 // ---------------------------------------------------------------------------
 // 2. COMIDAS: push parcial (solo columnas de ingesta) + mutaciones coherentes
 // ---------------------------------------------------------------------------
-async function pushMealsToSupabase(c: any) {
-  if (!supabaseClient) return;
+async function pushMealsToSupabase(c) {
+  const sb = getSbClient();
+  if (!sb) return;
   try {
-    const { error } = await supabaseClient.from('daily_raw_biometrics').upsert({
+    const { error } = await sb.from('daily_raw_biometrics').upsert({
       log_date: c.log_date,
       intake_kcal: c.intake_kcal,
       intake_protein_g: c.intake_protein_g,
@@ -147,10 +154,10 @@ async function pushMealsToSupabase(c: any) {
   }
 }
 
-(window as any).pushMealsToSupabase = pushMealsToSupabase;
+window.pushMealsToSupabase = pushMealsToSupabase;
 
-async function mutateMeals(mutator: (meals: any[], totals: any) => { meals: any[]; totals: any } | null) {
-  const dateStr = ($('selected-date') as HTMLInputElement)?.value || todayIso();
+async function mutateMeals(mutator) {
+  const dateStr = ($('selected-date'))?.value || todayIso();
   const store = window.getLocalStore();
   const current = store[dateStr];
   if (!current) return;
@@ -181,8 +188,8 @@ async function mutateMeals(mutator: (meals: any[], totals: any) => { meals: any[
   await pushMealsToSupabase(updatedRaw);
 }
 
-(window as any).quickAddMeal = function (addKcal: number, addProt: number, addCarbs: number, addFat: number, customLabel?: string) {
-  const labelMap: Record<number, string> = { 420: 'Desayuno', 650: 'Almuerzo', 480: 'Cena', 130: 'Whey Protein' };
+window.quickAddMeal = function (addKcal, addProt, addCarbs, addFat, customLabel) {
+  const labelMap = { 420: 'Desayuno', 650: 'Almuerzo', 480: 'Cena', 130: 'Whey Protein' };
   return mutateMeals((meals, t) => {
     meals.push({
       id: 'manual_' + Date.now(),
@@ -201,7 +208,7 @@ async function mutateMeals(mutator: (meals: any[], totals: any) => { meals: any[
   });
 };
 
-(window as any).removeMealByIndex = function (idx: number) {
+window.removeMealByIndex = function (idx) {
   return mutateMeals((meals, t) => {
     const [m] = meals.splice(idx, 1);
     if (!m) return null;
@@ -218,7 +225,7 @@ async function mutateMeals(mutator: (meals: any[], totals: any) => { meals: any[
   });
 };
 
-(window as any).resetTodayMeals = function () {
+window.resetTodayMeals = function () {
   return mutateMeals(() => ({
     meals: [],
     totals: { intake_kcal: 0, intake_protein_g: 0, intake_carbs_g: 0, intake_fat_g: 0 }
@@ -228,41 +235,45 @@ async function mutateMeals(mutator: (meals: any[], totals: any) => { meals: any[
 // ---------------------------------------------------------------------------
 // 3. SEED "Base 14d": nunca sube a la nube; no se auto-ejecuta si hay Supabase
 // ---------------------------------------------------------------------------
-const _seedOrig = (window as any).seedCalibratedFeelfitHistory;
-(window as any).seedCalibratedFeelfitHistory = function (fromButton: boolean) {
+const _seedOrig = window.seedCalibratedFeelfitHistory;
+window.seedCalibratedFeelfitHistory = function (fromButton) {
   if (fromButton === true) {
     if (!confirm('Esto reemplaza el historial LOCAL con datos simulados (no toca Supabase). ¿Continuar?')) return;
     return _seedOrig(false);
   }
-  if (supabaseClient) return; // el sync cargará los datos reales
+  if (getSbClient()) return; // el sync cargará los datos reales
   return _seedOrig(false);
 };
 
 // ---------------------------------------------------------------------------
 // 4. QA: compara la app contra la fila real de Supabase del día seleccionado
 // ---------------------------------------------------------------------------
-const _qaOrig = (window as any).runQualityAuditModal;
-(window as any).runQualityAuditModal = async function () {
+const _qaOrig = window.runQualityAuditModal;
+window.runQualityAuditModal = async function () {
   await _qaOrig();
   try {
     const list = $('qa-results-list');
-    if (!list || !supabaseClient) return;
-    const dateStr = ($('selected-date') as HTMLInputElement)?.value || todayIso();
+    if (!list || !getSbClient()) return;
+    const dateStr = ($('selected-date'))?.value || todayIso();
     const store = window.getLocalStore();
     const rec = store[dateStr];
-    const { data, error } = await supabaseClient.from('daily_raw_biometrics')
+    const sb = getSbClient();
+    if (!sb) return;
+    const { data, error } = await sb.from('daily_raw_biometrics')
       .select('*').eq('log_date', dateStr).limit(1);
     if (error) throw error;
     const row = data && data[0];
-    let pass: boolean;
-    let detail: string;
+    let pass;
+    let detail;
     const today = todayIso();
     const isToday = dateStr === today;
     if (!row) {
       // Debug: check if there are rows for nearby dates
       let debugInfo = '';
       try {
-        const { data: nearby } = await supabaseClient.from('daily_raw_biometrics')
+        const sb2 = getSbClient();
+        if (!sb2) return;
+        const { data: nearby } = await sb2.from('daily_raw_biometrics')
           .select('log_date').order('log_date', { ascending: false }).limit(5);
         if (nearby && nearby.length) {
           debugInfo = ' Últimas fechas: ' + nearby.map(r => r.log_date).join(', ');
@@ -276,7 +287,7 @@ const _qaOrig = (window as any).runQualityAuditModal;
     } else if (!rec) {
       pass = false; detail = 'Sin registro local para comparar.';
     } else {
-      const mism: string[] = [];
+      const mism = [];
       if (Math.abs((num(row.weight_kg) || 0) - rec.weight_kg) > 0.3) mism.push(`peso ${row.weight_kg} vs ${rec.weight_kg}`);
       if ((parseInt(row.steps_count, 10) || 0) !== rec.steps_count) mism.push(`pasos ${row.steps_count} vs ${rec.steps_count}`);
       if ((parseInt(row.intake_kcal, 10) || 0) !== rec.intake_kcal) mism.push(`kcal ${row.intake_kcal} vs ${rec.intake_kcal}`);
