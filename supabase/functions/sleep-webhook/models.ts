@@ -4,6 +4,10 @@
  * All models are immutable (readonly) to match Python's frozen dataclasses.
  */
 
+// ── Constants ────────────────────────────────────────────────────────────────
+
+export const DEFAULT_EPOCH_SEC = 30;
+
 // ── Enums ────────────────────────────────────────────────────────────────────
 
 export enum Tier {
