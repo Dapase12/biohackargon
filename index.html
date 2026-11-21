@@ -255,6 +255,16 @@
 </head>
 
 <body class="min-h-screen antialiased">
+  <!-- Funciones globales del drawer (necesarias antes de que carguen los módulos) -->
+  <script>
+    window.openDrawer = () => { document.body.classList.add('drawer-open'); };
+    window.closeDrawer = () => document.body.classList.remove('drawer-open');
+    window.toggleDial = (force) => {
+      const dial = document.getElementById('speed-dial'); if (!dial) return;
+      const open = typeof force === 'boolean' ? force : !dial.classList.contains('open');
+      dial.classList.toggle('open', open); document.body.classList.toggle('dial-open', open);
+    };
+  </script>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
     <linearGradient id="grad-rec-ok" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#06B6D4"/></linearGradient>
     <linearGradient id="grad-rec-mid" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FDE047"/><stop offset="1" stop-color="#F59E0B"/></linearGradient>
