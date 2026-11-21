@@ -15,6 +15,7 @@
 import { num } from './src/utils/math.ts';
 import { todayIso } from './src/utils/date.ts';
 import { config } from './src/config/index.ts';
+import { DEFAULTS } from './src/constants/index.ts';
 import { getClient } from './src/api/client.ts';
 
 const $ = (id) => document.getElementById(id);
@@ -68,8 +69,8 @@ async function syncFromSupabase() {
         if (!(num(rClean[k]) > 0)) delete rClean[k];
       });
 
-      const lastW = prevComp ? prevComp.weight_kg : (config.defaults.weightKg || 70);
-      const lastBf = prevComp ? prevComp.body_fat_pct : (config.defaults.bodyFatPct || 20);
+      const lastW = prevComp ? prevComp.weight_kg : (config.profile?.weightKg ?? DEFAULTS.weightKg);
+      const lastBf = prevComp ? prevComp.body_fat_pct : (config.profile?.bodyFatPct ?? DEFAULTS.bodyFatPct);
       const w = num(r.weight_kg);
       const bf = num(r.body_fat_pct);
 
