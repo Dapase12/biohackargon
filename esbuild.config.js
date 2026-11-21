@@ -125,6 +125,30 @@ async function buildAll() {
         setTimeout(run, 50);
       }
     };
+    // saveSettings: called from settings modal button (inline onclick)
+    window.saveSettings = () => {
+      const url = document.getElementById('cfg-url')?.value?.trim() || '';
+      const key = document.getElementById('cfg-key')?.value?.trim() || '';
+      const userId = document.getElementById('cfg-user-id')?.value?.trim() || '';
+      const targetW = document.getElementById('cfg-target-weight')?.value || '';
+      const wakeTime = document.getElementById('cfg-wake-time')?.value || '';
+      const startW = document.getElementById('cfg-start-weight')?.value;
+      const goalDate = document.getElementById('cfg-goal-date')?.value;
+      const gasUrl = document.getElementById('cfg-gas-url')?.value?.trim() || '';
+      const webappUrl = document.getElementById('cfg-webapp-url')?.value?.trim() || '';
+      if (url) localStorage.setItem('argon_sb_url', url);
+      if (key) localStorage.setItem('argon_sb_key', key);
+      if (userId) localStorage.setItem('argon_user_id', userId);
+      if (targetW) localStorage.setItem('argon_target_w', targetW);
+      if (wakeTime) localStorage.setItem('argon_wake_time', wakeTime);
+      if (startW) localStorage.setItem('argon_start_w', startW);
+      if (goalDate) localStorage.setItem('argon_goal_date', goalDate);
+      if (gasUrl) localStorage.setItem('argon_gas_url', gasUrl);
+      if (webappUrl) localStorage.setItem('ARGON_WEBAPP_URL', webappUrl);
+      if (typeof window.updateCountdown === 'function') window.updateCountdown();
+      if (typeof window.closeModal === 'function') window.closeModal('settings-modal');
+      if (typeof window.initSupabaseFromStorage === 'function') window.initSupabaseFromStorage();
+    };
   </script>
 `;
 

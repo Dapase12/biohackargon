@@ -15,6 +15,9 @@ import { config } from './src/config/index.ts';
 import { STORAGE_KEYS } from './src/constants/index.ts';
 import { supabaseClient, sbTestConnection, sbLoadRange, sbUpsertRawBiometric } from './src/api/client.ts';
 
+// Expose sbTestConnection globally for console debugging
+window.sbTestConnection = sbTestConnection;
+
 // Import app components
 import {
   injectProfileModal,
