@@ -548,8 +548,8 @@ function getQueueStatus_() {
   const triggers = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'processWebhookQueue_');
   return {
     queue: stats,
-    triggers: triggers.length,
-    next_trigger: triggers[0] ? new Date(triggers[0].getUniqueId()) : null // approximate
+    triggers: triggers.length
+    // next_trigger: not available via GAS API (getUniqueId is not a date)
   };
 }
 
