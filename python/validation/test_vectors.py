@@ -10,10 +10,8 @@ Each vector contains: input, expected_output (from Dart), and metadata.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
-from datetime import date
-
 
 # =============================================================================
 # HRS (Heart Rate Service) Test Vectors

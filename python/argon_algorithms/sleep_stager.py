@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -26,30 +26,21 @@ from .models import (
     AccelSample,
     AdvancedSleepStager,
     CardioEpochFeatures,
-    HrSample,
+    CardioStagerResult,
     ImmobilityMask,
     RrSeries,
+    SleepNightObservation,
     SleepSegmentation,
     SleepSession,
-    SleepStage,
     SleepUserProfile,
     SleepWindow,
     ZAngle,
 )
 from .util import (
-    average_ranks,
-    benjamini_hochberg,
-    clean_beats_in_window,
     lomb_scargle,
     mad,
     median,
-    ols_fit,
-    ols_slope,
     percentile,
-    round6,
-    sample_cadence_seconds,
-    theil_sen,
-    RobustScale,
 )
 
 # ── Constants matching Dart implementation ────────────────────────────────────────
@@ -259,7 +250,7 @@ def _find_immobile_bouts(
     in_bout = False
     bout_start = 0.0
 
-    for i, (m, ts) in enumerate(zip(immobility.mask, immobility.ts_ms)):
+    for i, (m, ts) in enumerate(zip(immobility.mask, immobility.ts_ms, strict=False)):
         t_s = ts / 1000.0
         if m == 1 and not in_bout:
             in_bout = True
@@ -357,7 +348,7 @@ def van_hees_sleep_window(
 # ── HRV features per epoch ───────────────────────────────────────────────────────
 
 
-def _compute_rmssd(rr_ms: list[float]) -> Optional[float]:
+def _compute_rmssd(rr_ms: list[float]) -> float | None:
     """Compute RMSSD from RR intervals (ms)."""
     if len(rr_ms) < 2:
         return None
@@ -370,7 +361,7 @@ def _compute_rmssd(rr_ms: list[float]) -> Optional[float]:
 _LFHF_FREQS = np.arange(0.01, 0.51, 0.02)  # Coarser grid: 25 points instead of 49
 
 
-def _compute_lfhf(rr_series: RrSeries) -> Optional[float]:
+def _compute_lfhf(rr_series: RrSeries) -> float | None:
     """Compute LF/HF ratio using Lomb-Scargle periodogram on RR series.
 
     Uses beat times (not 1 Hz interpolated) for accuracy with uneven sampling.
@@ -411,7 +402,7 @@ def _compute_lfhf(rr_series: RrSeries) -> Optional[float]:
     return float(lf_power / hf_power)
 
 
-def _compute_rk(rr_ms: list[float]) -> Optional[float]:
+def _compute_rk(rr_ms: list[float]) -> float | None:
     """Compute RK = median |ΔIHR| (bpm) — instantaneous HR variability.
 
     IHR = 60000 / RR (bpm). ΔIHR = diff(IHR).
@@ -433,7 +424,7 @@ def _compute_rk(rr_ms: list[float]) -> Optional[float]:
 def cardio_stager(
     session: SleepSession,
     epoch_sec: int = DEFAULT_EPOCH_SEC,
-    profile: Optional[SleepUserProfile] = None,
+    profile: SleepUserProfile | None = None,
 ) -> list[CardioEpochFeatures]:
     """Extract per-epoch cardio features for sleep staging.
 
@@ -454,7 +445,6 @@ def cardio_stager(
 
     # Determine personal thresholds (with fallbacks to population defaults)
     still_cut = effective_profile.enmo_still_cut if effective_profile and effective_profile.enmo_still_cut else STILL_CUT_G
-    move_cut = effective_profile.enmo_move_cut if effective_profile and effective_profile.enmo_move_cut else MOVE_CUT_G
 
     # Compute z-angle once for all epochs
     z_angle = compute_z_angle(session.accel)
@@ -492,7 +482,7 @@ def cardio_stager(
         epoch_rr_ms = []
         for rr_series in epoch_rr:
             # Filter RR by timestamp (ts_ms is end of interval)
-            for ts, rr in zip(rr_series.ts_ms, rr_series.rr_ms):
+            for ts, rr in zip(rr_series.ts_ms, rr_series.rr_ms, strict=False):
                 if epoch_start * 1000 <= ts < epoch_end * 1000:
                     epoch_rr_ms.append(rr)
 
@@ -516,7 +506,7 @@ def cardio_stager(
         # ---- Immobility fraction ----
         # Use z-angle for this epoch
         epoch_z = _filter_samples_in_epoch(
-            [type('Z', (), {'z_angle_deg': za, 'ts_ms': ts}) for za, ts in zip(z_angle.z_angle_deg, z_angle.ts_ms)],
+            [type('Z', (), {'z_angle_deg': za, 'ts_ms': ts}) for za, ts in zip(z_angle.z_angle_deg, z_angle.ts_ms, strict=False)],
             epoch_start,
             epoch_end,
             ts_field='ts_ms',
@@ -600,7 +590,7 @@ def _robust_z_scores(values: list[float], clip: float = ROBUST_Z_CLIP) -> list[f
 
 def _compute_epoch_scores(
     features: list[CardioEpochFeatures],
-    profile: Optional[SleepUserProfile] = None,
+    profile: SleepUserProfile | None = None,
 ) -> list[_EpochScores]:
     """Compute robust z-scores for each feature dimension.
 
@@ -621,7 +611,7 @@ def _compute_epoch_scores(
 
     # ---- HR score: lower HR = more sleep-like ----
     hr_vals = [f.hr_median for f in valid_feat if f.hr_median is not None]
-    hr_idx = [i for i, f in zip(valid_idx, valid_feat) if f.hr_median is not None]
+    hr_idx = [i for i, f in zip(valid_idx, valid_feat, strict=False) if f.hr_median is not None]
     if hr_vals:
         hr_z = _robust_z_scores(hr_vals)
         # Lower HR -> more negative z -> more sleep-like; negate
@@ -632,7 +622,7 @@ def _compute_epoch_scores(
 
     # ---- HRV score: higher RMSSD = more sleep-like (parasympathetic) ----
     hrv_vals = [f.rmssd for f in valid_feat if f.rmssd is not None]
-    hrv_idx = [i for i, f in zip(valid_idx, valid_feat) if f.rmssd is not None]
+    hrv_idx = [i for i, f in zip(valid_idx, valid_feat, strict=False) if f.rmssd is not None]
     if hrv_vals:
         hrv_z = _robust_z_scores(hrv_vals)
         # Higher RMSSD -> more positive z -> more sleep-like (keep as is)
@@ -642,7 +632,7 @@ def _compute_epoch_scores(
 
     # ---- RK score: lower |ΔIHR| = more stable = more sleep-like ----
     rk_vals = [f.rk for f in valid_feat if f.rk is not None]
-    rk_idx = [i for i, f in zip(valid_idx, valid_feat) if f.rk is not None]
+    rk_idx = [i for i, f in zip(valid_idx, valid_feat, strict=False) if f.rk is not None]
     if rk_vals:
         rk_z = _robust_z_scores(rk_vals)
         # Lower RK -> more negative z -> more sleep-like; negate
@@ -652,7 +642,7 @@ def _compute_epoch_scores(
         rk_idx = valid_idx
 
     # Assign back to full array
-    for idx, z in zip(hr_idx, hr_z):
+    for idx, z in zip(hr_idx, hr_z, strict=False):
         scores[idx] = _EpochScores(
             immobile=scores[idx].immobile,
             hr=z,
@@ -660,7 +650,7 @@ def _compute_epoch_scores(
             rk=scores[idx].rk,
             valid=True,
         )
-    for idx, z in zip(hrv_idx, hrv_z):
+    for idx, z in zip(hrv_idx, hrv_z, strict=False):
         scores[idx] = _EpochScores(
             immobile=scores[idx].immobile,
             hr=scores[idx].hr,
@@ -668,7 +658,7 @@ def _compute_epoch_scores(
             rk=scores[idx].rk,
             valid=True,
         )
-    for idx, z in zip(rk_idx, rk_z):
+    for idx, z in zip(rk_idx, rk_z, strict=False):
         scores[idx] = _EpochScores(
             immobile=scores[idx].immobile,
             hr=scores[idx].hr,
@@ -676,7 +666,7 @@ def _compute_epoch_scores(
             rk=z,
             valid=True,
         )
-    for idx, z in zip(valid_idx, immobile_z):
+    for idx, z in zip(valid_idx, immobile_z, strict=False):
         scores[idx] = _EpochScores(
             immobile=z,
             hr=scores[idx].hr,
@@ -750,7 +740,7 @@ def _hmm_smooth(
 def classify_cardio_epochs(
     features: list[CardioEpochFeatures],
     sleep_windows: list[SleepWindow],
-    profile: Optional[SleepUserProfile] = None,
+    profile: SleepUserProfile | None = None,
     epoch_sec: int = DEFAULT_EPOCH_SEC,
 ) -> tuple[list[int], list[bool], float]:
     """Classify each epoch as Wake/NREM/REM using weighted robust-z decision layer.
@@ -863,7 +853,7 @@ def classify_cardio_epochs(
 
 def segment_sleep(
     session: SleepSession,
-    config: Optional[AdvancedSleepStager] = None,
+    config: AdvancedSleepStager | None = None,
 ) -> SleepSegmentation:
     """Single entry point for sleep segmentation (mirrors Dart segmentSleep).
 
@@ -907,7 +897,7 @@ def segment_sleep(
     sleep_offset_s = None
 
     # Find first/last sleep epoch (NREM or REM)
-    for i, (stage, feat) in enumerate(zip(stages, features)):
+    for _i, (stage, feat) in enumerate(zip(stages, features, strict=False)):
         if stage in (1, 2):  # NREM or REM
             if sleep_onset_s is None:
                 sleep_onset_s = feat.epoch_start_s
@@ -938,13 +928,11 @@ def segment_sleep(
 def extract_nightly_observation(
     segmentation: SleepSegmentation,
     features: list[CardioEpochFeatures],
-) -> Optional["SleepNightObservation"]:
+) -> SleepNightObservation | None:
     """Extract nightly features for SleepUserProfile folding.
 
     Only uses epochs classified as sleep (NREM/REM).
     """
-    from .models import SleepNightObservation
-
     if not features or not segmentation.stages:
         return None
 
@@ -955,7 +943,7 @@ def extract_nightly_observation(
     sleep_lfhf = []
     sleep_rk = []
 
-    for stage, feat in zip(segmentation.stages, features):
+    for stage, feat in zip(segmentation.stages, features, strict=False):
         if stage in (1, 2):  # NREM or REM
             if feat.hr_median is not None:
                 sleep_hr.append(feat.hr_median)
@@ -1012,13 +1000,12 @@ def extract_nightly_observation(
 
 def stage_sleep(
     session: SleepSession,
-    config: Optional[AdvancedSleepStager] = None,
-) -> "CardioStagerResult":
+    config: AdvancedSleepStager | None = None,
+) -> CardioStagerResult:
     """High-level sleep staging returning CardioStagerResult.
 
     Convenience wrapper: segment_sleep + to_cardio_result.
     """
-    from .models import CardioStagerResult
 
     segmentation = segment_sleep(session, config)
     return segmentation.to_cardio_result()

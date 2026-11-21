@@ -5,7 +5,7 @@ Mirrors protocol/test/hrs_test.dart fixtures.
 
 import pytest
 
-from argon_algorithms.hrs import HrsSample, parse_heart_rate_measurement
+from argon_algorithms.hrs import parse_heart_rate_measurement
 
 
 class TestParseHeartRateMeasurement:

@@ -4,38 +4,35 @@ Mirrors analytics/lib/src/onehz/util.dart tests.
 """
 
 import math
+
 import pytest
 
 from argon_algorithms.util import (
+    LombScargle,
+    LsPoint,
+    RobustScale,
+    average_ranks,
+    benjamini_hochberg,
+    calendar_days,
+    clean_beats_in_window,
+    freq_grid,
+    lomb_scargle,
+    mad,
     mean,
-    stddev,
-    stddev_pop,
+    median,
+    normal_two_sided_p,
+    ols_fit,
+    ols_slope,
     percentile,
     percentile_sorted,
-    median,
-    mad,
-    sample_cadence_seconds,
     robust_z,
-    RobustScale,
-    z_score,
-    ols_slope,
-    ols_fit,
-    LineFit,
-    theil_sen,
     round6,
     round_to,
-    lomb_scargle,
-    LsPoint,
-    LombScargle,
-    freq_grid,
-    calendar_days,
-    average_ranks,
-    normal_two_sided_p,
-    benjamini_hochberg,
-    clean_beats_in_window,
-    RR_MIN,
-    RR_MAX,
-    RR_MAX_STEP,
+    sample_cadence_seconds,
+    stddev,
+    stddev_pop,
+    theil_sen,
+    z_score,
 )
 
 

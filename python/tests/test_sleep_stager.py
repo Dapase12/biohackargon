@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any
 
 import pytest
 
@@ -24,19 +23,17 @@ from argon_algorithms.models import (
     HrSample,
     RrSeries,
     SleepSession,
-    SleepStage,
     SleepUserProfile,
     SleepWindow,
 )
 from argon_algorithms.sleep_stager import (
     DEFAULT_EPOCH_SEC,
-    STILL_CUT_G,
     MOVE_CUT_G,
+    STILL_CUT_G,
     Z_ANGLE_STILL_DEG,
     _compute_epoch_scores,
-    _compute_lfhf,
-    _compute_rmssd,
     _compute_rk,
+    _compute_rmssd,
     _enmo_from_accel,
     _epoch_bounds,
     _filter_samples_in_epoch,
@@ -52,8 +49,6 @@ from argon_algorithms.sleep_stager import (
     stage_sleep,
     van_hees_sleep_window,
 )
-from argon_algorithms.util import median, percentile, round6
-
 
 # ── Test fixtures ─────────────────────────────────────────────────────────────────
 
@@ -184,7 +179,7 @@ def test_rolling_median_basic():
     result = _rolling_median(values, 3)
     # At edges: [1,2] -> 1.5, [1,2,3] -> 2, [2,3,4] -> 3, [3,4,5] -> 4, [4,5] -> 4.5
     expected = [1.5, 2.0, 3.0, 4.0, 4.5]
-    for r, e in zip(result, expected):
+    for r, e in zip(result, expected, strict=False):
         assert abs(r - e) < 1e-6
 
 
@@ -762,7 +757,7 @@ def test_extract_nightly_observation():
 
 def test_extract_nightly_observation_empty():
     """Empty segmentation returns None."""
-    from argon_algorithms.models import SleepNightObservation, SleepSegmentation
+    from argon_algorithms.models import SleepSegmentation
     segmentation = SleepSegmentation(stages=[], deep_flag=[], epoch_sec=30)
     features = []
     observation = extract_nightly_observation(segmentation, features)

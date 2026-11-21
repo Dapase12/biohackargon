@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, Optional
 from enum import Enum
+from pathlib import Path
+from typing import Any
 
 
 class Algorithm(Enum):
@@ -38,8 +39,8 @@ class ValidationResult:
     status: ValidationStatus
     python_output: Any = None
     expected_output: Any = None
-    difference: Optional[dict[str, Any]] = None
-    error_message: Optional[str] = None
+    difference: dict[str, Any] | None = None
+    error_message: str | None = None
     execution_time_ms: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -87,7 +88,7 @@ class ValidationSummary:
 class ValidationHarness:
     """Main validation harness for running algorithm comparisons."""
 
-    def __init__(self, output_dir: Optional[Path] = None):
+    def __init__(self, output_dir: Path | None = None):
         """Initialize validation harness.
 
         Args:
@@ -103,8 +104,8 @@ class ValidationHarness:
         test_name: str,
         python_fn: Callable[[], Any],
         expected: Any = None,
-        tolerance: Optional[dict[str, float]] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        tolerance: dict[str, float] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ValidationResult:
         """Run a single validation test.
 
@@ -165,15 +166,15 @@ class ValidationHarness:
         self,
         actual: Any,
         expected: Any,
-        tolerance: Optional[dict[str, float]] = None,
+        tolerance: dict[str, float] | None = None,
         path: str = "",
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Recursively compare two outputs with tolerance for floats.
 
         Returns:
             None if outputs match within tolerance, otherwise difference dict
         """
-        if type(actual) != type(expected):
+        if type(actual) is not type(expected):
             return {"path": path, "actual_type": type(actual).__name__, "expected_type": type(expected).__name__}
 
         if isinstance(actual, dict):
@@ -195,7 +196,7 @@ class ValidationHarness:
             if len(actual) != len(expected):
                 return {"path": path, "actual_len": len(actual), "expected_len": len(expected)}
             diffs = []
-            for i, (a, e) in enumerate(zip(actual, expected)):
+            for i, (a, e) in enumerate(zip(actual, expected, strict=False)):
                 diff = self._compare_outputs(a, e, tolerance, f"{path}[{i}]")
                 if diff:
                     diffs.append(diff)
@@ -225,7 +226,7 @@ class ValidationHarness:
             results=self.results,
         )
 
-    def save_report(self, summary: ValidationSummary, filename: Optional[str] = None) -> Path:
+    def save_report(self, summary: ValidationSummary, filename: str | None = None) -> Path:
         """Save validation report to JSON file."""
         if filename is None:
             filename = f"validation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -236,32 +237,26 @@ class ValidationHarness:
 
     def print_summary(self, summary: ValidationSummary) -> None:
         """Print validation summary to console."""
-        print("\n" + "=" * 60)
-        print("VALIDATION SUMMARY")
-        print("=" * 60)
-        print(f"Timestamp: {summary.timestamp}")
-        print(f"Total Tests: {summary.total_tests}")
-        print(f"  Passed:  {summary.passed}")
-        print(f"  Failed:  {summary.failed}")
-        print(f"  Skipped: {summary.skipped}")
-        print(f"  Errors:  {summary.errors}")
-        print(f"Pass Rate: {summary.pass_rate():.1f}%")
-        print(f"Total Time: {summary.total_time_ms:.1f}ms")
-        print("=" * 60)
 
         # Print failures
         failed = [r for r in summary.results if r.status == ValidationStatus.FAIL]
         if failed:
-            print("\nFAILURES:")
+            print(f"\n  FAILED ({len(failed)}):")  # noqa: T201
             for r in failed:
-                print(f"  [{r.algorithm.value}] {r.test_name}")
+                print(f"    - {r.algorithm.value}/{r.test_name}")  # noqa: T201
                 if r.difference:
-                    print(f"    Diff: {json.dumps(r.difference, indent=6, default=str)}")
+                    print(f"      Diff: {r.difference}")  # noqa: T201
 
         errors = [r for r in summary.results if r.status == ValidationStatus.ERROR]
         if errors:
-            print("\nERRORS:")
+            print(f"\n  ERRORS ({len(errors)}):")  # noqa: T201
             for r in errors:
-                print(f"  [{r.algorithm.value}] {r.test_name}: {r.error_message}")
+                print(f"    - {r.algorithm.value}/{r.test_name}")  # noqa: T201
+                if r.error_message:
+                    print(f"      Error: {r.error_message}")  # noqa: T201
 
-        print("=" * 60)
+        print(  # noqa: T201
+            f"\n  Summary: {summary.passed}/{summary.total_tests} passed "
+            f"({summary.pass_rate():.1%}) in {summary.total_time_ms:.0f}ms"
+        )
+

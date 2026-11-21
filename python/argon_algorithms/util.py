@@ -9,11 +9,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Optional
-
-import numpy as np
-from scipy import stats
-
+from datetime import UTC
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -32,14 +28,14 @@ _CADENCE_MIN_MODE_FRACTION = 0.5
 # ── Basic Statistics ─────────────────────────────────────────────────────────
 
 
-def mean(xs: list[float]) -> Optional[float]:
+def mean(xs: list[float]) -> float | None:
     """Mean, or None if empty."""
     if not xs:
         return None
     return sum(xs) / len(xs)
 
 
-def stddev(xs: list[float]) -> Optional[float]:
+def stddev(xs: list[float]) -> float | None:
     """Sample standard deviation (N-1), or None if <2 points."""
     if len(xs) < 2:
         return None
@@ -49,7 +45,7 @@ def stddev(xs: list[float]) -> Optional[float]:
     return math.sqrt(s / (len(xs) - 1))
 
 
-def stddev_pop(xs: list[float]) -> Optional[float]:
+def stddev_pop(xs: list[float]) -> float | None:
     """Population standard deviation (N), or None if empty."""
     if not xs:
         return None
@@ -59,7 +55,7 @@ def stddev_pop(xs: list[float]) -> Optional[float]:
     return math.sqrt(s / len(xs))
 
 
-def percentile_sorted(sorted_xs: list[float], p: float) -> Optional[float]:
+def percentile_sorted(sorted_xs: list[float], p: float) -> float | None:
     """Linear-interpolated percentile (p in [0,100]) of an ALREADY-ASCENDING list.
 
     Returns None if empty. For when you hold a sorted list already, or want
@@ -78,19 +74,19 @@ def percentile_sorted(sorted_xs: list[float], p: float) -> Optional[float]:
     return sorted_xs[lo] + (sorted_xs[hi] - sorted_xs[lo]) * frac
 
 
-def percentile(values: list[float], p: float) -> Optional[float]:
+def percentile(values: list[float], p: float) -> float | None:
     """Linear-interpolated percentile (p in [0,100]); None if empty."""
     if not values:
         return None
     return percentile_sorted(sorted(values), p)
 
 
-def median(xs: list[float]) -> Optional[float]:
+def median(xs: list[float]) -> float | None:
     """Median (linear-interpolated), or None if empty."""
     return percentile(xs, 50.0)
 
 
-def mad(xs: list[float], *, scaled: bool = True) -> Optional[float]:
+def mad(xs: list[float], *, scaled: bool = True) -> float | None:
     """Median absolute deviation, scaled to be a consistent estimator of σ for
     normal data (× 1.4826). Returns None if empty.
 
@@ -111,7 +107,7 @@ def mad(xs: list[float], *, scaled: bool = True) -> Optional[float]:
 # ── Cadence Measurement ──────────────────────────────────────────────────────
 
 
-def sample_cadence_seconds(ts_sec: list[float]) -> Optional[float]:
+def sample_cadence_seconds(ts_sec: list[float]) -> float | None:
     """Measured sampling cadence (seconds) of a time-ordered stream — or None.
 
     IT ABSTAINS INSTEAD OF FALLING BACK. Returns None when:
@@ -146,7 +142,7 @@ def sample_cadence_seconds(ts_sec: list[float]) -> Optional[float]:
 # ── Z-Scores ─────────────────────────────────────────────────────────────────
 
 
-def robust_z(x: float, sample: list[float]) -> Optional[float]:
+def robust_z(x: float, sample: list[float]) -> float | None:
     """Iglewicz–Hoaglin modified z-score of x against a sample, using median + MAD.
 
     Returns None if MAD is 0 (degenerate / fully-quantized) so the caller can
@@ -170,7 +166,7 @@ class RobustScale:
     scale: float
 
     @classmethod
-    def of(cls, sample: list[float]) -> Optional["RobustScale"]:
+    def of(cls, sample: list[float]) -> RobustScale | None:
         if len(sample) < 2:
             return None
         m = median(sample)
@@ -185,7 +181,7 @@ class RobustScale:
         return (x - self.med) / self.scale
 
 
-def z_score(x: float, sample: list[float]) -> Optional[float]:
+def z_score(x: float, sample: list[float]) -> float | None:
     """Ordinary z-score against a sample (mean+SD). None if SD undefined or 0."""
     m = mean(sample)
     sd = stddev(sample)
@@ -197,7 +193,7 @@ def z_score(x: float, sample: list[float]) -> Optional[float]:
 # ── Regression ───────────────────────────────────────────────────────────────
 
 
-def ols_slope(y: list[float], x: Optional[list[float]] = None) -> Optional[float]:
+def ols_slope(y: list[float], x: list[float] | None = None) -> float | None:
     """Ordinary-least-squares slope of y vs x (x defaults to 0..n-1). None if <2."""
     n = len(y)
     if n < 2:
@@ -222,7 +218,7 @@ class LineFit:
     intercept: float
 
 
-def ols_fit(y: list[float], x: Optional[list[float]] = None) -> Optional[LineFit]:
+def ols_fit(y: list[float], x: list[float] | None = None) -> LineFit | None:
     """OLS line fit (slope + intercept). None if degenerate."""
     n = len(y)
     if n < 2:
@@ -237,7 +233,7 @@ def ols_fit(y: list[float], x: Optional[list[float]] = None) -> Optional[LineFit
     return LineFit(s, b - s * mx)
 
 
-def theil_sen(y: list[float], x: Optional[list[float]] = None) -> Optional[float]:
+def theil_sen(y: list[float], x: list[float] | None = None) -> float | None:
     """Theil–Sen robust slope estimator: median of all pairwise slopes.
 
     Robust to outliers (breakdown ~29%). None if <2 points or all x identical.
@@ -259,7 +255,7 @@ def theil_sen(y: list[float], x: Optional[list[float]] = None) -> Optional[float
 # ── Rounding ─────────────────────────────────────────────────────────────────
 
 
-def round6(x: float) -> Optional[float]:
+def round6(x: float) -> float | None:
     """6-dp rounding used for stable JSON output.
 
     Returns None for a non-finite input. NaN/Infinity is not a measurement.
@@ -315,9 +311,9 @@ class LombScargle:
             p += pt.psd * df
         return p
 
-    def peak_freq(self, lo_hz: float, hi_hz: float) -> Optional[float]:
+    def peak_freq(self, lo_hz: float, hi_hz: float) -> float | None:
         """Peak frequency within [lo_hz, hi_hz], or None if no grid points there."""
-        best: Optional[float] = None
+        best: float | None = None
         best_p = float("-inf")
         for pt in self.spectrum:
             if pt.freq_hz < lo_hz or pt.freq_hz > hi_hz:
@@ -330,7 +326,7 @@ class LombScargle:
 
 def lomb_scargle(
     t: list[float], y: list[float], freqs_hz: list[float]
-) -> Optional[LombScargle]:
+) -> LombScargle | None:
     """Lomb–Scargle PSD for UNEVENLY-sampled data.
 
     [t] sample times — pass SECONDS, so the grid and the output are in Hz.
@@ -417,12 +413,12 @@ def calendar_days(dates: list[str]) -> list[int]:
 
     An unparseable label falls back to its position.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     out = []
     for i, d_str in enumerate(dates):
         try:
-            d = datetime.strptime(d_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            d = datetime.strptime(d_str, "%Y-%m-%d").replace(tzinfo=UTC)
             out.append(int(d.timestamp() // 86400))
         except ValueError:
             out.append(i)
@@ -508,7 +504,7 @@ def normal_two_sided_p(z_score: float) -> float:
     return max(0.0, min(1.0, ans))
 
 
-def benjamini_hochberg(ps: list[Optional[float]]) -> list[Optional[float]]:
+def benjamini_hochberg(ps: list[float | None]) -> list[float | None]:
     """Benjamini-Hochberg (1995) step-up FDR adjustment over a family of p-values.
 
     Returns q-values POSITIONALLY ALIGNED to [ps]; a null p (a test that could
@@ -517,7 +513,7 @@ def benjamini_hochberg(ps: list[Optional[float]]) -> list[Optional[float]]:
     idx = [i for i, p in enumerate(ps) if p is not None]
     idx.sort(key=lambda i: ps[i] or 0.0)
     m = len(idx)
-    out: list[Optional[float]] = [None] * len(ps)
+    out: list[float | None] = [None] * len(ps)
     running = 1.0
     for k in range(m - 1, -1, -1):
         q = (ps[idx[k]] or 0.0) * m / (k + 1)

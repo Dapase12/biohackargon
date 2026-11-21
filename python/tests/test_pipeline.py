@@ -1,32 +1,29 @@
 """Tests for sleep staging pipeline."""
 
-import pytest
-from datetime import date, datetime, timezone
+from datetime import date
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from argon_algorithms.models import (
+    CardioEpochFeatures,
+    SleepNightObservation,
+    SleepSegmentation,
+    SleepSession,
+    SleepUserProfile,
+)
 from argon_algorithms.pipeline import (
-    RawSleepData,
     PipelineResult,
+    RawSleepData,
     _parse_accel_samples,
     _parse_hr_samples,
     _parse_rr_series,
     build_sleep_session,
-    run_sleep_staging,
     get_user_profile,
-    upsert_user_profile,
+    run_sleep_staging,
     store_results,
+    upsert_user_profile,
 )
-from argon_algorithms.models import (
-    AccelSample,
-    HrSample,
-    RrSeries,
-    SleepSession,
-    SleepUserProfile,
-    SleepSegmentation,
-    CardioEpochFeatures,
-    SleepNightObservation,
-)
-from argon_algorithms.sleep_stager import SleepStage
 
 
 class TestParseAccelSamples:

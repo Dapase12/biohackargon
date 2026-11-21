@@ -7,11 +7,10 @@ All models are immutable (frozen=True) to match Dart's const constructors.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
-
 
 # ── Constants ────────────────────────────────────────────────────────────────────
 
@@ -19,7 +18,7 @@ from pydantic import BaseModel, Field, field_validator
 QUIET_HRR_SETTLED_DAYS = 7
 
 
-class Tier(str, Enum):
+class Tier(StrEnum):
     """Confidence/quality tier of a published method on our substrate."""
 
     AUTH = "AUTH"  # Directly measured / definitional
@@ -28,14 +27,14 @@ class Tier(str, Enum):
     RELATIVE = "RELATIVE"  # Relative-only, never an absolute unit
 
 
-class Sex(str, Enum):
+class Sex(StrEnum):
     """Sex constant for Banister TRIMP."""
 
     MALE = "male"
     FEMALE = "female"
 
 
-class SleepStage(str, Enum):
+class SleepStage(StrEnum):
     """3-class label used across the sleep family."""
 
     WAKE = "wake"
@@ -49,7 +48,7 @@ class Driver:
 
     label: str
     contribution: float  # signed standardized contribution
-    detail: Optional[str] = None
+    detail: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         result = {
@@ -68,20 +67,20 @@ class Metric(BaseModel, frozen=True):
     insufficient. In that case confidence MUST be 0.
     """
 
-    value: Optional[Any] = None
+    value: Any | None = None
     confidence: float = Field(ge=0.0, le=1.0)
     tier: Tier
     inputs_used: list[str] = Field(default_factory=list)
-    drivers: Optional[list[Driver]] = None
-    note: Optional[str] = None
+    drivers: list[Driver] | None = None
+    note: str | None = None
 
     @classmethod
     def absent(
         cls,
         tier: Tier,
-        inputs_used: Optional[list[str]] = None,
-        note: Optional[str] = None,
-    ) -> "Metric":
+        inputs_used: list[str] | None = None,
+        note: str | None = None,
+    ) -> Metric:
         """Create an absent metric: no data, confidence forced to 0."""
         return cls(
             value=None,
@@ -96,7 +95,7 @@ class Metric(BaseModel, frozen=True):
     def present(self) -> bool:
         return self.value is not None
 
-    def to_json(self, encode: Optional[callable] = None) -> dict[str, Any]:
+    def to_json(self, encode: callable | None = None) -> dict[str, Any]:
         """JSON encode with honest placeholder for absent values."""
         enc = None
         if self.value is not None:
@@ -192,13 +191,13 @@ class NightlyRecord(BaseModel, frozen=True):
     """
 
     date: str  # display-only label (edge-supplied), wake-to-wake day
-    rhr: Optional[float] = None  # nocturnal resting HR (bpm)
-    ln_rmssd: Optional[float] = None  # ln(RMSSD ms)
-    rmssd: Optional[float] = None  # RMSSD (ms)
-    sdnn: Optional[float] = None  # SDNN (ms)
-    skin_temp_z: Optional[float] = None  # relative skin-temp deviation (z), unitless
-    resp_rate: Optional[float] = None  # breaths/min
-    coverage: Optional[float] = None  # 0..1 valid-data fraction for the night
+    rhr: float | None = None  # nocturnal resting HR (bpm)
+    ln_rmssd: float | None = None  # ln(RMSSD ms)
+    rmssd: float | None = None  # RMSSD (ms)
+    sdnn: float | None = None  # SDNN (ms)
+    skin_temp_z: float | None = None  # relative skin-temp deviation (z), unitless
+    resp_rate: float | None = None  # breaths/min
+    coverage: float | None = None  # 0..1 valid-data fraction for the night
 
 
 class SleepUserProfile(BaseModel, frozen=True):
@@ -210,16 +209,16 @@ class SleepUserProfile(BaseModel, frozen=True):
     """
 
     nights: int = 0
-    hr_floor_p5: Optional[float] = None  # sleeping-HR 5th pct (bpm) — deep-sleep floor
-    hr_floor_p25: Optional[float] = None  # sleeping-HR 25th pct (bpm) — REM HR gate
-    hr_sleep_median: Optional[float] = None  # sleeping-HR median (bpm)
-    hr_arousal: Optional[float] = None  # typical arousal/wake HR threshold (bpm)
-    rmssd_med: Optional[float] = None  # sleeping RMSSD median (ms)
-    rmssd_mad: Optional[float] = None  # sleeping RMSSD MAD (ms)
-    enmo_still_cut: Optional[float] = None  # still/repositioning ENMO cut (g)
-    enmo_move_cut: Optional[float] = None  # big-move ENMO cut (g)
-    lfhf_med: Optional[float] = None  # sleeping LF/HF median
-    rk_med: Optional[float] = None  # sleeping |ΔIHR| median (bpm)
+    hr_floor_p5: float | None = None  # sleeping-HR 5th pct (bpm) — deep-sleep floor
+    hr_floor_p25: float | None = None  # sleeping-HR 25th pct (bpm) — REM HR gate
+    hr_sleep_median: float | None = None  # sleeping-HR median (bpm)
+    hr_arousal: float | None = None  # typical arousal/wake HR threshold (bpm)
+    rmssd_med: float | None = None  # sleeping RMSSD median (ms)
+    rmssd_mad: float | None = None  # sleeping RMSSD MAD (ms)
+    enmo_still_cut: float | None = None  # still/repositioning ENMO cut (g)
+    enmo_move_cut: float | None = None  # big-move ENMO cut (g)
+    lfhf_med: float | None = None  # sleeping LF/HF median
+    rk_med: float | None = None  # sleeping |ΔIHR| median (bpm)
     updated_at_ms: int = 0
 
     @property
@@ -228,7 +227,7 @@ class SleepUserProfile(BaseModel, frozen=True):
         return max(0.0, min(0.5, self.nights / 28.0))
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "SleepUserProfile":
+    def from_json(cls, data: dict[str, Any]) -> SleepUserProfile:
         return cls(
             nights=data.get("nights", 0),
             hr_floor_p5=data.get("hr_floor_p5"),
@@ -262,14 +261,14 @@ class SleepUserProfile(BaseModel, frozen=True):
                 result[field] = value
         return result
 
-    def fold(self, observation: "SleepNightObservation", horizon_nights: int = 14) -> "SleepUserProfile":
+    def fold(self, observation: SleepNightObservation, horizon_nights: int = 14) -> SleepUserProfile:
         """EWMA-fold one finalized night's observation into the profile."""
         if horizon_nights <= 0:
             raise ValueError("horizon_nights must be positive")
         n2 = self.nights + 1
         a = max(1.0 / n2, 2.0 / (horizon_nights + 1))
 
-        def ew(old: Optional[float], obs: Optional[float]) -> Optional[float]:
+        def ew(old: float | None, obs: float | None) -> float | None:
             if obs is None:
                 return old
             if old is None:
@@ -295,16 +294,16 @@ class SleepUserProfile(BaseModel, frozen=True):
 class SleepNightObservation(BaseModel, frozen=True):
     """One finalized night's extracted features for profile folding."""
 
-    hr_floor_p5: Optional[float] = None
-    hr_floor_p25: Optional[float] = None
-    hr_sleep_median: Optional[float] = None
-    hr_arousal: Optional[float] = None
-    rmssd_med: Optional[float] = None
-    rmssd_mad: Optional[float] = None
-    enmo_still_cut: Optional[float] = None
-    enmo_move_cut: Optional[float] = None
-    lfhf_med: Optional[float] = None
-    rk_med: Optional[float] = None
+    hr_floor_p5: float | None = None
+    hr_floor_p25: float | None = None
+    hr_sleep_median: float | None = None
+    hr_arousal: float | None = None
+    rmssd_med: float | None = None
+    rmssd_mad: float | None = None
+    enmo_still_cut: float | None = None
+    enmo_move_cut: float | None = None
+    lfhf_med: float | None = None
+    rk_med: float | None = None
     updated_at_ms: int = 0
 
 
@@ -440,7 +439,7 @@ class SleepSession(BaseModel, frozen=True):
     in_bed_start_s: float
     in_bed_end_s: float
     # Optional personal profile for personalization
-    profile: Optional[SleepUserProfile] = None
+    profile: SleepUserProfile | None = None
 
 
 class CardioEpochFeatures(BaseModel, frozen=True):
@@ -452,13 +451,13 @@ class CardioEpochFeatures(BaseModel, frozen=True):
     enmo_p95: float
     still_frac: float  # fraction of seconds with ENMO < still_cut
     # HR features (only valid HR samples)
-    hr_median: Optional[float] = None
-    hr_p5: Optional[float] = None
-    hr_p25: Optional[float] = None
+    hr_median: float | None = None
+    hr_p5: float | None = None
+    hr_p25: float | None = None
     # HRV features (from RR in this epoch)
-    rmssd: Optional[float] = None
-    lfhf: Optional[float] = None
-    rk: Optional[float] = None  # |ΔIHR| median (bpm)
+    rmssd: float | None = None
+    lfhf: float | None = None
+    rk: float | None = None  # |ΔIHR| median (bpm)
     # Validity
     valid_hr_frac: float = 0.0
     valid_rr_frac: float = 0.0
@@ -481,8 +480,8 @@ class SleepSegmentation(BaseModel, frozen=True):
     in_bed_start_s: float = 0.0
     in_bed_end_s: float = 0.0
     # Sleep window (subset of in-bed) — onset/offset
-    sleep_onset_s: Optional[float] = None
-    sleep_offset_s: Optional[float] = None
+    sleep_onset_s: float | None = None
+    sleep_offset_s: float | None = None
     # Unobserved seconds within in-bed (off-skin / no data)
     unobserved_sec: int = 0
     # Overall confidence 0..1

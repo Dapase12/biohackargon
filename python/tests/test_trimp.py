@@ -4,9 +4,10 @@ Mirrors analytics/test/onehz/clinical_test.dart calibration data.
 """
 
 import math
+
 import pytest
 
-from argon_algorithms.models import LoadState, Metric, NetTrimp, QuietLevel, Sex, Tier
+from argon_algorithms.models import Sex, Tier
 from argon_algorithms.trimp import (
     StrainScorer,
     banister_trimp,
@@ -21,7 +22,6 @@ from argon_algorithms.trimp import (
     strain_score_from_series,
     strain_score_metric,
 )
-
 
 # ── Test Profile from calibration anchors ──
 # PROFILE: RHR 60, HRmax 187 (Tanaka @30), male constants, 960 wake min,

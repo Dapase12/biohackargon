@@ -15,13 +15,11 @@ Pipeline stages:
 
 from __future__ import annotations
 
-import json
-import time
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, date, datetime
+from typing import Any
 
-from supabase import create_client, Client
+from supabase import Client, create_client
 
 from .models import (
     AccelSample,
@@ -35,10 +33,10 @@ from .models import (
     SleepUserProfile,
 )
 from .sleep_stager import (
-    segment_sleep,
-    extract_nightly_observation,
-    cardio_stager,
     DEFAULT_EPOCH_SEC,
+    cardio_stager,
+    extract_nightly_observation,
+    segment_sleep,
 )
 
 
@@ -52,7 +50,7 @@ class RawSleepData:
     rr: list[dict[str, Any]]         # [{ts_ms, rr_ms[]}]
     in_bed_start_s: float
     in_bed_end_s: float
-    config: Optional[dict[str, Any]] = None
+    config: dict[str, Any] | None = None
 
 
 @dataclass
@@ -60,10 +58,10 @@ class PipelineResult:
     """Result of pipeline processing."""
     segmentation: SleepSegmentation
     features: list[CardioEpochFeatures]
-    observation: Optional[SleepNightObservation]
-    profile: Optional[SleepUserProfile]
+    observation: SleepNightObservation | None
+    profile: SleepUserProfile | None
     stored: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
 
 def _parse_accel_samples(data: list[dict[str, Any]]) -> list[AccelSample]:
@@ -78,7 +76,7 @@ def _parse_accel_samples(data: list[dict[str, Any]]) -> list[AccelSample]:
                 z=d["z"],
                 valid=d.get("valid", True),
             ))
-        except (KeyError, TypeError) as e:
+        except (KeyError, TypeError):
             # Skip invalid samples
             continue
     return samples
@@ -118,7 +116,7 @@ def _parse_rr_series(data: list[dict[str, Any]]) -> list[RrSeries]:
     return series
 
 
-def build_sleep_session(raw: RawSleepData, profile: Optional[SleepUserProfile] = None) -> SleepSession:
+def build_sleep_session(raw: RawSleepData, profile: SleepUserProfile | None = None) -> SleepSession:
     """Build SleepSession from raw webhook data."""
     accel = _parse_accel_samples(raw.accel)
     hr = _parse_hr_samples(raw.hr)
@@ -126,7 +124,7 @@ def build_sleep_session(raw: RawSleepData, profile: Optional[SleepUserProfile] =
 
     # Use config from raw data or defaults
     config = raw.config or {}
-    epoch_sec = config.get("epoch_sec", DEFAULT_EPOCH_SEC)
+    config.get("epoch_sec", DEFAULT_EPOCH_SEC)
 
     return SleepSession(
         accel=accel,
@@ -138,7 +136,7 @@ def build_sleep_session(raw: RawSleepData, profile: Optional[SleepUserProfile] =
     )
 
 
-def run_sleep_staging(session: SleepSession, config: Optional[AdvancedSleepStager] = None) -> tuple[SleepSegmentation, list[CardioEpochFeatures]]:
+def run_sleep_staging(session: SleepSession, config: AdvancedSleepStager | None = None) -> tuple[SleepSegmentation, list[CardioEpochFeatures]]:
     """Run sleep staging pipeline on a session."""
     segmentation = segment_sleep(session, config)
     features = cardio_stager(session, epoch_sec=config.epoch_sec if config else DEFAULT_EPOCH_SEC, profile=session.profile)
@@ -148,7 +146,7 @@ def run_sleep_staging(session: SleepSession, config: Optional[AdvancedSleepStage
 def process_sleep_data(
     raw: RawSleepData,
     supabase: Client,
-    config: Optional[AdvancedSleepStager] = None,
+    config: AdvancedSleepStager | None = None,
 ) -> PipelineResult:
     """Process raw sleep data through the full pipeline.
 
@@ -248,7 +246,7 @@ def upsert_user_profile(supabase: Client, user_id: str, profile: SleepUserProfil
         "lfhf_med": profile.lfhf_med,
         "rk_med_bpm": profile.rk_med,
         "personal_weight": profile.personal_weight,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
     try:
@@ -264,8 +262,8 @@ def store_results(
     log_date: date,
     segmentation: SleepSegmentation,
     features: list[CardioEpochFeatures],
-    observation: Optional[SleepNightObservation],
-    updated_profile: Optional[SleepUserProfile],
+    observation: SleepNightObservation | None,
+    updated_profile: SleepUserProfile | None,
 ) -> bool:
     """Store all results in Supabase."""
     try:
@@ -273,10 +271,10 @@ def store_results(
         seg_data = {
             "user_id": user_id,
             "log_date": log_date.isoformat(),
-            "session_start": datetime.fromtimestamp(segmentation.in_bed_start_s, tz=timezone.utc).isoformat(),
-            "session_end": datetime.fromtimestamp(segmentation.in_bed_end_s, tz=timezone.utc).isoformat(),
-            "sleep_onset": datetime.fromtimestamp(segmentation.sleep_onset_s, tz=timezone.utc).isoformat() if segmentation.sleep_onset_s else None,
-            "sleep_offset": datetime.fromtimestamp(segmentation.sleep_offset_s, tz=timezone.utc).isoformat() if segmentation.sleep_offset_s else None,
+            "session_start": datetime.fromtimestamp(segmentation.in_bed_start_s, tz=UTC).isoformat(),
+            "session_end": datetime.fromtimestamp(segmentation.in_bed_end_s, tz=UTC).isoformat(),
+            "sleep_onset": datetime.fromtimestamp(segmentation.sleep_onset_s, tz=UTC).isoformat() if segmentation.sleep_onset_s else None,
+            "sleep_offset": datetime.fromtimestamp(segmentation.sleep_offset_s, tz=UTC).isoformat() if segmentation.sleep_offset_s else None,
             "epoch_sec": segmentation.epoch_sec,
             "stages": segmentation.stages,
             "deep_flags": segmentation.deep_flag,
@@ -304,7 +302,7 @@ def store_results(
             epoch_data.append({
                 "segmentation_id": segmentation_id,
                 "epoch_index": i,
-                "epoch_start": datetime.fromtimestamp(feat.epoch_start_s, tz=timezone.utc).isoformat(),
+                "epoch_start": datetime.fromtimestamp(feat.epoch_start_s, tz=UTC).isoformat(),
                 "enmo_median": feat.enmo_median,
                 "enmo_p95": feat.enmo_p95,
                 "still_frac": feat.still_frac,
@@ -349,8 +347,7 @@ def store_results(
 
         return True
 
-    except Exception as e:
-        print(f"Error storing results: {e}")
+    except Exception:
         return False
 
 
@@ -399,7 +396,7 @@ def process_user_night(
     supabase: Client,
     user_id: str,
     log_date: date,
-    config: Optional[AdvancedSleepStager] = None,
+    config: AdvancedSleepStager | None = None,
 ) -> PipelineResult:
     """Process a user's night data from Supabase tables.
 

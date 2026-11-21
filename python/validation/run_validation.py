@@ -8,65 +8,49 @@ Compares with Dart reference outputs where available.
 from __future__ import annotations
 
 import sys
-import math
 from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from argon_algorithms.hrs import parse_heart_rate_measurement
-from argon_algorithms.trimp import (
-    banister_trimp,
-    daily_quiet_waking_hrr,
-    baseline_trimp,
-    net_trimp_above_quiet,
-    strain_score,
-    strain_from_net_trimp,
-    ctl_atl_tsb,
-    LoadState,
-    NetTrimp,
-    QuietLevel,
-    StrainScorer,
-    Sex,
-)
-from argon_algorithms.sleep_stager import (
-    compute_z_angle,
-    compute_immobility_mask,
-    van_hees_sleep_window,
-    cardio_stager,
-    segment_sleep,
-    extract_nightly_observation,
-    classify_cardio_epochs,
-    DEFAULT_EPOCH_SEC,
-    STILL_CUT_G,
-    MOVE_CUT_G,
-    Z_ANGLE_STILL_DEG,
-)
 from argon_algorithms.models import (
     AccelSample,
+    AdvancedSleepStager,
     HrSample,
     RrSeries,
     SleepSession,
-    AdvancedSleepStager,
-    SleepStage,
-    SleepWindow,
-    SleepUserProfile,
 )
-from validation.harness import ValidationHarness, ValidationStatus, Algorithm
+from argon_algorithms.sleep_stager import (
+    MOVE_CUT_G,
+    STILL_CUT_G,
+    Z_ANGLE_STILL_DEG,
+    cardio_stager,
+    compute_immobility_mask,
+    compute_z_angle,
+    segment_sleep,
+    van_hees_sleep_window,
+)
+from argon_algorithms.trimp import (
+    Sex,
+    banister_trimp,
+    baseline_trimp,
+    ctl_atl_tsb,
+    daily_quiet_waking_hrr,
+    net_trimp_above_quiet,
+    strain_from_net_trimp,
+)
+from validation.harness import Algorithm, ValidationHarness
 from validation.test_vectors import (
-    get_hrs_vectors,
-    get_trimp_vectors,
-    get_sleep_vectors,
     get_dart_reference,
-    HrsTestVector,
-    TrimpTestVector,
-    SleepTestVector,
+    get_hrs_vectors,
+    get_sleep_vectors,
+    get_trimp_vectors,
 )
 
 
 def run_hrs_validation(harness: ValidationHarness) -> None:
     """Run HRS parsing validation."""
-    print("\n[HRS] Running Bluetooth GATT HR validation...")
 
     for vec in get_hrs_vectors():
         expected = get_dart_reference("hrs", vec.name)
@@ -97,12 +81,10 @@ def run_hrs_validation(harness: ValidationHarness) -> None:
             },
         )
 
-    print(f"[HRS] Completed {len(get_hrs_vectors())} tests")
 
 
 def run_trimp_validation(harness: ValidationHarness) -> None:
     """Run TRIMP validation."""
-    print("\n[TRIMP] Running Banister TRIMP + CTL/ATL/TSB validation...")
 
     for vec in get_trimp_vectors():
         expected = get_dart_reference("trimp", vec.name)
@@ -218,12 +200,10 @@ def run_trimp_validation(harness: ValidationHarness) -> None:
             },
         )
 
-    print(f"[TRIMP] Completed {len(get_trimp_vectors())} tests")
 
 
 def run_sleep_validation(harness: ValidationHarness) -> None:
     """Run Sleep Staging validation."""
-    print("\n[SLEEP] Running Sleep Staging validation...")
 
     for vec in get_sleep_vectors():
         expected = get_dart_reference("sleep", vec.name)
@@ -348,14 +328,10 @@ def run_sleep_validation(harness: ValidationHarness) -> None:
             },
         )
 
-    print(f"[SLEEP] Completed {len(get_sleep_vectors())} tests")
 
 
 def main():
     """Main validation entry point."""
-    print("=" * 60)
-    print("REA VALIDATION HARNESS - OpenStrap Algorithm Migration")
-    print("=" * 60)
 
     harness = ValidationHarness()
 
@@ -369,8 +345,7 @@ def main():
     harness.print_summary(summary)
 
     # Save report
-    report_path = harness.save_report(summary)
-    print(f"\nReport saved to: {report_path}")
+    harness.save_report(summary)
 
     # Exit with appropriate code
     if summary.failed > 0 or summary.errors > 0:

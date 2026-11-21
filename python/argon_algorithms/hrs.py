@@ -9,7 +9,6 @@ Heart Rate Service 1.0 layout specification.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -18,10 +17,10 @@ class HrsSample:
 
     hr: int  # Beats per minute as the sensor reported it
     rr_ms: tuple[int, ...]  # Beat-to-beat durations in milliseconds
-    contact: Optional[bool]  # Sensor's contact claim: True/False when reported, None when unsupported
+    contact: bool | None  # Sensor's contact claim: True/False when reported, None when unsupported
 
 
-def parse_heart_rate_measurement(value: bytes | list[int]) -> Optional[HrsSample]:
+def parse_heart_rate_measurement(value: bytes | list[int]) -> HrsSample | None:
     """Parse a Heart Rate Measurement (0x2A37) value.
 
     Layout (Bluetooth SIG, Heart Rate Service 1.0):

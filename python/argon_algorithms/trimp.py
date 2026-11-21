@@ -13,8 +13,6 @@ TSB = CTL - ATL (Training Stress Balance / "form").
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import Optional
 
 from argon_algorithms.models import (
     LoadState,
@@ -24,8 +22,7 @@ from argon_algorithms.models import (
     Sex,
     Tier,
 )
-from argon_algorithms.util import mean, median, percentile_sorted, round6, sample_cadence_seconds
-
+from argon_algorithms.util import mean, median, percentile_sorted, sample_cadence_seconds
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -107,7 +104,7 @@ class StrainScorer:
         return 208.0 - 0.7 * age
 
     @staticmethod
-    def estimate_hrmax(hr_history: list[float], age: Optional[float]) -> tuple[float, str]:
+    def estimate_hrmax(hr_history: list[float], age: float | None) -> tuple[float, str]:
         """Estimate a personalized HRmax from a trailing HR series.
 
         Returns (hrmax bpm, source in {"observed", "tanaka", "unknown"}).
@@ -139,7 +136,7 @@ class StrainScorer:
         return pct
 
     @staticmethod
-    def median_interval_seconds(ts_sec: list[float]) -> Optional[float]:
+    def median_interval_seconds(ts_sec: list[float]) -> float | None:
         """Measured cadence (seconds) of a time-ordered stream, or None."""
         return sample_cadence_seconds(ts_sec)
 
@@ -196,8 +193,8 @@ class StrainScorer:
 def banister_trimp(
     hr_per_min: list[float],
     *,
-    resting_hr: Optional[float],
-    max_hr: Optional[float],
+    resting_hr: float | None,
+    max_hr: float | None,
     sex: Sex,
 ) -> Metric[float]:
     """Banister TRIMP over a series of per-minute mean HRs.
@@ -240,10 +237,10 @@ def banister_trimp(
 def daily_quiet_waking_hrr(
     hr_per_min: list[float],
     *,
-    resting_hr: Optional[float],
-    max_hr: Optional[float],
+    resting_hr: float | None,
+    max_hr: float | None,
     min_minutes: int = 60,
-) -> Optional[float]:
+) -> float | None:
     """This user's quiet-waking level, measured: the MEDIAN per-minute HRR over a
     day's waking minutes. Percentile of self, never a population number.
 
@@ -331,9 +328,9 @@ def _strain_estimate(
 
 
 def _net_anchors_valid(
-    resting_hr: Optional[float],
-    max_hr: Optional[float],
-    quiet_hrr: Optional[float],
+    resting_hr: float | None,
+    max_hr: float | None,
+    quiet_hrr: float | None,
 ) -> bool:
     """Whether the anchors and the quiet level can price a minute at all."""
     return (
@@ -382,11 +379,11 @@ class _NetAccumulator:
 def net_trimp_above_quiet(
     hr_per_min: list[float],
     *,
-    resting_hr: Optional[float],
-    max_hr: Optional[float],
-    quiet_hrr: Optional[float],
+    resting_hr: float | None,
+    max_hr: float | None,
+    quiet_hrr: float | None,
     sex: Sex,
-) -> Optional[NetTrimp]:
+) -> NetTrimp | None:
     """NetTrimp over per-minute wake HR, against this user's quiet level.
 
     Returns None when anchors are missing, non-finite, degenerate, quiet_hrr
@@ -403,10 +400,10 @@ def net_trimp_above_quiet(
 
 
 def strain_score_metric(
-    trimp: Optional[float],
+    trimp: float | None,
     *,
-    wake_minutes: Optional[float],
-    quiet_hrr: Optional[float],
+    wake_minutes: float | None,
+    quiet_hrr: float | None,
     quiet_settled: bool,
     female: bool = False,
 ) -> Metric[float]:
@@ -459,9 +456,9 @@ def strain_score_metric(
 def strain_score_from_series(
     hr_per_min: list[float],
     *,
-    resting_hr: Optional[float],
-    max_hr: Optional[float],
-    quiet_hrr: Optional[float],
+    resting_hr: float | None,
+    max_hr: float | None,
+    quiet_hrr: float | None,
     sex: Sex,
     quiet_settled: bool,
 ) -> Metric[float]:
@@ -498,11 +495,11 @@ def strain_score_from_series(
 def strain_curve_from_series(
     hr_per_min: list[float],
     *,
-    resting_hr: Optional[float],
-    max_hr: Optional[float],
-    quiet_hrr: Optional[float],
+    resting_hr: float | None,
+    max_hr: float | None,
+    quiet_hrr: float | None,
     sex: Sex,
-) -> Optional[list[float]]:
+) -> list[float] | None:
     """Cumulative 0-21 strain after each minute of hr_per_min (same length).
 
     An invalid minute repeats the previous value, 0 before the first valid one.
