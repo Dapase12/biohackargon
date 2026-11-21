@@ -27,12 +27,12 @@ function getUserId(): string | null {
 // ============================================================
 let _client: SupabaseClient<Database> | null = null;
 
-export function getClient(): SupabaseClient<Database> {
+export function getClient(): SupabaseClient<Database> | null {
   if (_client) return _client;
 
   const { url, key } = getSbConfig();
   if (!url || !key) {
-    throw new Error('Supabase no configurado: ve a ⚙️ Ajustes');
+    return null;
   }
 
   _client = createClient<Database>(url, key, {
@@ -49,7 +49,11 @@ export function resetClient(): void {
 // Expose for backward compatibility with existing code
 export const supabaseClient = new Proxy({} as SupabaseClient<Database>, {
   get(_, prop) {
-    return getClient()[prop as keyof SupabaseClient<Database>];
+    const client = getClient();
+    if (!client) {
+      throw new Error('Supabase no configurado: ve a ⚙️ Ajustes');
+    }
+    return client[prop as keyof SupabaseClient<Database>];
   },
 });
 
@@ -71,6 +75,9 @@ async function request<T>(
   params: QueryParams = {}
 ): Promise<T[]> {
   const client = getClient();
+  if (!client) {
+    throw new Error('Supabase no configurado: ve a ⚙️ Ajustes');
+  }
   const userId = getUserId();
 
   // Cast client to any for Supabase query builder (union table type not supported)
@@ -285,6 +292,7 @@ export async function sbLoadRange(
 export async function sbTestConnection(): Promise<boolean> {
   try {
     const client = getClient();
+    if (!client) return false;
     const { error } = await client.from('computed_daily_scores').select('log_date').limit(1);
     return !error;
   } catch {

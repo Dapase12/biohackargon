@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#05080F" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>ARGON v6.0 | Biometría Clínica MBE</title>
   <link rel="manifest" href="manifest.json" />
@@ -1333,7 +1333,7 @@
     }
 
     // 1. Inicialización Principal del Sistema v6.0
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
       if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
       updateCountdown();
       setInterval(updateCountdown, 60000);
@@ -1346,7 +1346,7 @@
       const dateInput = document.getElementById('selected-date');
       if (dateInput) dateInput.value = todayStr;
 
-      initSupabaseFromStorage();
+      await initSupabaseFromStorage();
       const localData = getLocalStore();
       const dates = Object.keys(localData).sort();
       const latestRec = dates.length ? localData[dates[dates.length - 1]] : null;
@@ -1511,7 +1511,7 @@
     }
 
     // 4. Conexión y Ajustes de Supabase + Google Apps Script URL
-    function initSupabaseFromStorage() {
+    async function initSupabaseFromStorage() {
       // URL y key desde localStorage (configurados en Ajustes) con fallback a CONFIG
       const url = (localStorage.getItem('argon_sb_url') || (window.CONFIG?.supabase?.url || '')).trim();
       const key = (localStorage.getItem('argon_sb_key') || '').trim();
@@ -1526,9 +1526,20 @@
 
       if (url && key && window.supabase) {
         window.supabaseClient = window.supabase.createClient(url, key);
-        document.getElementById('sync-status-text').textContent = 'Supabase Conectado ✓';
-        document.getElementById('status-dot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse';
-        syncFromSupabase();
+        // Test connection before showing success
+        try {
+          const { error } = await window.supabaseClient.from('computed_daily_scores').select('log_date').limit(1);
+          if (!error) {
+            document.getElementById('sync-status-text').textContent = 'Supabase Conectado ✓';
+            document.getElementById('status-dot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse';
+            syncFromSupabase();
+          } else {
+            throw error;
+          }
+        } catch {
+          document.getElementById('sync-status-text').textContent = 'Error de conexión Supabase';
+          document.getElementById('status-dot').className = 'w-2.5 h-2.5 rounded-full bg-rose-400 animate-pulse';
+        }
       } else {
         document.getElementById('sync-status-text').textContent = 'Modo Local Activo';
       }
