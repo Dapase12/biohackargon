@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles */
+@layer base {
+  * {
+    @apply border-argon-border;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-argon-bg text-argon-text antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-argon-accent ring-offset-2 ring-offset-argon-bg;
+  }
+
+  ::selection {
+    @apply bg-argon-accent/30 text-argon-text;
+  }
+}
+
+/* Custom component styles */
+@layer components {
+  .bottom-sheet-panel {
+    @apply bg-argon-card border-t border-argon-border rounded-t-3xl shadow-[0_-4px_20px_rgba(0,0,0,0.4)];
+  }
+
+  .drawer-item {
+    @apply flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-argon-card/50 border border-argon-border/50 text-argon-text transition-all active:scale-[0.98] active:bg-argon-accent/10;
+  }
+
+  .drawer-sec {
+    @apply px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-argon-text-muted;
+  }
+
+  .icon-btn {
+    @apply w-9 h-9 rounded-xl bg-argon-card border border-argon-border flex items-center justify-center text-argon-text transition-colors hover:bg-argon-accent/10 hover:border-argon-accent/50;
+  }
+
+  .sd-item {
+    @apply flex items-center gap-2 px-3 py-2 rounded-2xl bg-argon-card border border-argon-border text-argon-text text-xs font-medium whitespace-nowrap transition-all hover:scale-105;
+  }
+
+  .card-metric {
+    @apply bg-argon-card border border-argon-border rounded-2xl p-4;
+  }
+
+  .btn-primary {
+    @apply px-5 py-2.5 rounded-2xl bg-gradient-to-r from-argon-accent to-argon-emerald text-argon-bg font-bold text-sm transition-all hover:shadow-lg hover:shadow-argon-accent/30 active:scale-[0.98];
+  }
+
+  .btn-secondary {
+    @apply px-5 py-2.5 rounded-2xl bg-argon-card border border-argon-border text-argon-text font-medium text-sm transition-all hover:bg-argon-accent/10 hover:border-argon-accent/50;
+  }
+
+  .input-field {
+    @apply w-full bg-argon-card border border-argon-border rounded-xl px-3 py-2.5 text-argon-text placeholder-argon-text-muted transition-all focus:border-argon-accent focus:ring-1 focus:ring-argon-accent;
+  }
+}
+
+/* Custom utility styles */
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .glass {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .animate-in {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+}

@@ -38,6 +38,12 @@ async function buildAll() {
     console.log(`Built ${outFile}`);
   }
 
+  // Copy compiled CSS to dist
+  if (existsSync('dist/output.css')) {
+    copyFileSync('dist/output.css', 'dist/output.css');
+    console.log('Copied output.css to dist');
+  }
+
   // Copy static assets to dist (except index.html which we'll process)
   const staticFiles = ['manifest.json', 'sw.js', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png', 'icon-180.png'];
   for (const file of staticFiles) {
@@ -58,9 +64,9 @@ async function buildAll() {
   // Remove ALL script tags
   indexHtml = indexHtml.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '');
 
-  // Add CDN scripts back (Tailwind, Swiper, Lucide, ApexCharts, Supabase)
-  const cdnScripts = `  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  // Add CDN scripts back (Swiper, Lucide, ApexCharts, Supabase) + local Tailwind CSS
+  const cdnScripts = `  <!-- Tailwind CSS (compiled) -->
+  <link rel="stylesheet" href="output.css" />
   <!-- Swiper.js (Física táctil deslizable tipo Whoop) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
@@ -92,6 +98,32 @@ async function buildAll() {
       const dial = document.getElementById('speed-dial'); if (!dial) return;
       const open = typeof force === 'boolean' ? force : !dial.classList.contains('open');
       dial.classList.toggle('open', open); document.body.classList.toggle('dial-open', open);
+    };
+    // drawerGo: navega por el menú ☰ y cierra el drawer
+    window.drawerGo = (action) => {
+      window.closeDrawer();
+      const run = () => {
+        switch (action) {
+          case 'log':     window.openModal?.('detail-modal'); break;
+          case 'meal':    window.quickAddMeal?.(420, 30, 40, 15, 'Desayuno'); break;
+          case 'water':   window.quickAddMeal?.(0, 0, 0, 0, '+250 ml agua'); break;
+          case 'journal': window.openModal?.('journal-modal'); break;
+          case 'sync':    window.syncFromSupabase?.(); break;
+          case 'export':  window.exportData?.(); break;
+          case 'demo':    window.seedCalibratedFeelfitHistory?.(true); break;
+          case 'coach':   window.showCoach?.(); break;
+          case 'profile':
+          case 'settings': window.openModal?.('settings-modal'); break;
+          case 'qa':      window.runQualityAuditModal?.(); break;
+          case 'install': window.installPWA?.(); break;
+          case 'about':   window.openModal?.('about-modal'); break;
+        }
+      };
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => setTimeout(run, 100), { once: true });
+      } else {
+        setTimeout(run, 50);
+      }
     };
   </script>
 `;
