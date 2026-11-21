@@ -49,6 +49,12 @@ async function buildAll() {
   // Process index.html: remove inline/module script tags, keep CDN scripts, add correct module script tags
   let indexHtml = await readFile('index.html', 'utf-8');
 
+  // Fix deprecated meta tag
+  indexHtml = indexHtml.replace(
+    'meta name="apple-mobile-web-app-capable"',
+    'meta name="mobile-web-app-capable"'
+  );
+
   // Remove ALL script tags
   indexHtml = indexHtml.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '');
 
@@ -77,8 +83,21 @@ async function buildAll() {
   // Add CDN scripts before </head>
   indexHtml = indexHtml.replace('</head>', cdnScripts + '</head>');
 
+  // Early script for drawer functions (must be before any onclick handlers)
+  const earlyScript = `  <!-- Early global functions for drawer (before modules load) -->
+  <script>
+    window.openDrawer = () => { document.body.classList.add('drawer-open'); };
+    window.closeDrawer = () => document.body.classList.remove('drawer-open');
+    window.toggleDial = (force) => {
+      const dial = document.getElementById('speed-dial'); if (!dial) return;
+      const open = typeof force === 'boolean' ? force : !dial.classList.contains('open');
+      dial.classList.toggle('open', open); document.body.classList.toggle('dial-open', open);
+    };
+  </script>
+`;
+
   // Add correct module script tags before </body>
-  const moduleScripts = `  <script type="module" src="main-app.js"></script>
+  const moduleScripts = earlyScript + `  <script type="module" src="main-app.js"></script>
   <script type="module" src="argon-sleep.js"></script>
   <script type="module" src="argon-mbe.js"></script>
   <script type="module" src="argon-patch.js"></script>

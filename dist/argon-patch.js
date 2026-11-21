@@ -20079,7 +20079,7 @@ function getClient() {
   if (_client) return _client;
   const { url: url2, key } = getSbConfig();
   if (!url2 || !key) {
-    throw new Error("Supabase no configurado: ve a \u2699\uFE0F Ajustes");
+    return null;
   }
   _client = createClient(url2, key, {
     auth: { persistSession: false },
@@ -20089,7 +20089,11 @@ function getClient() {
 }
 var supabaseClient = new Proxy({}, {
   get(_, prop) {
-    return getClient()[prop];
+    const client = getClient();
+    if (!client) {
+      throw new Error("Supabase no configurado: ve a \u2699\uFE0F Ajustes");
+    }
+    return client[prop];
   }
 });
 
@@ -20218,12 +20222,20 @@ var setStatus = (t) => {
   const el = $("sync-status-text");
   if (el) el.textContent = t;
 };
+function getSbClient() {
+  try {
+    return getClient();
+  } catch {
+    return null;
+  }
+}
 async function syncFromSupabase() {
-  if (!supabaseClient) return;
+  const sb = getSbClient();
+  if (!sb) return;
   try {
     setStatus("Sincronizando DAG...");
     const since = new Date(Date.now() - 45 * 864e5).toISOString().split("T")[0];
-    const q = (t) => supabaseClient.from(t).select("*").gte("log_date", since).order("log_date", { ascending: false }).limit(60);
+    const q = (t) => sb.from(t).select("*").gte("log_date", since).order("log_date", { ascending: false }).limit(60);
     const [rawRes, compRes] = await Promise.all([q("daily_raw_biometrics"), q("computed_daily_scores")]);
     if (rawRes.error) throw rawRes.error;
     if (compRes.error) throw compRes.error;
@@ -20309,9 +20321,10 @@ setInterval(() => {
   if (document.visibilityState === "visible") syncFromSupabase();
 }, 3e5);
 async function pushMealsToSupabase(c) {
-  if (!supabaseClient) return;
+  const sb = getSbClient();
+  if (!sb) return;
   try {
-    const { error: error62 } = await supabaseClient.from("daily_raw_biometrics").upsert({
+    const { error: error62 } = await sb.from("daily_raw_biometrics").upsert({
       log_date: c.log_date,
       intake_kcal: c.intake_kcal,
       intake_protein_g: c.intake_protein_g,
@@ -20403,7 +20416,7 @@ window.seedCalibratedFeelfitHistory = function(fromButton) {
     if (!confirm("Esto reemplaza el historial LOCAL con datos simulados (no toca Supabase). \xBFContinuar?")) return;
     return _seedOrig(false);
   }
-  if (supabaseClient) return;
+  if (getSbClient()) return;
   return _seedOrig(false);
 };
 var _qaOrig = window.runQualityAuditModal;
@@ -20411,11 +20424,13 @@ window.runQualityAuditModal = async function() {
   await _qaOrig();
   try {
     const list = $("qa-results-list");
-    if (!list || !supabaseClient) return;
+    if (!list || !getSbClient()) return;
     const dateStr = $("selected-date")?.value || todayIso();
     const store = window.getLocalStore();
     const rec = store[dateStr];
-    const { data, error: error62 } = await supabaseClient.from("daily_raw_biometrics").select("*").eq("log_date", dateStr).limit(1);
+    const sb = getSbClient();
+    if (!sb) return;
+    const { data, error: error62 } = await sb.from("daily_raw_biometrics").select("*").eq("log_date", dateStr).limit(1);
     if (error62) throw error62;
     const row = data && data[0];
     let pass;
@@ -20425,7 +20440,9 @@ window.runQualityAuditModal = async function() {
     if (!row) {
       let debugInfo = "";
       try {
-        const { data: nearby } = await supabaseClient.from("daily_raw_biometrics").select("log_date").order("log_date", { ascending: false }).limit(5);
+        const sb2 = getSbClient();
+        if (!sb2) return;
+        const { data: nearby } = await sb2.from("daily_raw_biometrics").select("log_date").order("log_date", { ascending: false }).limit(5);
         if (nearby && nearby.length) {
           debugInfo = " \xDAltimas fechas: " + nearby.map((r) => r.log_date).join(", ");
         }

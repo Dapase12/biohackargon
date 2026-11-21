@@ -20117,7 +20117,7 @@ function getClient() {
   if (_client) return _client;
   const { url: url2, key } = getSbConfig();
   if (!url2 || !key) {
-    throw new Error("Supabase no configurado: ve a \u2699\uFE0F Ajustes");
+    return null;
   }
   _client = createClient(url2, key, {
     auth: { persistSession: false },
@@ -20127,7 +20127,11 @@ function getClient() {
 }
 var supabaseClient = new Proxy({}, {
   get(_, prop) {
-    return getClient()[prop];
+    const client = getClient();
+    if (!client) {
+      throw new Error("Supabase no configurado: ve a \u2699\uFE0F Ajustes");
+    }
+    return client[prop];
   }
 });
 
@@ -20332,13 +20336,13 @@ function injectProfileModal() {
     "beforeend",
     sheet("profile-modal", `<div id="pf-head"></div><p id="pf-sub" class="text-[11px] text-slate-400 leading-relaxed"></p>
       <div class="grid grid-cols-2 gap-2.5">
-        <div><label class="${LB}">Fecha de nacimiento</label><input id="pf-birth" type="date" class="${IN}" /></div>
-        <div><label class="${LB}">Altura (cm)</label><input id="pf-height" type="number" step="0.5" class="${IN}" /></div>
-        <div><label class="${LB}">Peso actual de inicio (kg)</label><input id="pf-start" type="number" step="0.1" class="${IN}" /></div>
-        <div><label class="${LB}">Peso meta (kg)</label><input id="pf-target" type="number" step="0.5" class="${IN}" /></div>
-        <div><label class="${LB}">Fecha objetivo</label><input id="pf-goal" type="date" class="${IN}" /></div>
-        <div><label class="${LB}">Hora de despertar</label><input id="pf-wake" type="time" class="${IN}" /></div>
-        <div class="col-span-2"><label class="${LB}">D\xE9ficit cal\xF3rico base (kcal/d\xEDa, 250\u2013900)</label><input id="pf-deficit" type="number" step="25" class="${IN}" /></div>
+        <div><label class="${LB}" for="pf-birth">Fecha de nacimiento</label><input id="pf-birth" type="date" class="${IN}" /></div>
+        <div><label class="${LB}" for="pf-height">Altura (cm)</label><input id="pf-height" type="number" step="0.5" class="${IN}" /></div>
+        <div><label class="${LB}" for="pf-start">Peso actual de inicio (kg)</label><input id="pf-start" type="number" step="0.1" class="${IN}" /></div>
+        <div><label class="${LB}" for="pf-target">Peso meta (kg)</label><input id="pf-target" type="number" step="0.5" class="${IN}" /></div>
+        <div><label class="${LB}" for="pf-goal">Fecha objetivo</label><input id="pf-goal" type="date" class="${IN}" /></div>
+        <div><label class="${LB}" for="pf-wake">Hora de despertar</label><input id="pf-wake" type="time" class="${IN}" /></div>
+        <div class="col-span-2"><label class="${LB}" for="pf-deficit">D\xE9ficit cal\xF3rico base (kcal/d\xEDa, 250\u2013900)</label><input id="pf-deficit" type="number" step="25" class="${IN}" /></div>
       </div>
       <button onclick="saveProfile()" id="pf-save" class="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase tracking-wider">Guardar y recalcular</button>
       <button onclick="skipOnboarding()" id="pf-skip" class="hidden w-full py-2 text-[11px] text-slate-400">M\xE1s tarde</button>`)
@@ -20486,8 +20490,8 @@ function injectWorkoutModal() {
         <div class="flex gap-1.5"><button id="wk-start" onclick="wkTimerStart()" class="jchip on">\u25B6 Iniciar</button><button onclick="wkTimerStop()" class="jchip">\u25A0 Detener</button></div>
       </div>
       <div class="grid grid-cols-2 gap-2.5">
-        <div><label class="${LB}">Duraci\xF3n (min)</label><input id="wk-min" type="number" placeholder="60" class="${IN}" /></div>
-        <div><label class="${LB}">Esfuerzo percibido (RPE) <b id="wk-rpe-v" class="text-cyan-300"></b></label><input id="wk-rpe" type="range" min="1" max="10" step="0.5" class="w-full accent-cyan-400" oninput="wkRpeLabel()" /></div>
+        <div><label class="${LB}" for="wk-min">Duraci\xF3n (min)</label><input id="wk-min" type="number" placeholder="60" class="${IN}" /></div>
+        <div><label class="${LB}" for="wk-rpe">Esfuerzo percibido (RPE) <b id="wk-rpe-v" class="text-cyan-300"></b></label><input id="wk-rpe" type="range" min="1" max="10" step="0.5" class="w-full accent-cyan-400" oninput="wkRpeLabel()" /></div>
       </div>
       <details class="text-xs"><summary class="text-[11px] text-slate-300 cursor-pointer py-1">Zonas de FC de la sesi\xF3n (opcional)</summary>
         <div class="grid grid-cols-5 gap-1 pt-2">${[1, 2, 3, 4, 5].map((i) => `<input id="wk-z${i}" type="number" placeholder="Z${i}" class="bg-slate-800 border border-slate-700 rounded-xl px-1 py-2 text-white text-center text-xs" />`).join("")}</div>
@@ -20657,12 +20661,12 @@ function injectMealModal() {
     "beforeend",
     sheet("meal-modal", `${HEAD("\u{1F37D}\uFE0F Registrar comida", "meal-modal")}
       <div class="grid grid-cols-2 gap-2.5">
-        <div><label class="${LB}">Tipo de comida</label>
+        <div><label class="${LB}" for="mf-type">Tipo de comida</label>
           <select id="mf-type" class="${IN} bg-slate-800">
             ${MFTYPES.map((t) => `<option value="${t}">${t.charAt(0).toUpperCase() + t.slice(1)}</option>`).join("")}
           </select>
         </div>
-        <div><label class="${LB}">Hora</label><input id="mf-time" type="time" class="${IN}" /></div>
+        <div><label class="${LB}" for="mf-time">Hora</label><input id="mf-time" type="time" class="${IN}" /></div>
       </div>
       <div class="flex gap-1.5"><input id="mf-search" type="text" placeholder="Buscar alimento..." class="${IN} flex-1" oninput="mfDebouncedSearch()" /><button onclick="mfAiEstimate()" class="jchip" style="min-width:auto">\u{1F916} IA</button></div>
       <div id="mf-results" class="max-h-48 overflow-y-auto space-y-1"></div>

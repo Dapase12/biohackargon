@@ -534,7 +534,7 @@ function getClient() {
   if (_client) return _client;
   const { url: url2, key } = getSbConfig();
   if (!url2 || !key) {
-    throw new Error("Supabase no configurado: ve a \u2699\uFE0F Ajustes");
+    return null;
   }
   _client = createClient(url2, key, {
     auth: { persistSession: false },
@@ -544,11 +544,18 @@ function getClient() {
 }
 var supabaseClient = new Proxy({}, {
   get(_, prop) {
-    return getClient()[prop];
+    const client = getClient();
+    if (!client) {
+      throw new Error("Supabase no configurado: ve a \u2699\uFE0F Ajustes");
+    }
+    return client[prop];
   }
 });
 async function request(table, params = {}) {
   const client = getClient();
+  if (!client) {
+    throw new Error("Supabase no configurado: ve a \u2699\uFE0F Ajustes");
+  }
   const userId = getUserId();
   const qb = client;
   let query = qb.from(table).select(params.select || "*");
@@ -558,7 +565,29 @@ async function request(table, params = {}) {
   }
   if (params.filters) {
     Object.entries(params.filters).forEach(([key, value]) => {
-      query = query.eq(key, value);
+      if (value.startsWith("gte.")) {
+        query = query.gte(key, value.slice(4));
+      } else if (value.startsWith("gt.")) {
+        query = query.gt(key, value.slice(3));
+      } else if (value.startsWith("lte.")) {
+        query = query.lte(key, value.slice(4));
+      } else if (value.startsWith("lt.")) {
+        query = query.lt(key, value.slice(3));
+      } else if (value.startsWith("like.")) {
+        query = query.like(key, value.slice(5));
+      } else if (value.startsWith("ilike.")) {
+        query = query.ilike(key, value.slice(6));
+      } else if (value.startsWith("in.")) {
+        query = query.in(key, value.slice(3).split(","));
+      } else if (value.startsWith("neq.")) {
+        query = query.neq(key, value.slice(4));
+      } else if (value.startsWith("is.")) {
+        query = query.is(key, value.slice(3));
+      } else if (value.startsWith("eq.")) {
+        query = query.eq(key, value.slice(3));
+      } else {
+        query = query.eq(key, value);
+      }
     });
   }
   if (params.order) {
