@@ -100,8 +100,8 @@ export function injectWorkoutModal(): void {
         <div class="flex gap-1.5"><button id="wk-start" onclick="wkTimerStart()" class="jchip on">▶ Iniciar</button><button onclick="wkTimerStop()" class="jchip">■ Detener</button></div>
       </div>
       <div class="grid grid-cols-2 gap-2.5">
-        <div><label class="${LB}">Duración (min)</label><input id="wk-min" type="number" placeholder="60" class="${IN}" /></div>
-        <div><label class="${LB}">Esfuerzo percibido (RPE) <b id="wk-rpe-v" class="text-cyan-300"></b></label><input id="wk-rpe" type="range" min="1" max="10" step="0.5" class="w-full accent-cyan-400" oninput="wkRpeLabel()" /></div>
+        <div><label class="${LB}" for="wk-min">Duración (min)</label><input id="wk-min" type="number" placeholder="60" class="${IN}" /></div>
+        <div><label class="${LB}" for="wk-rpe">Esfuerzo percibido (RPE) <b id="wk-rpe-v" class="text-cyan-300"></b></label><input id="wk-rpe" type="range" min="1" max="10" step="0.5" class="w-full accent-cyan-400" oninput="wkRpeLabel()" /></div>
       </div>
       <details class="text-xs"><summary class="text-[11px] text-slate-300 cursor-pointer py-1">Zonas de FC de la sesión (opcional)</summary>
         <div class="grid grid-cols-5 gap-1 pt-2">${[1, 2, 3, 4, 5].map(i => `<input id="wk-z${i}" type="number" placeholder="Z${i}" class="bg-slate-800 border border-slate-700 rounded-xl px-1 py-2 text-white text-center text-xs" />`).join('')}</div>

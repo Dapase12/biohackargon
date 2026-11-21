@@ -51,13 +51,13 @@ export function injectProfileModal(): void {
   document.body.insertAdjacentHTML('beforeend',
     sheet('profile-modal', `<div id="pf-head"></div><p id="pf-sub" class="text-[11px] text-slate-400 leading-relaxed"></p>
       <div class="grid grid-cols-2 gap-2.5">
-        <div><label class="${LB}">Fecha de nacimiento</label><input id="pf-birth" type="date" class="${IN}" /></div>
-        <div><label class="${LB}">Altura (cm)</label><input id="pf-height" type="number" step="0.5" class="${IN}" /></div>
-        <div><label class="${LB}">Peso actual de inicio (kg)</label><input id="pf-start" type="number" step="0.1" class="${IN}" /></div>
-        <div><label class="${LB}">Peso meta (kg)</label><input id="pf-target" type="number" step="0.5" class="${IN}" /></div>
-        <div><label class="${LB}">Fecha objetivo</label><input id="pf-goal" type="date" class="${IN}" /></div>
-        <div><label class="${LB}">Hora de despertar</label><input id="pf-wake" type="time" class="${IN}" /></div>
-        <div class="col-span-2"><label class="${LB}">Déficit calórico base (kcal/día, 250–900)</label><input id="pf-deficit" type="number" step="25" class="${IN}" /></div>
+        <div><label class="${LB}" for="pf-birth">Fecha de nacimiento</label><input id="pf-birth" type="date" class="${IN}" /></div>
+        <div><label class="${LB}" for="pf-height">Altura (cm)</label><input id="pf-height" type="number" step="0.5" class="${IN}" /></div>
+        <div><label class="${LB}" for="pf-start">Peso actual de inicio (kg)</label><input id="pf-start" type="number" step="0.1" class="${IN}" /></div>
+        <div><label class="${LB}" for="pf-target">Peso meta (kg)</label><input id="pf-target" type="number" step="0.5" class="${IN}" /></div>
+        <div><label class="${LB}" for="pf-goal">Fecha objetivo</label><input id="pf-goal" type="date" class="${IN}" /></div>
+        <div><label class="${LB}" for="pf-wake">Hora de despertar</label><input id="pf-wake" type="time" class="${IN}" /></div>
+        <div class="col-span-2"><label class="${LB}" for="pf-deficit">Déficit calórico base (kcal/día, 250–900)</label><input id="pf-deficit" type="number" step="25" class="${IN}" /></div>
       </div>
       <button onclick="saveProfile()" id="pf-save" class="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs uppercase tracking-wider">Guardar y recalcular</button>
       <button onclick="skipOnboarding()" id="pf-skip" class="hidden w-full py-2 text-[11px] text-slate-400">Más tarde</button>`)

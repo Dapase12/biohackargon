@@ -28,7 +28,7 @@ export function renderDatePicker(options: DatePickerOptions): string {
   ).join('');
   return card('📅 Día', 'Selector de fecha (histórico 30 d)',
     `<div class="flex items-center gap-3">
-      <label class="text-xs text-slate-400">Fecha</label>
+      <label class="text-xs text-slate-400" for="mbe-date">Fecha</label>
       <select id="mbe-date" onchange="mbeLoad(this.value)" class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm">${opts}</select>
       <button onclick="mbeLoad('${today}')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs font-bold">Hoy</button>
     </div>` +

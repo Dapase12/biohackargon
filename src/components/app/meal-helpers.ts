@@ -57,12 +57,12 @@ export function injectMealModal(): void {
   document.body.insertAdjacentHTML('beforeend',
     sheet('meal-modal', `${HEAD('🍽️ Registrar comida', 'meal-modal')}
       <div class="grid grid-cols-2 gap-2.5">
-        <div><label class="${LB}">Tipo de comida</label>
+        <div><label class="${LB}" for="mf-type">Tipo de comida</label>
           <select id="mf-type" class="${IN} bg-slate-800">
             ${MFTYPES.map(t => `<option value="${t}">${t.charAt(0).toUpperCase() + t.slice(1)}</option>`).join('')}
           </select>
         </div>
-        <div><label class="${LB}">Hora</label><input id="mf-time" type="time" class="${IN}" /></div>
+        <div><label class="${LB}" for="mf-time">Hora</label><input id="mf-time" type="time" class="${IN}" /></div>
       </div>
       <div class="flex gap-1.5"><input id="mf-search" type="text" placeholder="Buscar alimento..." class="${IN} flex-1" oninput="mfDebouncedSearch()" /><button onclick="mfAiEstimate()" class="jchip" style="min-width:auto">🤖 IA</button></div>
       <div id="mf-results" class="max-h-48 overflow-y-auto space-y-1"></div>
