@@ -1380,6 +1380,8 @@
       const dateInput = document.getElementById('selected-date');
       if (dateInput) dateInput.value = todayStr;
 
+      // Wait for Supabase client module to load, then init
+      await waitForSupabaseClient();
       await initSupabaseFromStorage();
       const localData = getLocalStore();
       const dates = Object.keys(localData).sort();
@@ -1394,6 +1396,17 @@
         }
       }
     });
+
+    // Wait for main-app.js module to load and expose getClientAsync
+    async function waitForSupabaseClient(maxWaitMs = 5000) {
+      const start = Date.now();
+      while (!window.getClientAsync && Date.now() - start < maxWaitMs) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+      if (!window.getClientAsync) {
+        console.warn('Supabase client module not loaded, using fallback');
+      }
+    }
 
     // 1B. Iconos Vectoriales Lucide + Física Táctil de Arrastre en Bottom Sheets
     function upgradeNativeIconsAndGestures() {
@@ -1558,11 +1571,22 @@
       if (document.getElementById('cfg-wake-time')) document.getElementById('cfg-wake-time').value = localStorage.getItem('argon_wake_time') || '06:00';
       if (document.getElementById('cfg-gas-url')) document.getElementById('cfg-gas-url').value = gasUrl;
 
-      if (url && key && window.supabase) {
-        window.supabaseClient = window.supabase.createClient(url, key);
+      // Use shared Supabase client from module (avoids multiple GoTrueClient instances)
+      let client = null;
+      if (url && key) {
+        if (window.getClientAsync) {
+          client = await window.getClientAsync();
+        } else if (window.supabase) {
+          // Fallback: use CDN directly (should not happen normally)
+          client = window.supabase.createClient(url, key);
+        }
+      }
+
+      if (client) {
+        window.supabaseClient = client;
         // Test connection before showing success
         try {
-          const { error } = await window.supabaseClient.from('computed_daily_scores').select('log_date').limit(1);
+          const { error } = await client.from('computed_daily_scores').select('log_date').limit(1);
           if (!error) {
             document.getElementById('sync-status-text').textContent = 'Supabase Conectado ✓';
             document.getElementById('status-dot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse';

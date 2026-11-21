@@ -6,9 +6,6 @@
 
 import { config } from '@/config';
 
-const SUPABASE_URL = config.supabase?.url || '';
-const SUPABASE_ANON_KEY = config.supabase?.anonKey || '';
-
 const STORAGE_KEY_RECORDS = 'argon_graphos_records_v54';
 
 function getLocalStore(): Record<string, any> {
@@ -27,17 +24,24 @@ function showToast(msg: string): void {
   }
 }
 
+function getSbConfig() {
+  const c = config.supabase;
+  return { url: c?.url || '', anonKey: c?.anonKey || '' };
+}
+
 function sbHeaders(): HeadersInit {
+  const { anonKey } = getSbConfig();
   return {
     'Content-Type': 'application/json',
-    'apikey': SUPABASE_ANON_KEY,
-    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    'apikey': anonKey,
+    'Authorization': `Bearer ${anonKey}`,
   };
 }
 
 async function sbFetch(path: string, opts: RequestInit = {}): Promise<any> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error('Supabase no configurado');
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...opts, headers: { ...sbHeaders(), ...(opts.headers || {}) } });
+  const { url, anonKey } = getSbConfig();
+  if (!url || !anonKey) throw new Error('Supabase no configurado');
+  const res = await fetch(`${url}/rest/v1/${path}`, { ...opts, headers: { ...sbHeaders(), ...(opts.headers || {}) } });
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(`${res.status}: ${txt}`);
@@ -212,7 +216,8 @@ export async function pushDayToSupabase(date: string): Promise<void> {
  * Sync all data from Supabase to local store
  */
 export async function syncFromSupabase(renderAllFn?: () => void): Promise<void> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return showToast('Configura Supabase en Ajustes');
+  const { url, anonKey } = getSbConfig();
+  if (!url || !anonKey) return showToast('Configura Supabase en Ajustes');
 
   try {
     const [raw, comp] = await Promise.all([

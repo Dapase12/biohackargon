@@ -519,7 +519,12 @@ function renderTrendCharts(options) {
 }
 
 // src/api/client.ts
-import { createClient } from "@supabase/supabase-js";
+function getCreateClient() {
+  if (typeof window !== "undefined" && window.supabase?.createClient) {
+    return window.supabase.createClient;
+  }
+  return import("@supabase/supabase-js").then((m) => m.createClient);
+}
 function getSbConfig() {
   const url2 = (localStorage.getItem(STORAGE_KEYS.SB_URL) || "").trim();
   const key = (localStorage.getItem(STORAGE_KEYS.SB_KEY) || "").trim();
@@ -530,17 +535,26 @@ function getUserId() {
   return stored?.trim() || null;
 }
 var _client = null;
+var _clientPromise = null;
 function getClient() {
+  return _client;
+}
+async function getClientAsync() {
   if (_client) return _client;
+  if (_clientPromise) return _clientPromise;
   const { url: url2, key } = getSbConfig();
   if (!url2 || !key) {
     return null;
   }
-  _client = createClient(url2, key, {
-    auth: { persistSession: false },
-    global: { headers: { "x-client-info": "argon-pwa/6.0" } }
-  });
-  return _client;
+  _clientPromise = (async () => {
+    const createClient = await getCreateClient();
+    _client = createClient(url2, key, {
+      auth: { persistSession: false },
+      global: { headers: { "x-client-info": "argon-pwa/6.0" } }
+    });
+    return _client;
+  })();
+  return _clientPromise;
 }
 var supabaseClient = new Proxy({}, {
   get(_, prop) {
@@ -552,7 +566,7 @@ var supabaseClient = new Proxy({}, {
   }
 });
 async function request(table, params = {}) {
-  const client = getClient();
+  const client = await getClientAsync();
   if (!client) {
     throw new Error("Supabase no configurado: ve a \u2699\uFE0F Ajustes");
   }

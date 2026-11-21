@@ -16,14 +16,13 @@ import { num } from './src/utils/math.ts';
 import { todayIso } from './src/utils/date.ts';
 import { config } from './src/config/index.ts';
 import { DEFAULTS } from './src/constants/index.ts';
-import { getClient } from './src/api/client.ts';
 
 const $ = (id) => document.getElementById(id);
 const setStatus = (t) => { const el = $('sync-status-text'); if (el) el.textContent = t; };
 
-// Helper to safely get Supabase client (returns null if not configured)
+// Helper to safely get Supabase client from shared instance (avoids multiple GoTrueClient instances)
 function getSbClient() {
-  try { return getClient(); } catch { return null; }
+  try { return window.getClient?.(); } catch { return null; }
 }
 
 // ---------------------------------------------------------------------------

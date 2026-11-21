@@ -13,10 +13,14 @@ import { num, mean } from './src/utils/math.ts';
 import { s, sf, si } from './src/utils/helpers.ts';
 import { config } from './src/config/index.ts';
 import { STORAGE_KEYS } from './src/constants/index.ts';
-import { supabaseClient, sbTestConnection, sbLoadRange, sbUpsertRawBiometric } from './src/api/client.ts';
+import { supabaseClient, sbTestConnection, sbLoadRange, sbUpsertRawBiometric, getClientAsync, getClient } from './src/api/client.ts';
 
 // Expose sbTestConnection globally for console debugging
 window.sbTestConnection = sbTestConnection;
+// Expose getClientAsync for initSupabaseFromStorage
+window.getClientAsync = getClientAsync;
+// Expose getClient for argon-patch.js (sync access to shared client)
+window.getClient = getClient;
 
 // Import app components
 import {

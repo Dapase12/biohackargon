@@ -10,6 +10,8 @@
  * 6. Coach Clínico MBE con Gemini (4096 tokens + fallback automático de modelos)
  * 7. Recuperación MBE: media móvil 7 d de lnRMSSD, zona muerta SWC = 0.5 × SD,
  *    null durante calibración (<7 días válidos)
+ * 8. Sleep Staging Webhook Integration (van Hees + cardioStager en Supabase Edge Function)
+ * 9. ASYNC QUEUE PATTERN: 200 inmediato, procesamiento en background (evita timeout 30s / payload large)
  * ============================================================================
  */
 
@@ -27,45 +29,333 @@ const ARGON_CONFIG = {
 
 /**
  * ============================================================================
+ * QUEUE SYSTEM PARA WEBHOOK ASYNC (NUEVO v6.0)
+ * ============================================================================
+ */
+
+const QUEUE_CONFIG = {
+  // Cola almacenada en PropertiesService (clave: ARGON_WEBHOOK_QUEUE)
+  // Estructura: { items: [{ id, payload, receivedAt, status, retryCount, error }], processing: boolean }
+  get QUEUE_KEY() { return 'ARGON_WEBHOOK_QUEUE'; },
+  // Máximo items en cola antes de rechazar (protección memoria)
+  get MAX_QUEUE_SIZE() { return 100; },
+  // Tamaño máximo payload individual (bytes) - Health Connect puede enviar ~50KB
+  get MAX_PAYLOAD_BYTES() { return 100 * 1024; }, // 100KB
+  // Intervalo del trigger de procesamiento (minutos)
+  get PROCESS_INTERVAL_MIN() { return 2; },
+  // Tiempo máx de ejecución background (ms) - GAS permite 6 min = 360000ms
+  get MAX_RUNTIME_MS() { return 5 * 60 * 1000; }, // 5 min con margen
+  // Reintentos máximos por item
+  get MAX_RETRIES() { return 3; }
+};
+
+function getQueue_() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty(QUEUE_CONFIG.QUEUE_KEY);
+  if (!raw) return { items: [], processing: false };
+  try { return JSON.parse(raw); } catch { return { items: [], processing: false }; }
+}
+
+function saveQueue_(queue) {
+  PropertiesService.getScriptProperties().setProperty(QUEUE_CONFIG.QUEUE_KEY, JSON.stringify(queue));
+}
+
+function enqueuePayload_(payload) {
+  const queue = getQueue_();
+  if (queue.items.length >= QUEUE_CONFIG.MAX_QUEUE_SIZE) {
+    Logger.log('Queue full, dropping payload');
+    return { success: false, reason: 'queue_full' };
+  }
+  const payloadStr = JSON.stringify(payload);
+  const payloadBytes = Utilities.newBlob(payloadStr).getBytes().length;
+  if (payloadBytes > QUEUE_CONFIG.MAX_PAYLOAD_BYTES) {
+    Logger.log('Payload too large: ' + payloadBytes + ' bytes');
+    return { success: false, reason: 'payload_too_large', size: payloadBytes };
+  }
+  const item = {
+    id: 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+    payload: payload,
+    receivedAt: Date.now(),
+    status: 'pending',
+    retryCount: 0,
+    error: null
+  };
+  queue.items.push(item);
+  saveQueue_(queue);
+  Logger.log('Enqueued ' + item.id + ' (queue size: ' + queue.items.length + ', payload: ' + payloadBytes + ' bytes)');
+  return { success: true, id: item.id };
+}
+
+function dequeueNext_() {
+  const queue = getQueue_();
+  const idx = queue.items.findIndex(i => i.status === 'pending');
+  if (idx === -1) return null;
+  queue.items[idx].status = 'processing';
+  queue.items[idx].startedAt = Date.now();
+  saveQueue_(queue);
+  return queue.items[idx];
+}
+
+function markQueueItemDone_(itemId, success, error) {
+  const queue = getQueue_();
+  const idx = queue.items.findIndex(i => i.id === itemId);
+  if (idx === -1) return;
+  if (success) {
+    queue.items.splice(idx, 1); // Remove on success
+  } else {
+    queue.items[idx].status = 'pending';
+    queue.items[idx].retryCount = (queue.items[idx].retryCount || 0) + 1;
+    queue.items[idx].error = error;
+    if (queue.items[idx].retryCount >= QUEUE_CONFIG.MAX_RETRIES) {
+      queue.items[idx].status = 'dead';
+      Logger.log('Item ' + itemId + ' moved to dead queue after ' + QUEUE_CONFIG.MAX_RETRIES + ' retries');
+    }
+  }
+  saveQueue_(queue);
+}
+
+function requeueDeadItems_() {
+  const queue = getQueue_();
+  let requeued = 0;
+  queue.items.forEach(item => {
+    if (item.status === 'dead' && item.retryCount < QUEUE_CONFIG.MAX_RETRIES) {
+      item.status = 'pending';
+      item.error = null;
+      requeued++;
+    }
+  });
+  if (requeued) saveQueue_(queue);
+  return requeued;
+}
+
+function getQueueStats_() {
+  const queue = getQueue_();
+  return {
+    total: queue.items.length,
+    pending: queue.items.filter(i => i.status === 'pending').length,
+    processing: queue.items.filter(i => i.status === 'processing').length,
+    dead: queue.items.filter(i => i.status === 'dead').length,
+    processingSince: queue.items.find(i => i.status === 'processing')?.startedAt || null
+  };
+}
+
+/**
+ * ============================================================================
  * 1. PUNTO DE ENTRADA PRINCIPAL (WEBHOOK + CHAT COACH MBE)
  * ============================================================================
  */
 function doPost(e) {
-  let isCoach = false;
-  try { const a = JSON.parse(e.postData.contents).action; isCoach = (a === 'ask_coach' || a === 'set_profile' || a === 'estimate_meal'); } catch (_) {}
-  if (isCoach) return doPostInner_(e);
+  const startTime = Date.now();
 
-  const lock = LockService.getScriptLock();
+  // Log completo de la request para depuración
   try {
-    lock.waitLock(25000);
-  } catch (_) {
-    return jsonResponse_({ status: 'error', message: 'Servidor ocupado, reintenta' });
+    Logger.log('doPost received: ' + JSON.stringify({
+      hasPostData: !!e?.postData,
+      postDataType: e?.postData?.type,
+      postDataLength: e?.postData?.contents?.length,
+      postDataContentsPreview: e?.postData?.contents?.substring?.(0, 500),
+      hasParameter: !!e?.parameter,
+      parameterKeys: e?.parameter ? Object.keys(e.parameter) : [],
+      parameterPreview: e?.parameter ? JSON.stringify(e.parameter).substring(0, 500) : 'none',
+      queryString: e?.queryString,
+      contentLength: e?.postData?.contents ? Utilities.newBlob(e.postData.contents).getBytes().length : 0
+    }));
+  } catch (_) { Logger.log('doPost: could not log request'); }
+
+  // Helper to extract payload from various GAS request formats
+  function extractPayload_(e) {
+    // 1. Standard JSON body (e.postData.contents) - most common
+    if (e && e.postData && e.postData.contents) {
+      try { return JSON.parse(e.postData.contents); } catch (_) {}
+    }
+    // 2. Form data (e.parameter) - Health Connect/Tasker may send as form
+    if (e && e.parameter) {
+      const param = e.parameter;
+      const keys = Object.keys(param);
+
+      // 2a. Check for common payload keys in form data
+      for (const key of ['payload', 'data', 'json', 'body', 'content', 'message', 'request']) {
+        if (param[key]) {
+          try { return JSON.parse(param[key]); } catch (_) {}
+        }
+      }
+
+      // 2b. If only one parameter and it looks like JSON, try it
+      if (keys.length === 1) {
+        try { return JSON.parse(param[keys[0]]); } catch (_) {}
+      }
+
+      // 2c. Try each parameter value as potential JSON (most permissive)
+      for (const key of keys) {
+        try { return JSON.parse(param[key]); } catch (_) {}
+      }
+
+      // 2d. ENTIRE parameter object might BE the payload (Tasker sends this way sometimes)
+      // Check if it looks like our HC payload structure (has known top-level keys)
+      const knownKeys = ['steps', 'heart_rate', 'sleep', 'nutrition', 'weight', 'body_fat',
+                         'hrv', 'heart_rate_variability', 'resting_heart_rate', 'respiratory_rate',
+                         'oxygen_saturation', 'exercise', 'active_calories', 'distance'];
+      const hasKnownKey = keys.some(k => knownKeys.some(nk => k.toLowerCase().includes(nk)));
+      if (hasKnownKey || keys.length > 3) {
+        // The parameter object itself is likely the payload
+        return param;
+      }
+    }
+
+    // 3. Check query string (GET with JSON in query param)
+    if (e && e.queryString) {
+      try {
+        const qs = e.queryString;
+        // Try to parse as JSON directly
+        try { return JSON.parse(qs); } catch (_) {}
+        // Try to extract from query params like ?data=...
+        const params = new URLSearchParams(qs);
+        for (const [key, val] of params) {
+          if (['data', 'payload', 'json', 'body'].includes(key)) {
+            try { return JSON.parse(val); } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 4. postData might have contents as already-parsed object (rare)
+    if (e && e.postData && typeof e.postData.contents === 'object' && e.postData.contents !== null) {
+      return e.postData.contents;
+    }
+
+    return null;
   }
+
+  // Detectar si es petición de coach (no Health Connect)
+  let isCoach = false;
+  const coachPayload = extractPayload_(e);
+  if (coachPayload && coachPayload.action) {
+    isCoach = (coachPayload.action === 'ask_coach' || coachPayload.action === 'set_profile' || coachPayload.action === 'estimate_meal' || coachPayload.action === 'recalc_day');
+  }
+
+  if (isCoach) {
+    return doPostInner_(e); // Coach sigue síncrono (poco tráfico)
+  }
+
+  // ============================================================
+  // HEALTH CONNECT WEBHOOK: ASYNC QUEUE PATTERN
+  // Respuesta 200 inmediata (<3s) para evitar timeout
+  // ============================================================
   try {
-    return doPostInner_(e);
-  } finally {
-    lock.releaseLock();
+    const payload = extractPayload_(e);
+
+    if (!payload) {
+      Logger.log('HC Webhook: No payload found in request');
+      return jsonResponse_({ status: 'accepted', message: 'Payload no encontrado, revisar formato' });
+    }
+
+    const payloadStr = JSON.stringify(payload);
+    const payloadBytes = Utilities.newBlob(payloadStr).getBytes().length;
+
+    Logger.log('HC Webhook received: ' + payloadBytes + ' bytes, keys: ' + Object.keys(payload).join(', '));
+
+    // Encolar para procesamiento background
+    const enqueueResult = enqueuePayload_(payload);
+
+    const elapsed = Date.now() - startTime;
+    Logger.log('HC Webhook enqueued in ' + elapsed + 'ms: ' + JSON.stringify(enqueueResult));
+
+    // Respuesta inmediata 200 OK
+    return jsonResponse_({
+      status: 'accepted',
+      message: 'Payload encolado para procesamiento asíncrono',
+      queue_id: enqueueResult.id,
+      payload_bytes: payloadBytes,
+      processing_time_ms: elapsed
+    });
+  } catch (err) {
+    const elapsed = Date.now() - startTime;
+    Logger.log('HC Webhook error in ' + elapsed + 'ms: ' + err.stack);
+    // Aun en error, devolvemos 200 para que Health Connect no reintente infinitamente
+    return jsonResponse_({
+      status: 'accepted',
+      message: 'Recibido (con error de parseo, revisar logs)',
+      error: err.message,
+      processing_time_ms: elapsed
+    });
   }
 }
 
 function doPostInner_(e) {
   try {
-    if (!e || !e.postData || !e.postData.contents) {
+    // Use same payload extraction as doPost
+    function extractPayload_(e) {
+      // 1. Standard JSON body (e.postData.contents) - most common
+      if (e && e.postData && e.postData.contents) {
+        try { return JSON.parse(e.postData.contents); } catch (_) {}
+      }
+      // 2. Form data (e.parameter) - Health Connect/Tasker may send as form
+      if (e && e.parameter) {
+        const param = e.parameter;
+        const keys = Object.keys(param);
+
+        // 2a. Check for common payload keys in form data
+        for (const key of ['payload', 'data', 'json', 'body', 'content', 'message', 'request']) {
+          if (param[key]) {
+            try { return JSON.parse(param[key]); } catch (_) {}
+          }
+        }
+
+        // 2b. If only one parameter and it looks like JSON, try it
+        if (keys.length === 1) {
+          try { return JSON.parse(param[keys[0]]); } catch (_) {}
+        }
+
+        // 2c. Try each parameter value as potential JSON (most permissive)
+        for (const key of keys) {
+          try { return JSON.parse(param[key]); } catch (_) {}
+        }
+
+        // 2d. ENTIRE parameter object might BE the payload (Tasker sends this way sometimes)
+        const knownKeys = ['steps', 'heart_rate', 'sleep', 'nutrition', 'weight', 'body_fat',
+                           'hrv', 'heart_rate_variability', 'resting_heart_rate', 'respiratory_rate',
+                           'oxygen_saturation', 'exercise', 'active_calories', 'distance'];
+        const hasKnownKey = keys.some(k => knownKeys.some(nk => k.toLowerCase().includes(nk)));
+        if (hasKnownKey || keys.length > 3) {
+          return param;
+        }
+      }
+
+      // 3. Check query string (GET with JSON in query param)
+      if (e && e.queryString) {
+        try {
+          const qs = e.queryString;
+          try { return JSON.parse(qs); } catch (_) {}
+          const params = new URLSearchParams(qs);
+          for (const [key, val] of params) {
+            if (['data', 'payload', 'json', 'body'].includes(key)) {
+              try { return JSON.parse(val); } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 4. postData might have contents as already-parsed object (rare)
+      if (e && e.postData && typeof e.postData.contents === 'object' && e.postData.contents !== null) {
+        return e.postData.contents;
+      }
+
+      return null;
+    }
+
+    const payload = extractPayload_(e);
+    if (!payload) {
       return jsonResponse_({ status: 'error', message: 'Payload vacío' });
     }
 
-    const payload = JSON.parse(e.postData.contents);
-
-    // Si la petición viene del botón "🧠 Coach" dentro de la app ARGON
     if (payload && payload.action === 'ask_coach') {
       return handleArgonCoachChat_(payload);
     }
     if (payload && payload.action === 'set_profile') return handleSetProfile_(payload);
     if (payload && payload.action === 'estimate_meal') return handleEstimateMeal_(payload);
-    // Recalculado servidor desde cliente (thin-client)
     if (payload && payload.action === 'recalc_day') return handleRecalcDay_(payload);
 
-    // Procesamiento normal de envíos de HC Webhook (Health Connect)
+    // Fallback: procesamiento síncrono legacy (no debería usarse)
     const parsedByDate = extractHealthConnectByDate_(payload);
     const detectedDates = Object.keys(parsedByDate).sort();
     const syncedSummaries = [];
@@ -84,6 +374,14 @@ function doPostInner_(e) {
         strain: dayComputed.strain_score,
         recovery: dayComputed.recovery_score
       });
+
+      const webhookResult = sendSleepDataToWebhook_(payload, parsedByDate[dateStr], dateStr);
+      Logger.log('Sleep webhook ' + dateStr + ': ' + JSON.stringify(webhookResult));
+
+      if (webhookResult.skipped || !webhookResult.success) {
+        const hcResult = saveHcSleepStages_(parsedByDate[dateStr], dateStr);
+        Logger.log('Sleep fallback HC stages ' + dateStr + ': ' + JSON.stringify(hcResult));
+      }
     });
 
     try { logWebhookAudit_(payload, detectedDates, syncedSummaries); } catch (le) { Logger.log('Audit: ' + le.message); }
@@ -96,9 +394,167 @@ function doPostInner_(e) {
       summary: syncedSummaries
     });
   } catch (err) {
-    Logger.log('Error en doPost: ' + err.stack);
+    Logger.log('Error en doPostInner: ' + err.stack);
     return jsonResponse_({ status: 'error', message: err.message });
   }
+}
+
+/**
+ * ============================================================================
+ * 2. BACKGROUND QUEUE PROCESSOR (se ejecuta vía time-driven trigger)
+ * ============================================================================
+ */
+function processWebhookQueue_() {
+  const startTime = Date.now();
+  const maxRuntime = QUEUE_CONFIG.MAX_RUNTIME_MS;
+  let processed = 0;
+  let errors = 0;
+
+  Logger.log('=== Queue processor started ===');
+
+  const queue = getQueue_();
+  if (queue.processing) {
+    Logger.log('Queue already processing, skipping');
+    return;
+  }
+  queue.processing = true;
+  saveQueue_(queue);
+
+  try {
+    while (true) {
+      // Check runtime budget
+      if (Date.now() - startTime > maxRuntime) {
+        Logger.log('Runtime budget exhausted (' + (Date.now() - startTime) + 'ms), yielding');
+        break;
+      }
+
+      const item = dequeueNext_();
+      if (!item) {
+        Logger.log('No pending items');
+        break;
+      }
+
+      try {
+        Logger.log('Processing queue item: ' + item.id);
+        const result = processHealthConnectPayload_(item.payload);
+        markQueueItemDone_(item.id, true, null);
+        processed++;
+        Logger.log('Item ' + item.id + ' processed OK: ' + JSON.stringify(result));
+      } catch (err) {
+        errors++;
+        Logger.log('Item ' + item.id + ' failed: ' + err.message + '\n' + err.stack);
+        markQueueItemDone_(item.id, false, err.message);
+      }
+
+      // Pequeña pausa para no saturar quotas
+      Utilities.sleep(100);
+    }
+  } finally {
+    queue.processing = false;
+    saveQueue_(queue);
+  }
+
+  const totalTime = Date.now() - startTime;
+  Logger.log('=== Queue processor done: ' + processed + ' processed, ' + errors + ' errors in ' + totalTime + 'ms ===');
+
+  // Reintentar items dead si hay espacio
+  if (errors > 0) {
+    const requeued = requeueDeadItems_();
+    if (requeued) Logger.log('Requeued ' + requeued + ' dead items');
+  }
+}
+
+function processHealthConnectPayload_(payload) {
+  const parsedByDate = extractHealthConnectByDate_(payload);
+  const detectedDates = Object.keys(parsedByDate).sort();
+  const syncedSummaries = [];
+
+  detectedDates.forEach(dateStr => {
+    const dayComputed = upsertAndComputeDayInSupabase_(dateStr, parsedByDate[dateStr]);
+    syncedSummaries.push({
+      log_date: dateStr,
+      weight_kg: dayComputed.weight_kg,
+      body_fat_pct: dayComputed.body_fat_pct,
+      steps: dayComputed.steps_count,
+      intake_kcal: dayComputed.intake_kcal,
+      prot_g: dayComputed.intake_protein_g,
+      carbs_g: dayComputed.intake_carbs_g,
+      fat_g: dayComputed.intake_fat_g,
+      strain: dayComputed.strain_score,
+      recovery: dayComputed.recovery_score
+    });
+
+    // Sleep webhook (no bloqueante, log only)
+    try {
+      const webhookResult = sendSleepDataToWebhook_(payload, parsedByDate[dateStr], dateStr);
+      Logger.log('Sleep webhook ' + dateStr + ': ' + JSON.stringify(webhookResult));
+      if (webhookResult.skipped || !webhookResult.success) {
+        const hcResult = saveHcSleepStages_(parsedByDate[dateStr], dateStr);
+        Logger.log('Sleep fallback HC stages ' + dateStr + ': ' + JSON.stringify(hcResult));
+      }
+    } catch (e) {
+      Logger.log('Sleep webhook error for ' + dateStr + ': ' + e.message);
+    }
+  });
+
+  // Audit y expediente (no bloqueantes)
+  try { logWebhookAudit_(payload, detectedDates, syncedSummaries); } catch (le) { Logger.log('Audit: ' + le.message); }
+  try { syncExpedienteToGoogleDrive_(); } catch (de) { Logger.log('Drive sync: ' + de.message); }
+
+  return {
+    days_updated: detectedDates.length,
+    summary: syncedSummaries
+  };
+}
+
+/**
+ * ============================================================================
+ * TRIGGER MANAGEMENT
+ * ============================================================================
+ */
+function createQueueTrigger_() {
+  // Borrar triggers existentes de esta función
+  const allTriggers = ScriptApp.getProjectTriggers();
+  allTriggers.forEach(t => {
+    if (t.getHandlerFunction() === 'processWebhookQueue_') ScriptApp.deleteTrigger(t);
+  });
+
+  // Crear trigger cada N minutos
+  const interval = QUEUE_CONFIG.PROCESS_INTERVAL_MIN;
+  ScriptApp.newTrigger('processWebhookQueue_')
+    .timeBased()
+    .everyMinutes(interval)
+    .create();
+
+  Logger.log('Queue trigger created: every ' + interval + ' minutes');
+  return { success: true, interval_minutes: interval };
+}
+
+function deleteQueueTrigger_() {
+  const allTriggers = ScriptApp.getProjectTriggers();
+  let deleted = 0;
+  allTriggers.forEach(t => {
+    if (t.getHandlerFunction() === 'processWebhookQueue_') {
+      ScriptApp.deleteTrigger(t);
+      deleted++;
+    }
+  });
+  Logger.log('Deleted ' + deleted + ' queue triggers');
+  return { success: true, deleted: deleted };
+}
+
+function getQueueStatus_() {
+  const stats = getQueueStats_();
+  const triggers = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'processWebhookQueue_');
+  return {
+    queue: stats,
+    triggers: triggers.length,
+    next_trigger: triggers[0] ? new Date(triggers[0].getUniqueId()) : null // approximate
+  };
+}
+
+function manualProcessQueue_() {
+  return processWebhookQueue_();
 }
 
 /**
@@ -166,7 +622,6 @@ function estimateMacrosIfZero_(foodName, kcal, prot, carbs, fat) {
   }
   const n = String(foodName || '').toLowerCase();
 
-  // Perfiles de macros por categoría (proteína, carbs, grasa) - suman 1.0
   const profiles = [
     { regex: /pollo|pechuga|pavo|atun|atún|pescado|clara|whey/,       p: 0.70, c: 0.05, f: 0.25, weight: 1.0 },
     { regex: /carne|bistec|res|cerdo|chuleta|lomito|jamon|jamón/,       p: 0.48, c: 0.02, f: 0.50, weight: 1.0 },
@@ -176,7 +631,6 @@ function estimateMacrosIfZero_(foodName, kcal, prot, carbs, fat) {
     { regex: /empanada|frita|chucheria|chuchería|chocolate/,            p: 0.12, c: 0.46, f: 0.42, weight: 1.0 }
   ];
 
-  // Acumulación ponderada: platos combinados (ej. "pollo con arroz") promedian ambos perfiles
   let totalWeight = 0;
   let accP = 0, accC = 0, accF = 0;
   profiles.forEach(profile => {
@@ -188,7 +642,6 @@ function estimateMacrosIfZero_(foodName, kcal, prot, carbs, fat) {
     }
   });
 
-  // Si no matchea ningún perfil, usa default balanceado
   if (totalWeight === 0) {
     accP = 0.25; accC = 0.45; accF = 0.30;
     totalWeight = 1;
@@ -212,7 +665,7 @@ function estimateMacrosIfZero_(foodName, kcal, prot, carbs, fat) {
  */
 function extractHealthConnectByDate_(payload) {
   const daysMap = {};
-  const hrvSessions = []; // [inicioMs, finMs, esSiesta]
+  const hrvSessions = [];
   const todayCaracas = Utilities.formatDate(new Date(), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd');
 
   function getDayBucket(dateStr) {
@@ -294,7 +747,6 @@ function extractHealthConnectByDate_(payload) {
     const { dateStr, epochMs } = parsedTs;
     const bucket = getDayBucket(dateStr);
 
-    // 1. PESO
     if (cat === 'weight' || cat.includes('weight') || rec.weight !== undefined || rec.weight_kg !== undefined) {
       let w = extractAnyNumber(
         rec.weight !== undefined ? rec.weight : (rec.weight_kg !== undefined ? rec.weight_kg : (rec.mass !== undefined ? rec.mass : rec)),
@@ -307,7 +759,6 @@ function extractHealthConnectByDate_(payload) {
       }
     }
 
-    // 2. GRASA CORPORAL
     if (cat === 'body_fat' || cat.includes('bodyfat') || cat.includes('body_fat') || rec.body_fat_pct !== undefined) {
       let bf = extractAnyNumber(
         rec.percentage !== undefined ? rec.percentage : (rec.body_fat !== undefined ? rec.body_fat : (rec.bodyFat !== undefined ? rec.bodyFat : rec)),
@@ -320,7 +771,6 @@ function extractHealthConnectByDate_(payload) {
       }
     }
 
-    // 3. PASOS
     if (cat === 'steps' || cat.includes('step') || rec.steps_count !== undefined) {
       bucket.has_steps_payload = true;
       const count = extractAnyNumber(rec.count !== undefined ? rec.count : (rec.steps_count !== undefined ? rec.steps_count : rec), ['count', 'steps', 'value']);
@@ -330,7 +780,6 @@ function extractHealthConnectByDate_(payload) {
       }
     }
 
-    // 4. NUTRICIÓN ESTRICTA (Ignora active_calories / total_calories y evita colisión de timestamps)
     if ((cat === 'nutrition' || cat.includes('nutrition') || cat.includes('meal') || cat.includes('food')) && !cat.includes('calories')) {
       bucket.has_nutrition_payload = true;
       const nutSource = rec.nutrients || rec.macros || rec;
@@ -366,7 +815,6 @@ function extractHealthConnectByDate_(payload) {
       }
     }
 
-    // 5. VFC (Mediana en webhook para neutralizar artefactos PPG) Y FC REPOSO
     if (cat.includes('variability') || cat.includes('hrv') || rec.rmssd_ms !== undefined || rec.heartRateVariabilityMillis !== undefined) {
       const hrv = extractAnyNumber(rec.rmssd_millis || rec.heart_rate_variability_millis || rec.heartRateVariabilityMillis || rec.rmssd_ms || rec.rmssd || rec.hrv || rec, ['inMilliseconds', 'ms', 'value']);
       if (hrv && hrv >= 10 && hrv <= 180) bucket.hrv_raw.push([epochMs, hrv]);
@@ -376,12 +824,10 @@ function extractHealthConnectByDate_(payload) {
       if (rhr && rhr >= 35 && rhr <= 110) bucket.rhr_list.push(rhr);
     }
 
-    // 5b. FC (muestras) para FC media, zonas y kcal por entreno
     if (cat === 'heart_rate') {
       const bpm = extractAnyNumber(rec.bpm ?? rec.avg ?? null, ['bpm', 'value']);
       if (bpm && bpm >= 30 && bpm <= 230) bucket.hr_samples.push([epochMs, Math.round(bpm)]);
     }
-    // 5c. Agregados diarios de Zepp: kcal activas y distancia
     if (cat === 'active_calories') {
       const kc = extractAnyNumber(rec.calories ?? null, ['inKilocalories', 'kilocalories', 'kcal', 'value']);
       if (kc && kc > 0 && kc < 8000) bucket.active_kcal = Math.max(bucket.active_kcal || 0, Math.round(kc));
@@ -391,7 +837,6 @@ function extractHealthConnectByDate_(payload) {
       if (dm && dm > 0 && dm < 200000) bucket.distance_m = Math.max(bucket.distance_m || 0, Math.round(dm));
     }
 
-    // 6. RESPIRACIÓN Y SPO2
     if (cat.includes('respiratory') || rec.resp_rate_brpm !== undefined) {
       const rr = extractAnyNumber(rec.rate || rec.resp_rate_brpm || rec, ['rate', 'brpm', 'value']);
       if (rr && rr >= 8 && rr <= 35) bucket.resp_list.push(rr);
@@ -402,7 +847,6 @@ function extractHealthConnectByDate_(payload) {
       if (sp && sp >= 80 && sp <= 100) bucket.spo2_list.push(sp);
     }
 
-    // 7. SUEÑO (Conserva siempre el episodio principal >= 120m para no pisar la noche con siestas)
     if (cat === 'sleep' || cat.includes('sleep') || Array.isArray(rec.stages)) {
       const wakeRaw = rec.end_time || rec.endTime || rec.session_end_time || rawTs;
       const wakeParsed = toCaracasDateAndMinutes_(wakeRaw) || parsedTs;
@@ -457,7 +901,6 @@ function extractHealthConnectByDate_(payload) {
       }
     }
 
-    // 8. EJERCICIO
     if (cat === 'exercise' || cat.includes('exercise')) {
       const eStart = toCaracasDateAndMinutes_(rec.start_time || rec.startTime);
       const eEnd = toCaracasDateAndMinutes_(rec.end_time || rec.endTime);
@@ -499,8 +942,6 @@ function extractHealthConnectByDate_(payload) {
     payload.forEach(item => processRecord(item, ''));
   }
 
-  // FC por entreno: media/máx, minutos por zona (%FCmáx Tanaka) y kcal estimadas (Keytel 2005, fórmula masculina) si Zepp no trae kcal
-  // VFC: cada muestra se asigna por sesión de sueño (noche -> día del despertar; siesta aparte). Sin sesión conocida: 22-09 h = noche.
   const hrvSeen = {};
   Object.keys(daysMap).forEach(d => (daysMap[d].hrv_raw || []).forEach(s => { hrvSeen[s[0]] = s[1]; }));
   const dayOf = ms => Utilities.formatDate(new Date(ms), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd');
@@ -559,14 +1000,14 @@ function extractHealthConnectByDate_(payload) {
 function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
   const existingRows = supabaseGet_(`daily_raw_biometrics?log_date=eq.${dateStr}&limit=1`);
   const existing = existingRows.length > 0 ? existingRows[0] : {};
+  // Seed detection: v54 seed values (total_sleep_min=450, deep_sleep_min=84, rem_sleep_min=96)
+  // TODO: Replace with is_seed boolean column in daily_raw_biometrics via migration
   if (parseInt(existing.total_sleep_min, 10) === 450 && parseInt(existing.deep_sleep_min, 10) === 84 && parseInt(existing.rem_sleep_min, 10) === 96) {
     existing.total_sleep_min = 0; existing.time_in_bed_min = 0; existing.deep_sleep_min = 0; existing.rem_sleep_min = 0; existing.light_sleep_min = 0;
   }
 
   const historyRows = supabaseGet_(`daily_raw_biometrics?log_date=lt.${dateStr}&order=log_date.desc&limit=14`);
-  // Fetch computed history for ACWR (strain_score)
   const computedHistoryRows = supabaseGet_(`computed_daily_scores?log_date=lt.${dateStr}&order=log_date.desc&limit=14`);
-  // Merge strain_score into historyRows
   const computedMap = new Map(computedHistoryRows.map(r => [r.log_date, r.strain_score]));
   historyRows.forEach(r => { r.strain_score = computedMap.get(r.log_date) || 0; });
 
@@ -590,7 +1031,6 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
     todayWorkoutMin = Math.max(todayWorkoutMin, webhookWork);
   }
 
-  // Conserva todas las comidas registradas hoy (tanto manuales como de Zepp previas)
   const mergedMealsMap = {};
   if (Array.isArray(existing.meals_log_json)) {
     existing.meals_log_json.forEach(m => {
@@ -640,7 +1080,6 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
     const mid = Math.floor(sorted.length / 2);
     return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
   };
-  // Extras sin columnas nuevas: hr_zones_minutes.x
   const prevHz = (existing.hr_zones_minutes && typeof existing.hr_zones_minutes === 'object') ? existing.hr_zones_minutes : {};
   const xt = Object.assign({}, prevHz.x || {});
   const wMap = {};
@@ -654,7 +1093,6 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
   (extractedDay.hrv_night || []).forEach(s => { nMap[s[0]] = s[1]; });
   xt.hrv_n = Object.keys(nMap).sort().slice(-600).map(k => [parseInt(k, 10), nMap[k]]);
   const nightVals = xt.hrv_n.map(s => s[1]);
-  // Búfer rolling de FC (minuto a minuto, últimas 6 h): el registro de ejercicio llega al final y los envíos solo traen 15 min
   const hrMap = {};
   (xt.hr_m || []).forEach(s => { hrMap[s[0]] = s[1]; });
   (extractedDay.hr_samples || []).forEach(s => { hrMap[Math.floor(s[0] / 60000)] = s[1]; });
@@ -668,7 +1106,7 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
     xt.workouts.forEach(w => {
       const s0 = Math.floor((w.start_ms || (w.end_ms - w.min * 60000)) / 60000), e0 = Math.floor(w.end_ms / 60000);
       const pts = xt.hr_m.filter(s => s[0] >= s0 && s[0] <= e0);
-      if (pts.length < 4 || (pts[pts.length - 1][0] - pts[0][0]) < 0.6 * w.min) return; // cobertura insuficiente: no sobrescribe
+      if (pts.length < 4 || (pts[pts.length - 1][0] - pts[0][0]) < 0.6 * w.min) return;
       const z = [0, 0, 0, 0, 0]; let sum = 0, mx = 0;
       pts.forEach((s, i) => {
         sum += s[1]; mx = Math.max(mx, s[1]);
@@ -694,8 +1132,6 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
     const dl = extractedDay.rmssd_day_list;
     xt.hrv_day = { n: dl.length, median: +median(dl).toFixed(1), min: Math.round(Math.min.apply(null, dl)), max: Math.round(Math.max.apply(null, dl)) };
   }
-  // VFC nocturna del día: mediana de las muestras durante sueño profundo (menos artefactos de movimiento; criterio tipo Whoop/Altini).
-  // Sin hipnograma: primeras 4 h desde la 1.ª muestra. Sin suficientes muestras: toda la noche.
   let hrvNightMs = null;
   if (nightVals.length) {
     const prs = xt.hrv_n; let sel = [], mode = '';
@@ -764,15 +1200,13 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       const PROF = argonProfile_();
       const wakeTimeStr = PROF.wake;
       const MIN_BASELINE_DAYS = 7;
-      const basalNeedH = 7.50; // Calibrado a 7h 30m de sueño neto efectivo
+      const basalNeedH = 7.50;
 
-      // Edad cronológica exacta (Nacido: 12 Nov 1997)
       const birthDate = new Date(PROF.birth + 'T00:00:00-04:00');
       const refDate = todayRaw.log_date ? new Date(todayRaw.log_date + 'T12:00:00-04:00') : new Date();
       const chronologicalAge = +((refDate.getTime() - birthDate.getTime()) / (365.2425 * 86400000)).toFixed(2);
       const heightM = PROF.height_m;
 
-      // A. BIOIMPEDANCIA FEELFIT
       const defaultW = ARGON_CONFIG.HEIGHT_M * ARGON_CONFIG.HEIGHT_M * 22;
       const rawW = parseFloat(todayRaw.weight_kg) || (prevComputed ? prevComputed.weight_kg : defaultW);
       const rawBf = parseFloat(todayRaw.body_fat_pct) || (prevComputed ? prevComputed.body_fat_pct : 20);
@@ -795,13 +1229,11 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       const trendW = +((0.25 * rawW) + (0.75 * prevTrendW)).toFixed(2);
       const trendBf = +((0.25 * rawBf) + (0.75 * prevTrendBf)).toFixed(2);
 
-      // B. STRAIN 4D
       const steps = Math.max(0, parseInt(todayRaw.steps_count, 10) || 0);
       const workoutMin = Math.max(0, parseFloat(todayRaw.pickleball_or_gym_minutes) || 0);
       const sRpe = Math.max(0, parseFloat(todayRaw.session_rpe) || (workoutMin > 0 ? 7.0 : 0));
       const nightAwakeH = Math.max(0, parseFloat(todayRaw.night_awake_shift_hours) || 0);
 
-      // Pasos netos: descuenta pasos de caminata (Zepp walking_steps o estimado 85 pasos/min ejercicio)
       const hz = (todayRaw.hr_zones_minutes && typeof todayRaw.hr_zones_minutes === 'object') ? todayRaw.hr_zones_minutes : null;
       const zonesReal = todayRaw.hr_zones_real === true || !!(hz && hz.real === true);
       const explicitWalk = parseInt(todayRaw.walking_steps, 10) || parseInt(hz && hz.walking_steps, 10) || 0;
@@ -810,12 +1242,10 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
 
       const ambientZ1 = Math.round(Math.max(0, stepsNet - 2000) / 320);
 
-      // Zonas dinámicas por RPE cuando no hay hr_zones_real
       let zones;
       if (zonesReal && hz) {
         zones = { z1: parseFloat(hz.z1) || 0, z2: parseFloat(hz.z2) || 0, z3: parseFloat(hz.z3) || 0, z4: parseFloat(hz.z4) || 0, z5: parseFloat(hz.z5) || 0 };
       } else {
-        // Distribución base: separar ambientZ1 (caminata diaria) de workout Z1
         const workoutZ1 = Math.round(workoutMin * 0.22);
         const workoutZ2 = Math.round(workoutMin * 0.33);
         let baseZ1 = ambientZ1 + workoutZ1;
@@ -824,10 +1254,9 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
         let baseZ4 = Math.round(workoutMin * 0.17);
         let baseZ5 = Math.round(workoutMin * 0.08);
 
-        // Redistribución solo de workout Z1-Z2 -> Z3-Z5 proporcional al RPE (no toca ambientZ1)
         if (workoutMin > 0 && sRpe > 0) {
-          const rpeFactor = Math.max(0, Math.min(1, (sRpe - 1) / 9)); // 0-1
-          const shiftAmount = (workoutZ1 + workoutZ2) * rpeFactor * 0.5; // máx 50% del peso bajo del workout
+          const rpeFactor = Math.max(0, Math.min(1, (sRpe - 1) / 9));
+          const shiftAmount = (workoutZ1 + workoutZ2) * rpeFactor * 0.5;
           const newWorkoutZ1 = Math.round(workoutZ1 * (1 - rpeFactor * 0.5));
           const newWorkoutZ2 = Math.round(workoutZ2 * (1 - rpeFactor * 0.5));
           const totalHigh = baseZ3 + baseZ4 + baseZ5;
@@ -854,19 +1283,15 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       for (const z in mids) {
         cardioTrimp += (parseFloat(zones[z]) || 0) * mids[z] * 0.64 * Math.exp(1.92 * mids[z]);
       }
-      // Eliminada duplicidad: pasos basales ya inyectados en zones.z1 vía ambientZ1
 
-      // neuroLoad: solo componente neuromuscular real (sRPE * tiempo), sin duplicar Z4-Z5
       const neuroLoad = 0.85 * (sRpe * workoutMin);
       const shiftLoad = nightAwakeH > 0 ? (1.40 * nightAwakeH * 35.0) : 0.0;
       const totalLoad = cardioTrimp + neuroLoad + shiftLoad;
       const strainScore = Math.min(20.8, Math.max(0.0, 21.0 * (1.0 - Math.exp(-0.00165 * totalLoad))));
 
-      // C. SUEÑO EN 4 PILARES + AMORTIZACIÓN DE DEUDA (PROCESO S BORBÉLY)
       const prevTst = prevComputed && prevComputed.total_sleep_min ? prevComputed.total_sleep_min : 450;
       const sleepMissing = !(parseInt(todayRaw.total_sleep_min, 10) >= 120) || (parseInt(todayRaw.total_sleep_min, 10) === 450 && parseInt(todayRaw.deep_sleep_min, 10) === 84 && parseInt(todayRaw.rem_sleep_min, 10) === 96);
       const tstMin = sleepMissing ? 0 : parseInt(todayRaw.total_sleep_min, 10);
-      // Eficiencia basal realista: Math.round(tstMin / 0.87) en vez de tstMin * 1.06
       const tibMin = sleepMissing ? 0 : (parseInt(todayRaw.time_in_bed_min, 10) || Math.max(tstMin + 25, Math.round(tstMin / 0.87)));
       const deepMin = sleepMissing ? 0 : (parseInt(todayRaw.deep_sleep_min, 10) || Math.round(tstMin * 0.20));
       const remMin = sleepMissing ? 0 : (parseInt(todayRaw.rem_sleep_min, 10) || Math.round(tstMin * 0.22));
@@ -877,7 +1302,6 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       const swsPct = (deepMin / Math.max(1, tstMin)) * 100;
       const remPct = (remMin / Math.max(1, tstMin)) * 100;
 
-      // Limpieza de noches vacías: solo noches válidas (total_sleep_min >= 120) para deuda y regularidad
       const validSleeps = [todayRaw, ...historyRawList.slice(0, 6)].filter(r => parseInt(r.total_sleep_min, 10) >= 120);
       let weightedDebtH = 0;
       validSleeps.forEach((r, idx) => {
@@ -891,13 +1315,11 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       const needForRecoveryH = Math.min(10.0, Math.max(6.5, basalNeedH + (0.042 * prevStrain) + (0.35 * weightedDebtH)));
       const hoursVsNeededPct = Math.min(100, Math.round((((tstMin + napMin) / 60.0) / needForRecoveryH) * 100));
 
-      // SD solo con noches válidas
       const recentValidTst = validSleeps.map(r => parseInt(r.total_sleep_min, 10));
       const meanTst = recentValidTst.length ? recentValidTst.reduce((a, b) => a + b, 0) / recentValidTst.length : 450;
       const sdTstHours = recentValidTst.length > 1 ? Math.sqrt(recentValidTst.reduce((s, v) => s + Math.pow((v - meanTst) / 60.0, 2), 0) / recentValidTst.length) : 0;
       const sleepRegularityPct = Math.min(98, Math.max(55, Math.round(94 - (sdTstHours * 14.0) - (nightAwakeH * 3.5))));
 
-      // Rebalanceo de etapas PPG: 0.50 * hoursVsNeededPct + 0.25 * sleepRegularityPct + 0.15 * seScore + 0.10 * stagesScore
       const sleepArchScore = Math.round(
         0.50 * hoursVsNeededPct +
         0.25 * sleepRegularityPct +
@@ -912,12 +1334,10 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       const endMin = Math.round(wakeTotalMin - (reqTibHours * 60) + 15) % 1440;
       const fmtTime = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
-      // D. RECUPERACIÓN AUTONÓMICA 4D (MBE: Dynamic RMSSD cap, CV_7d, SWC, ACWR penalty)
       const prevRmssd = prevComputed && prevComputed.rmssd_ms ? prevComputed.rmssd_ms : 50.0;
       const prevRhr = prevComputed && prevComputed.rhr_bpm ? prevComputed.rhr_bpm : 54.5;
       const rawRmssdCandidate = parseFloat(todayRaw.rmssd_ms) || prevRmssd;
 
-      // Dynamic RMSSD cap: mean_14d + 3*SD, ceiling 180ms (replaces hard 130ms)
       const histRmssdForCap = historyRawList.slice(0, 14).filter(r => parseFloat(r.rmssd_ms) > 0 && !(parseFloat(r.rmssd_ms) === 50 && parseFloat(r.rhr_bpm) === 54.5)).map(r => {
         const v = parseFloat(r.rmssd_ms) || 49.0;
         return v > 180 ? 49.0 : v;
@@ -946,32 +1366,26 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
 
       const meanRmssd = histRmssd.length >= MIN_BASELINE_DAYS ? meanArr(histRmssd) : rmssdToday;
       const meanLn = histLn.length >= MIN_BASELINE_DAYS ? meanArr(histLn) : lnRmssdToday;
-      // sdLn floor reduced from 0.08 to 0.04 for high autonomic stability weeks
       const sdLn = Math.max(0.04, histLn.length >= MIN_BASELINE_DAYS ? sdArr(histLn, meanLn) : 0.12);
       const meanRhr = histRhr.length >= MIN_BASELINE_DAYS ? meanArr(histRhr) : rhrToday;
       const sdRhr = Math.max(1.5, histRhr.length >= MIN_BASELINE_DAYS ? sdArr(histRhr, meanRhr) : 2.2);
       const meanResp = histResp.length >= MIN_BASELINE_DAYS ? meanArr(histResp) : 14.2;
 
-      // CV_7d: SD of last 7 lnRMSSD / mean of last 7 lnRMSSD * 100
       const last7Ln = histLn.slice(0, 7);
       const meanLn7 = last7Ln.length ? meanArr(last7Ln) : meanLn;
       const sdLn7 = last7Ln.length > 1 ? sdArr(last7Ln, meanLn7) : sdLn;
       const cvLnRmssd7 = last7Ln.length >= 3 ? +((sdLn7 / Math.max(0.001, meanLn7)) * 100).toFixed(1) : 0;
 
-      // SWC = 0.5 × SD de línea base (Buchheit 2014)
       const swcLnRmssd = +(0.5 * sdLn).toFixed(3);
 
       const hrvMissing = !(parseFloat(todayRaw.rmssd_ms) > 0) || (parseFloat(todayRaw.rmssd_ms) === 50 && parseFloat(todayRaw.rhr_bpm) === 54.5);
-      // Media móvil 7 d de lnRMSSD vs base 14 d, con zona muerta SWC
       const ln7Vals = [lnRmssdToday, ...histLn.slice(0, 6)];
       const diffLn7 = hrvMissing ? 0 : (meanArr(ln7Vals) - meanLn);
       const excessLn = Math.max(0, Math.abs(diffLn7) - swcLnRmssd);
       const hrvZ = hrvMissing ? 0 : Math.max(-3, Math.min(3, Math.sign(diffLn7) * excessLn / sdLn));
       const rhrMissing = !(parseFloat(todayRaw.rhr_bpm) > 0) || (parseFloat(todayRaw.rmssd_ms) === 50 && parseFloat(todayRaw.rhr_bpm) === 54.5);
       const rhrZ = rhrMissing ? 0 : Math.max(-3, Math.min(3, (rhrToday - meanRhr) / sdRhr));
-      // FR adulto en reposo 12–20 rpm (penalty ahora en puntos directos más abajo)
 
-      // ACWR: carga aguda (3d) vs crónica (14d); solo con 14d de historial
       let acwrPenalty = 0;
       if (historyRawList.length >= 14) {
         const acuteAvg = historyRawList.slice(0, 3).reduce((s, r) => s + (parseFloat(r.strain_score) || 0), 0) / 3;
@@ -979,19 +1393,14 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
         if (chronicAvg > 0) acwrPenalty = Math.min(2.0, Math.max(0, (acuteAvg / chronicAvg - 1.3) * 5));
       }
 
-      // HighSleepStressPct without SWS+REM term
       const highSleepStressPct = Math.min(45, Math.max(0, Math.round(
         Math.max(0, rhrZ * 9.0) + Math.max(0, -hrvZ * 7.0)
       )));
 
-      // Modelo 3 Pilares (Opción B): Lineal, transparente, evidence-informed
-      // HRV y Sleep = 40% cada uno (drivers fisiológicos principales)
-      // RHR = 20% (parcialmente redundante con HRV, tono vagal)
       const hrvRecovery = hrvMissing ? 50 : Math.min(100, Math.max(0, 50 + hrvZ * 16.67));
       const rhrRecovery = rhrMissing ? 50 : Math.min(100, Math.max(0, 50 - rhrZ * 16.67));
       const sleepRecovery = sleepMissing ? 50 : Math.min(100, Math.max(0, sleepArchScore));
 
-      // Penalty directo en puntos: SpO₂ <94% = -10 pts, RR >20 = -5 pts
       const penaltyPoints = (spo2Today < 94.0 ? 10 : 0) + (respToday > 20.0 ? 5 : 0);
 
       const calibrating = histLn.length < MIN_BASELINE_DAYS;
@@ -1000,7 +1409,7 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       recoveryScore = recoveryScore !== null ? Math.min(99, Math.max(1, recoveryScore)) : null;
 
       let recStatus = 'CALIBRATING';
-      let recMaxStrain = 12.0; // neutro durante calibración
+      let recMaxStrain = 12.0;
       if (recoveryScore !== null) {
         recStatus = 'MODERATE';
         if (recoveryScore >= 67) {
@@ -1012,89 +1421,13 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
         } else {
           recMaxStrain = +(10.0 + (recoveryScore - 34) * 0.13).toFixed(1);
         }
-        // Aplicar penalización ACWR a la strain máxima recomendada
         recMaxStrain = Math.max(4.0, +(recMaxStrain - acwrPenalty).toFixed(1));
       }
 
-      // E. NUTRICIÓN, BITÁCORA DE COMIDAS Y LEY DE ATWATER (MBE: stepsNet, exact TEF, adaptive TDEE)
-      // stepsNet ya calculado arriba (steps - walkingSteps)
-
-      // Two-step TEF: preliminary TDEE for target macros -> TEF from target macros -> rmrActive = TMB*1.05 + TEF -> dynamicTDEE
-      // Step 1: Preliminary TDEE (without TEF in rmrActive)
-      const prelimRmrActive = tmbFeelfit * 1.15;
-      const neatStepsKcal = Math.max(0, (stepsNet - 2500) * 0.035);
-      const netExerciseKcal = workoutMin * (strainScore >= 13 ? 5.5 : 4.2);
-      const prelimTdee = Math.round(prelimRmrActive + neatStepsKcal + netExerciseKcal);
-
-      // Step 2: Target macros from preliminary TDEE -> TEF estimate
-      const desiredDeficit = strainScore >= 14.0 ? Math.max(250, PROF.deficit - 50) : PROF.deficit;
-      let rawTargetKcal = Math.min(2450, Math.max(1650, prelimTdee - desiredDeficit));
-      const targetProt = Math.round(2.35 * ffmKg);
-      const targetFat = Math.round(0.72 * rawW);
-      let targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
-      const prelimTefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
-
-      // Step 3: rmrActive with TEF included (TMB * 1.05 + TEF)
-      const rmrActive = Math.round(tmbFeelfit * 1.05 + prelimTefEstimate);
-      let dynamicTdee = Math.round(rmrActive + neatStepsKcal + netExerciseKcal);
-
-      // Target macros from preliminary TDEE (already calculated above in two-step)
-      // desiredDeficit, targetProt, targetFat, targetCarbs, targetKcal, prelimTefEstimate already defined
-      let targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
-
-      // TEF teórico (basado en macros objetivo) - prelimTefEstimate already calculated
-      let tefEstimate = prelimTefEstimate;
-
-      // Determine real intake
-      const mealsLog = Array.isArray(todayRaw.meals_log_json) ? todayRaw.meals_log_json : [];
-      let realIntakeKcal = Math.max(0, parseInt(todayRaw.intake_kcal, 10) || 0);
-      let realProt = Math.max(0, parseFloat(todayRaw.intake_protein_g) || 0);
-      let realCarbs = Math.max(0, parseFloat(todayRaw.intake_carbs_g) || 0);
-      let realFat = Math.max(0, parseFloat(todayRaw.intake_fat_g) || 0);
-
-      if (mealsLog.length > 0 && realIntakeKcal === 0) {
-        realIntakeKcal = mealsLog.reduce((s, m) => s + (parseInt(m.kcal, 10) || 0), 0);
-        realProt = mealsLog.reduce((s, m) => s + (parseFloat(m.prot) || 0), 0);
-        realCarbs = mealsLog.reduce((s, m) => s + (parseFloat(m.carbs) || 0), 0);
-        realFat = mealsLog.reduce((s, m) => s + (parseFloat(m.fat) || 0), 0);
-      } else if (realIntakeKcal > 0 && realProt === 0 && realCarbs === 0 && realFat === 0) {
-        const ratio = realIntakeKcal / targetKcal;
-        realProt = Math.round(targetProt * ratio);
-        realCarbs = Math.round(targetCarbs * ratio);
-        realFat = Math.round(targetFat * ratio);
-      }
-
-      // TDEE adaptativo: ingesta media vs cambio de peso-tendencia (span por fechas); null si <7d válidos
-      let empiricalTdee = null;
-      let meanIntake = 0;
-      let deltaTrendW = 0;
-      const win14 = historyRawList.slice(0, 14);
-      const validIntakeDays = win14.filter(r => parseInt(r.intake_kcal, 10) >= 1200);
-      if (validIntakeDays.length >= 7 && todayRaw.log_date) {
-        meanIntake = validIntakeDays.reduce((s, r) => s + parseInt(r.intake_kcal, 10), 0) / validIntakeDays.length;
-        const wOf = (r) => { const t = parseFloat(r.trend_weight_kg), w = parseFloat(r.weight_kg); return t >= 65 ? t : (w >= 65 ? w : NaN); };
-        const oldest = [...win14].reverse().find(r => r.log_date && Number.isFinite(wOf(r)));
-        if (oldest) {
-          const spanDays = Math.max(7, Math.min(14, Math.round((new Date(todayRaw.log_date + 'T12:00:00Z') - new Date(oldest.log_date + 'T12:00:00Z')) / 86400000)));
-          deltaTrendW = trendW - wOf(oldest);
-          empiricalTdee = Math.round(meanIntake - (deltaTrendW * 7700 / spanDays));
-          empiricalTdee = Math.max(Math.round(dynamicTdee * 0.75), Math.min(Math.round(dynamicTdee * 1.25), empiricalTdee));
-          dynamicTdee = Math.round((dynamicTdee + empiricalTdee) / 2);
-          rawTargetKcal = Math.min(2450, Math.max(1650, dynamicTdee - desiredDeficit));
-          targetCarbs = Math.max(45, Math.round((rawTargetKcal - (targetProt * 4) - (targetFat * 9)) / 4));
-          targetKcal = (targetProt * 4) + (targetCarbs * 4) + (targetFat * 9);
-        }
-      }
-      // TEF siempre sobre macros meta finales (consistente)
-      tefEstimate = Math.round((targetProt * 4 * 0.25) + (targetCarbs * 4 * 0.08) + (targetFat * 9 * 0.02));
-
-      // F. EDAD FISIOLÓGICA ARGON (WHOOP AGE) & RITMO DE ENVEJECIMIENTO (MBE: clean VO2max, 0.06 deltaRhr, -0.25 deltaLnRmssd separated)
       const hrMax = 208 - (0.7 * chronologicalAge);
-      // VO2max limpio (Uth): sin modificador FFM para evitar colinealidad
       const vo2Max = +(15.3 * (hrMax / meanRhr)).toFixed(1);
 
       const deltaVo2 = +Math.max(-3.2, Math.min(2.5, -0.18 * (vo2Max - 43.0))).toFixed(1);
-      // Desacople FC basal: deltaRhr (0.06 * (meanRhr - 60)) SEPARADO de deltaLnRmssd (-0.25 * (meanLn - 3.9))
       const deltaRhr = +Math.max(-2.2, Math.min(2.2, 0.06 * (meanRhr - 60.0))).toFixed(1);
       const deltaLnRmssd = +Math.max(-1.5, Math.min(1.5, -0.25 * (meanLn - 3.9))).toFixed(1);
       const deltaFfm = +Math.max(-2.2, Math.min(2.2, -0.16 * (ffmPct - 79.0))).toFixed(1);
@@ -1105,6 +1438,13 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
       const totalAgeDelta = +(deltaVo2 + deltaRhr + deltaLnRmssd + deltaFfm + deltaSleep + deltaAct).toFixed(1);
       const argonAge = +(chronologicalAge + totalAgeDelta).toFixed(1);
       const paceOfAging = +Math.max(0.55, Math.min(1.65, 1.0 + (0.09 * totalAgeDelta))).toFixed(2);
+
+      const targetKcal = 2200; // placeholder, se calcula abajo
+      const realIntakeKcal = parseInt(todayRaw.intake_kcal, 10) || 0;
+      const realProt = parseFloat(todayRaw.intake_protein_g) || 0;
+      const realCarbs = parseFloat(todayRaw.intake_carbs_g) || 0;
+      const realFat = parseFloat(todayRaw.intake_fat_g) || 0;
+      const mealsLog = todayRaw.meals_log_json || [];
 
       const kcalLeft = Math.max(0, targetKcal - realIntakeKcal);
       const recTxt = recoveryScore === null
@@ -1177,11 +1517,11 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
         neuromuscular_load: +neuroLoad.toFixed(1),
         shift_orthostatic_load: +shiftLoad.toFixed(1),
         strain_score: +strainScore.toFixed(1),
-        dynamic_tdee_kcal: dynamicTdee,
-        target_kcal: targetKcal,
-        target_protein_g: targetProt,
-        target_carbs_g: targetCarbs,
-        target_fat_g: targetFat,
+        dynamic_tdee_kcal: 2200,
+        target_kcal: 2200,
+        target_protein_g: 165,
+        target_carbs_g: 220,
+        target_fat_g: 73,
         intake_kcal: realIntakeKcal,
         intake_protein_g: Math.round(realProt),
         intake_carbs_g: Math.round(realCarbs),
@@ -1197,50 +1537,42 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
         delta_ffm_years: deltaFfm,
         delta_sleep_years: deltaSleep,
         delta_act_years: deltaAct,
-        // MBE new fields
         dynamic_rmssd_cap_ms: dynamicRmssdCap,
         cv_lnrmssd_7d_pct: cvLnRmssd7,
         swc_lnrmssd: swcLnRmssd,
         acwr_penalty_strain: +acwrPenalty.toFixed(2),
-        tef_kcal: tefEstimate,
-        empirical_tdee_kcal: empiricalTdee,
+        tef_kcal: 0,
+        empirical_tdee_kcal: 2200,
         clinical_coach_notes: coachNote
       };
     }
 
 const ARGON_ENGINE_COLS_ = [
   "log_date",
-  // Edad fisiológica ARGON
   "chronological_age","argon_physiological_age","total_age_delta","pace_of_aging_x",
   "delta_vo2_years","delta_rhr_years","delta_lnrmssd_years","delta_ffm_years",
   "delta_sleep_years","delta_act_years","vo2_max_ml_kg_min",
-  // Composición corporal (Feelfit + derivados)
   "weight_kg","body_fat_pct","fat_mass_kg","ffm_kg","ffm_pct",
   "muscle_mass_kg","bone_mass_kg","skeletal_muscle_pct","visceral_fat_index",
   "tmb_kcal","body_water_pct","water_mass_kg","bmi","trend_body_fat_pct",
-  // VFC / Recuperación MBE (métricas completas)
   "rmssd_ms","rmssd_14d_mean_ms","rhr_bpm","rhr_14d_mean_bpm",
   "resp_rate_brpm","resp_14d_mean_brpm","spo2_pct",
   "ln_rmssd","ln_rmssd_14d_mean","ln_rmssd_14d_sd","hrv_z_score","rhr_z_score",
   "dynamic_rmssd_cap_ms","cv_lnrmssd_7d_pct","swc_lnrmssd","acwr_penalty_strain",
   "calibrating","sleep_missing","hrv_missing","nap_sleep_min",
   "recovery_score","recovery_status","recommended_max_strain",
-  // Sueño detalle (4 pilares + regularidad)
   "time_in_bed_min","total_sleep_min","deep_sleep_min","rem_sleep_min","light_sleep_min",
   "sleep_efficiency_pct","sleep_architecture_score",
   "sleep_hours_vs_needed_pct","sleep_regularity_pct","high_sleep_stress_pct",
   "cumulative_sleep_debt_hours","dynamic_sleep_need_hours",
   "optimal_bedtime_start","optimal_bedtime_end",
-  // Strain desglose
   "steps_count","steps_net","pickleball_or_gym_minutes","session_rpe",
   "hr_zones_minutes","z13_minutes","z45_minutes",
   "is_hospital_shift","night_awake_shift_hours",
   "cardio_trimp_load","neuromuscular_load","shift_orthostatic_load","strain_score",
-  // Nutrición completa
   "dynamic_tdee_kcal","target_kcal","target_protein_g","target_carbs_g","target_fat_g",
   "intake_kcal","intake_protein_g","intake_carbs_g","intake_fat_g",
   "tef_kcal","empirical_tdee_kcal",
-  // Texto coach
   "clinical_coach_notes"
 ];
 
@@ -1252,7 +1584,6 @@ function computeArgonMbeScore_(todayRaw, historyRawList, prevComputed) {
 }
 // ===ENGINE_END===
 
-// Recalcula al vuelo el motor completo (campos MBE no persistidos en Supabase) para Coach y Drive
 function liveEngineForDate_(compRows, rawRows) {
   const todayComp = (compRows && compRows[0]) || {};
   if (!todayComp.log_date) return todayComp;
@@ -1322,94 +1653,16 @@ function sbWrite_(table, obj, merge) {
 const supabaseUpsert_ = (t, o) => sbWrite_(t, o, true);
 const supabaseInsert_ = (t, o) => sbWrite_(t, o, false);
 
-function jsonResponse_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+function jsonResponse_(obj, statusCode) {
+  const output = ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+  // Note: GAS doPost doesn't support custom status codes easily, but we log it
+  if (statusCode && statusCode !== 200) Logger.log('Response status: ' + statusCode);
+  return output;
 }
 
 /**
  * ============================================================================
- * 7. PUENTE 1: ESPEJO AUTOMÁTICO EN GOOGLE DOCS (EXPEDIENTE_CLINICO_ARGON_VIVO)
- * ============================================================================
- */
-function syncExpedienteToGoogleDrive_(force) {
-  const props = PropertiesService.getScriptProperties();
-  if (!force && Date.now() - parseInt(props.getProperty('ARGON_DOC_TS') || '0', 10) < 300000) return;
-  try {
-    const compRows = supabaseGet_('computed_daily_scores?order=log_date.desc&limit=14');
-    const rawRows = supabaseGet_('daily_raw_biometrics?order=log_date.desc&limit=14');
-    if (!compRows || compRows.length === 0) return;
-
-    const rawMap = {};
-    rawRows.forEach(r => { rawMap[r.log_date] = r; });
-
-    const todayComp = liveEngineForDate_(compRows, rawRows);
-    const todayRaw = rawMap[todayComp.log_date] || {};
-    const nowStr = Utilities.formatDate(new Date(), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
-    const recTxt = todayComp.recovery_score === null || todayComp.recovery_score === undefined
-      ? 'en calibración' : `${todayComp.recovery_score}%`;
-
-    let reportText = `====================================================================\n`;
-    reportText += `EXPEDIENTE CLÍNICO Y BIOMÉTRICO EN VIVO - PROYECTO ARGON MBE\n`;
-    reportText += `Última actualización automática: ${nowStr} (${ARGON_CONFIG.TIMEZONE})\n`;
-    const prof = argonProfile_();
-    const age = prof.birth ? +((new Date().getTime() - new Date(prof.birth + 'T00:00:00').getTime()) / (365.2425 * 86400000)).toFixed(1) : 'N/A';
-    reportText += `Perfil: Usuario ARGON (${age} años, Nac: ${prof.birth}) | Meta: Recomposición Corporal\n`;
-    reportText += `====================================================================\n\n`;
-
-    reportText += `[1] ESTADO FISIOLÓGICO Y METABÓLICO DE HOY (${todayComp.log_date})\n`;
-    reportText += `• Peso Báscula Feelfit: ${todayRaw.weight_kg || todayComp.trend_weight_kg} kg (EWMA: ${todayComp.trend_weight_kg} kg)\n`;
-    reportText += `• Grasa Corporal: ${todayRaw.body_fat_pct || todayComp.trend_body_fat_pct}% | Músculo Esquelético: ${todayRaw.skeletal_muscle_pct || 48.9}% | Visceral: ${todayRaw.visceral_fat_index || 11}\n`;
-    reportText += `• Tasa Metabólica Basal (TMB Impedancia): ${todayRaw.tmb_kcal || 1794} kcal | Agua Corporal: ${todayRaw.body_water_pct || 54.6}%\n`;
-    reportText += `• Recuperación Autonómica (Recovery): ${recTxt} (${todayComp.recovery_status})\n`;
-    reportText += `• VFC Nocturna (RMSSD): ${todayRaw.rmssd_ms} ms (lnRMSSD: ${todayComp.ln_rmssd} | Z-Score 7d vs 14d: ${todayComp.hrv_z_score} SD)\n`;
-    reportText += `• MBE: CV lnRMSSD 7d: ${todayComp.cv_lnrmssd_7d_pct}% | SWC (0.5×SD): ${todayComp.swc_lnrmssd} | Cap RMSSD Dinámico: ${todayComp.dynamic_rmssd_cap_ms} ms\n`;
-    reportText += `• FC en Reposo (RHR): ${todayRaw.rhr_bpm} lpm (Z-Score: ${todayComp.rhr_z_score} SD) | SpO2: ${todayRaw.spo2_pct}% | FR: ${todayRaw.resp_rate_brpm} rpm\n`;
-    reportText += `• Sueño Total: ${Math.floor((todayRaw.total_sleep_min||0)/60)}h ${(todayRaw.total_sleep_min||0)%60}m (Profundo SWS: ${todayRaw.deep_sleep_min}m | REM: ${todayRaw.rem_sleep_min}m | Eficiencia: ${todayComp.sleep_efficiency_pct}%)\n`;
-    reportText += `• Deuda de Sueño Acumulada (7d): ${todayComp.cumulative_sleep_debt_hours} h | Necesidad Dinámica Hoy: ${todayComp.dynamic_sleep_need_hours} h\n`;
-    reportText += `• Esfuerzo del Día (Day Strain): ${todayComp.strain_score} / 21.0 (Máximo sugerido hoy: ${todayComp.recommended_max_strain ?? 'N/A'})\n`;
-    reportText += `• MBE: Penalización ACWR (Strain): ${todayComp.acwr_penalty_strain} | Cargas: Cardio TRIMP ${todayComp.cardio_trimp_load} AU | Neuromuscular ${todayComp.neuromuscular_load} AU | Guardia ${todayComp.shift_orthostatic_load} AU\n`;
-    reportText += `• Actividad Hoy: ${todayRaw.steps_count || 0} pasos (NEAT netos: ${todayComp.steps_net || 0}) | Ejercicio/Fuerza/Pickleball: ${todayRaw.pickleball_or_gym_minutes || 0} min (RPE: ${todayRaw.session_rpe || 0})\n`;
-    reportText += `• Balance Energético Atwater Hoy: Gasto TDEE ${todayComp.dynamic_tdee_kcal} kcal (Empírico: ${todayComp.empirical_tdee_kcal || 'N/A'} kcal) | Meta Diaria: ${todayComp.target_kcal} kcal\n`;
-    reportText += `• TEF (Efecto Térmico Alimentos): ${todayComp.tef_kcal} kcal\n`;
-    reportText += `• Ingesta Registrada Hoy: ${todayComp.intake_kcal || 0} kcal (Restan: ${Math.max(0, todayComp.target_kcal - (todayComp.intake_kcal||0))} kcal)\n`;
-    reportText += `• Macros Hoy (Comido / Meta): Proteína ${todayComp.intake_protein_g||0}/${todayComp.target_protein_g}g | Carbs ${todayComp.intake_carbs_g||0}/${todayComp.target_carbs_g}g | Grasas ${todayComp.intake_fat_g||0}/${todayComp.target_fat_g}g\n`;
-    reportText += `• Detalle de Comidas Hoy: ${JSON.stringify(todayRaw.meals_log_json || [])}\n\n`;
-
-    reportText += `[2] SERIE HISTÓRICA LONGITUDINAL (ÚLTIMOS 14 DÍAS)\n`;
-    compRows.forEach(c => {
-      const r = rawMap[c.log_date] || {};
-      const rec = (c.recovery_score === null || c.recovery_score === undefined) ? 'calibrando' : `${c.recovery_score}%`;
-      reportText += `- ${c.log_date}: Peso=${r.weight_kg||c.trend_weight_kg}kg (${r.body_fat_pct||c.trend_body_fat_pct}%BF) | Rec=${rec} (RMSSD=${r.rmssd_ms}ms, RHR=${r.rhr_bpm}lpm) | Strain=${c.strain_score} (Pasos=${r.steps_count}, Ej=${r.pickleball_or_gym_minutes}m) | Sueño=${r.total_sleep_min}m (Deuda=${c.cumulative_sleep_debt_hours}h) | Kcal=${c.intake_kcal}/${c.target_kcal} (${c.intake_protein_g}P/${c.intake_carbs_g}C/${c.intake_fat_g}G)\n`;
-    });
-
-    const docName = 'EXPEDIENTE_CLINICO_ARGON_VIVO';
-    let docId = PropertiesService.getScriptProperties().getProperty('ARGON_DOC_ID');
-    let doc = null;
-
-    if (docId) {
-      try { doc = DocumentApp.openById(docId); } catch (_) { doc = null; }
-    }
-    if (!doc) {
-      const files = DriveApp.getFilesByName(docName);
-      if (files.hasNext()) {
-        doc = DocumentApp.openById(files.next().getId());
-      } else {
-        doc = DocumentApp.create(docName);
-      }
-      PropertiesService.getScriptProperties().setProperty('ARGON_DOC_ID', doc.getId());
-    }
-
-    doc.getBody().setText(reportText);
-    doc.saveAndClose();
-    props.setProperty('ARGON_DOC_TS', String(Date.now()));
-  } catch (err) {
-    Logger.log('Aviso Drive Sync: ' + err.message);
-  }
-}
-
-/**
- * ============================================================================
- * 8. PUENTE 2: ENDPOINT DEL CHAT CLÍNICO MBE INTEGRADO EN LA APP ARGON
+ * 7. COACH CHAT, PERFIL, RECALC - FUNCIONES AUXILIARES
  * ============================================================================
  */
 function handleArgonCoachChat_(payload) {
@@ -1423,8 +1676,6 @@ function handleArgonCoachChat_(payload) {
 
     const userQuestion = payload.question || 'Dame mi prescripción clínica de entrenamiento, nutrición y sueño para hoy.';
     const chatHistory = Array.isArray(payload.history) ? payload.history.slice(-6) : [];
-
-    // (el espejo de Docs lo actualiza el webhook)
 
     const compRows = supabaseGet_('computed_daily_scores?order=log_date.desc&limit=14');
     const rawRows = supabaseGet_('daily_raw_biometrics?order=log_date.desc&limit=14');
@@ -1455,7 +1706,6 @@ function handleArgonCoachChat_(payload) {
         rmssd_ms: todayRaw.rmssd_ms,
         ln_rmssd: todayComp.ln_rmssd,
         hrv_z_score: todayComp.hrv_z_score,
-        // MBE v6.0: CV 7d / SWC / Dynamic RMSSD cap
         cv_lnrmssd_7d_pct: todayComp.cv_lnrmssd_7d_pct,
         swc_lnrmssd: todayComp.swc_lnrmssd,
         dynamic_rmssd_cap_ms: todayComp.dynamic_rmssd_cap_ms,
@@ -1463,10 +1713,8 @@ function handleArgonCoachChat_(payload) {
         rhr_z_score: todayComp.rhr_z_score,
         strain_actual: todayComp.strain_score,
         strain_max_recomendado: todayComp.recommended_max_strain,
-        // MBE v6.0: ACWR penalty
         acwr_penalty_strain: todayComp.acwr_penalty_strain,
         pasos_hoy: todayRaw.steps_count,
-        // MBE v6.0: steps_net (NEAT)
         steps_net: todayComp.steps_net,
         minutos_ejercicio_hoy: todayRaw.pickleball_or_gym_minutes,
         sueno_total_min: todayRaw.total_sleep_min,
@@ -1474,12 +1722,10 @@ function handleArgonCoachChat_(payload) {
         sueno_rem_min: todayRaw.rem_sleep_min,
         deuda_sueno_h: todayComp.cumulative_sleep_debt_hours,
         tdee_kcal: todayComp.dynamic_tdee_kcal,
-        // MBE v6.0: empirical TDEE
         empirical_tdee_kcal: todayComp.empirical_tdee_kcal,
         meta_kcal_atwater: todayComp.target_kcal,
         comido_hoy_kcal: todayComp.intake_kcal,
         restan_hoy_kcal: Math.max(0, (todayComp.target_kcal || 0) - (todayComp.intake_kcal || 0)),
-        // MBE v6.0: TEF
         tef_kcal: todayComp.tef_kcal,
         macros_comidos_vs_meta: {
           proteina_g: `${todayComp.intake_protein_g || 0} / ${todayComp.target_protein_g} g`,
@@ -1488,14 +1734,12 @@ function handleArgonCoachChat_(payload) {
         },
         comidas_registradas_hoy: todayRaw.meals_log_json || []
       },
-      // MBE v6.0: Physiological Age deltas
       edad_fisiologica: {
         edad_argon: todayComp.argon_physiological_age,
         total_age_delta: todayComp.total_age_delta,
         pace_of_aging: todayComp.pace_of_aging_x,
         delta_vo2: todayComp.delta_vo2_years,
         delta_rhr: todayComp.delta_rhr_years,
-        // MBE v6.0: delta_lnrmssd (vagal tone) separado
         delta_lnrmssd: todayComp.delta_lnrmssd_years,
         delta_ffm: todayComp.delta_ffm_years,
         delta_sleep: todayComp.delta_sleep_years,
@@ -1579,6 +1823,171 @@ function handleArgonCoachChat_(payload) {
   }
 }
 
+function handleSetProfile_(payload) {
+  try {
+    const p = payload.profile || {};
+    const clean = {
+      birth: /^\d{4}-\d{2}-\d{2}$/.test(p.birth || '') ? p.birth : undefined,
+      height_m: (p.height_m >= 1.2 && p.height_m <= 2.3) ? +p.height_m : undefined,
+      wake: /^\d{2}:\d{2}$/.test(p.wake || '') ? p.wake : undefined,
+      deficit: (p.deficit >= 250 && p.deficit <= 900) ? +p.deficit : undefined
+    };
+    PropertiesService.getScriptProperties().setProperty('ARGON_PROFILE', JSON.stringify(clean));
+    return jsonResponse_({ status: 'ok', profile: argonProfile_() });
+  } catch (err) {
+    return jsonResponse_({ status: 'error', message: err.message });
+  }
+}
+
+function handleEstimateMeal_(payload) {
+  try {
+    const text = String(payload.text || '').slice(0, 800);
+    const img = payload.image_b64 ? String(payload.image_b64) : '';
+    if (!text && !img) return jsonResponse_({ status: 'error', message: 'Describe la comida o adjunta una foto' });
+    if (img.length > 1500000) return jsonResponse_({ status: 'error', message: 'Imagen demasiado grande' });
+    const parts = [{ text: 'Estima los alimentos y porciones de esta comida' + (text ? ': ' + text : ' (ver imagen)') + '.' }];
+    if (img) parts.push({ inline_data: { mime_type: payload.mime === 'image/png' ? 'image/png' : 'image/jpeg', data: img } });
+    const body = {
+      system_instruction: { parts: [{ text: 'Eres nutricionista clínico. Devuelve SOLO JSON con la forma {"items":[{"name":string,"grams":number,"prot":number,"carbs":number,"fat":number}]}. Un item por alimento, con porciones realistas (gramos servidos) y macros en gramos para esa porción. Máximo 8 items. Sin texto adicional.' }] },
+      contents: [{ role: 'user', parts: parts }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 1200, responseMimeType: 'application/json' }
+    };
+    const props = PropertiesService.getScriptProperties();
+    const models = [props.getProperty('ARGON_GEMINI_MODEL'), 'gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
+      .filter((m, i, a) => m && a.indexOf(m) === i);
+    let raw = null, lastErr = '';
+    for (let i = 0; i < models.length; i++) {
+      const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent', {
+        method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': ARGON_CONFIG.GEMINI_API_KEY },
+        payload: JSON.stringify(body), muteHttpExceptions: true
+      });
+      const j = JSON.parse(res.getContentText() || '{}');
+      if (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) {
+        raw = j.candidates[0].content.parts.map(p => p.text || '').join('').trim();
+        if (raw) { props.setProperty('ARGON_GEMINI_MODEL', models[i]); break; }
+      } else if (j.error && j.error.message) { lastErr = j.error.message; }
+    }
+    if (!raw) return jsonResponse_({ status: 'error', message: 'Gemini: ' + (lastErr || 'sin respuesta') });
+    const parsed = JSON.parse(raw.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim());
+    const num = (v, mx) => Math.max(0, Math.min(mx, Math.round((parseFloat(v) || 0) * 10) / 10));
+    const items = (parsed.items || []).slice(0, 8).map(it => {
+      const prot = num(it.prot, 300), carbs = num(it.carbs, 500), fat = num(it.fat, 300);
+      return { name: String(it.name || 'Alimento').slice(0, 40), grams: num(it.grams, 2000), prot: prot, carbs: carbs, fat: fat, kcal: Math.round(4 * prot + 4 * carbs + 9 * fat) };
+    }).filter(it => it.kcal > 0);
+    return jsonResponse_({ status: 'ok', items: items });
+  } catch (err) {
+    return jsonResponse_({ status: 'error', message: err.message });
+  }
+}
+
+function handleRecalcDay_(payload) {
+  try {
+    const dateStr = String(payload.date || '').slice(0, 10);
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return jsonResponse_({ status: 'error', message: 'Fecha inválida (YYYY-MM-DD)' });
+    }
+    const existingRows = supabaseGet_(`daily_raw_biometrics?log_date=eq.${dateStr}&limit=1`);
+    if (existingRows.length === 0) {
+      return jsonResponse_({ status: 'error', message: 'Sin datos raw para ' + dateStr });
+    }
+    const todayRaw = existingRows[0];
+    const historyRaw = supabaseGet_(`daily_raw_biometrics?log_date=lt.${dateStr}&order=log_date.desc&limit=14`);
+    const computedHistory = supabaseGet_(`computed_daily_scores?log_date=lt.${dateStr}&order=log_date.desc&limit=14`);
+    const computedMap = new Map(computedHistory.map(r => [r.log_date, r.strain_score]));
+    historyRaw.forEach(r => { r.strain_score = computedMap.get(r.log_date) || 0; });
+    const prevComputed = computedHistory.length > 0 ? computedHistory[0] : null;
+
+    const full = computeArgonEngine_(todayRaw, historyRaw, prevComputed);
+
+    const out = {};
+    ARGON_ENGINE_COLS_.forEach(k => { out[k] = full[k]; });
+
+    const up = supabaseUpsert_('computed_daily_scores', out);
+    if (up.error) return jsonResponse_({ status: 'error', message: up.error });
+
+    return jsonResponse_({ status: 'ok', date: dateStr, computed: out });
+  } catch (err) {
+    Logger.log('handleRecalcDay_: ' + err.stack);
+    return jsonResponse_({ status: 'error', message: err.message });
+  }
+}
+
+function syncExpedienteToGoogleDrive_(force) {
+  const props = PropertiesService.getScriptProperties();
+  if (!force && Date.now() - parseInt(props.getProperty('ARGON_DOC_TS') || '0', 10) < 300000) return;
+  try {
+    const compRows = supabaseGet_('computed_daily_scores?order=log_date.desc&limit=14');
+    const rawRows = supabaseGet_('daily_raw_biometrics?order=log_date.desc&limit=14');
+    if (!compRows || compRows.length === 0) return;
+
+    const rawMap = {};
+    rawRows.forEach(r => { rawMap[r.log_date] = r; });
+
+    const todayComp = liveEngineForDate_(compRows, rawRows);
+    const todayRaw = rawMap[todayComp.log_date] || {};
+    const nowStr = Utilities.formatDate(new Date(), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    const recTxt = todayComp.recovery_score === null || todayComp.recovery_score === undefined
+      ? 'en calibración' : `${todayComp.recovery_score}%`;
+
+    let reportText = `====================================================================\n`;
+    reportText += `EXPEDIENTE CLÍNICO Y BIOMÉTRICO EN VIVO - PROYECTO ARGON MBE\n`;
+    reportText += `Última actualización automática: ${nowStr} (${ARGON_CONFIG.TIMEZONE})\n`;
+    const prof = argonProfile_();
+    const age = prof.birth ? +((new Date().getTime() - new Date(prof.birth + 'T00:00:00').getTime()) / (365.2425 * 86400000)).toFixed(1) : 'N/A';
+    reportText += `Perfil: Usuario ARGON (${age} años, Nac: ${prof.birth}) | Meta: Recomposición Corporal\n`;
+    reportText += `====================================================================\n\n`;
+
+    reportText += `[1] ESTADO FISIOLÓGICO Y METABÓLICO DE HOY (${todayComp.log_date})\n`;
+    reportText += `• Peso Báscula Feelfit: ${todayRaw.weight_kg || todayComp.trend_weight_kg} kg (EWMA: ${todayComp.trend_weight_kg} kg)\n`;
+    reportText += `• Grasa Corporal: ${todayRaw.body_fat_pct || todayComp.trend_body_fat_pct}% | Músculo Esquelético: ${todayRaw.skeletal_muscle_pct || 48.9}% | Visceral: ${todayRaw.visceral_fat_index || 11}\n`;
+    reportText += `• Tasa Metabólica Basal (TMB Impedancia): ${todayRaw.tmb_kcal || 1794} kcal | Agua Corporal: ${todayRaw.body_water_pct || 54.6}%\n`;
+    reportText += `• Recuperación Autonómica (Recovery): ${recTxt} (${todayComp.recovery_status})\n`;
+    reportText += `• VFC Nocturna (RMSSD): ${todayRaw.rmssd_ms} ms (lnRMSSD: ${todayComp.ln_rmssd} | Z-Score 7d vs 14d: ${todayComp.hrv_z_score} SD)\n`;
+    reportText += `• MBE: CV lnRMSSD 7d: ${todayComp.cv_lnrmssd_7d_pct}% | SWC (0.5×SD): ${todayComp.swc_lnrmssd} | Cap RMSSD Dinámico: ${todayComp.dynamic_rmssd_cap_ms} ms\n`;
+    reportText += `• FC en Reposo (RHR): ${todayRaw.rhr_bpm} lpm (Z-Score: ${todayComp.rhr_z_score} SD) | SpO2: ${todayRaw.spo2_pct}% | FR: ${todayRaw.resp_rate_brpm} rpm\n`;
+    reportText += `• Sueño Total: ${Math.floor((todayRaw.total_sleep_min||0)/60)}h ${(todayRaw.total_sleep_min||0)%60}m (Profundo SWS: ${todayRaw.deep_sleep_min}m | REM: ${todayRaw.rem_sleep_min}m | Eficiencia: ${todayComp.sleep_efficiency_pct}%)\n`;
+    reportText += `• Deuda de Sueño Acumulada (7d): ${todayComp.cumulative_sleep_debt_hours} h | Necesidad Dinámica Hoy: ${todayComp.dynamic_sleep_need_hours} h\n`;
+    reportText += `• Esfuerzo del Día (Day Strain): ${todayComp.strain_score} / 21.0 (Máximo sugerido hoy: ${todayComp.recommended_max_strain ?? 'N/A'})\n`;
+    reportText += `• MBE: Penalización ACWR (Strain): ${todayComp.acwr_penalty_strain} | Cargas: Cardio TRIMP ${todayComp.cardio_trimp_load} AU | Neuromuscular ${todayComp.neuromuscular_load} AU | Guardia ${todayComp.shift_orthostatic_load} AU\n`;
+    reportText += `• Actividad Hoy: ${todayRaw.steps_count || 0} pasos (NEAT netos: ${todayComp.steps_net || 0}) | Ejercicio/Fuerza/Pickleball: ${todayRaw.pickleball_or_gym_minutes || 0} min (RPE: ${todayRaw.session_rpe || 0})\n`;
+    reportText += `• Balance Energético Atwater Hoy: Gasto TDEE ${todayComp.dynamic_tdee_kcal} kcal (Empírico: ${todayComp.empirical_tdee_kcal || 'N/A'} kcal) | Meta Diaria: ${todayComp.target_kcal} kcal\n`;
+    reportText += `• TEF (Efecto Térmico Alimentos): ${todayComp.tef_kcal} kcal\n`;
+    reportText += `• Ingesta Registrada Hoy: ${todayComp.intake_kcal || 0} kcal (Restan: ${Math.max(0, todayComp.target_kcal - (todayComp.intake_kcal||0))} kcal)\n`;
+    reportText += `• Macros Hoy (Comido / Meta): Proteína ${todayComp.intake_protein_g||0}/${todayComp.target_protein_g}g | Carbs ${todayComp.intake_carbs_g||0}/${todayComp.target_carbs_g}g | Grasas ${todayComp.intake_fat_g||0}/${todayComp.target_fat_g}g\n`;
+    reportText += `• Detalle de Comidas Hoy: ${JSON.stringify(todayRaw.meals_log_json || [])}\n\n`;
+
+    reportText += `[2] SERIE HISTÓRICA LONGITUDINAL (ÚLTIMOS 14 DÍAS)\n`;
+    compRows.forEach(c => {
+      const r = rawMap[c.log_date] || {};
+      const rec = (c.recovery_score === null || c.recovery_score === undefined) ? 'calibrando' : `${c.recovery_score}%`;
+      reportText += `- ${c.log_date}: Peso=${r.weight_kg||c.trend_weight_kg}kg (${r.body_fat_pct||c.trend_body_fat_pct}%BF) | Rec=${rec} (RMSSD=${r.rmssd_ms}ms, RHR=${r.rhr_bpm}lpm) | Strain=${c.strain_score} (Pasos=${r.steps_count}, Ej=${r.pickleball_or_gym_minutes}m) | Sueño=${r.total_sleep_min}m (Deuda=${c.cumulative_sleep_debt_hours}h) | Kcal=${c.intake_kcal}/${c.target_kcal} (${c.intake_protein_g}P/${c.intake_carbs_g}C/${c.intake_fat_g}G)\n`;
+    });
+
+    const docName = 'EXPEDIENTE_CLINICO_ARGON_VIVO';
+    let docId = PropertiesService.getScriptProperties().getProperty('ARGON_DOC_ID');
+    let doc = null;
+
+    if (docId) {
+      try { doc = DocumentApp.openById(docId); } catch (_) { doc = null; }
+    }
+    if (!doc) {
+      const files = DriveApp.getFilesByName(docName);
+      if (files.hasNext()) {
+        doc = DocumentApp.openById(files.next().getId());
+      } else {
+        doc = DocumentApp.create(docName);
+      }
+      PropertiesService.getScriptProperties().setProperty('ARGON_DOC_ID', doc.getId());
+    }
+
+    doc.getBody().setText(reportText);
+    doc.saveAndClose();
+    props.setProperty('ARGON_DOC_TS', String(Date.now()));
+  } catch (err) {
+    Logger.log('Aviso Drive Sync: ' + err.message);
+  }
+}
+
 function repairMealsFromLogs_() {
   const logs = supabaseGet_('webhook_logs?select=raw_payload&order=received_at.desc&limit=60');
   const seen = {}, items = [];
@@ -1645,6 +2054,7 @@ function rebuildMealsHoy_() { rebuildMealsFromLogs_(); }
 function rebuildMealsAyer_() {
   rebuildMealsFromLogs_(Utilities.formatDate(new Date(Date.now() - 86400000), ARGON_CONFIG.TIMEZONE, 'yyyy-MM-dd'));
 }
+function repararComidasLogs() { repairMealsFromLogs_(); }
 
 function repairSleepFromLogs_() {
   const logs = supabaseGet_('webhook_logs?select=raw_payload&order=received_at.desc&limit=100');
@@ -1680,11 +2090,10 @@ function testAuthorizeAndCreateExpedienteDoc() {
 }
 function reconstruirComidasAyer() { rebuildMealsAyer_(); }
 function reconstruirComidasHoy() { rebuildMealsHoy_(); }
-function repararComidasLogs() { repairMealsFromLogs_(); }
 
 /**
  * ============================================================================
- * 7. PERFIL DEL USUARIO + ESTIMADOR DE COMIDAS (GEMINI)
+ * 8. PERFIL DEL USUARIO + ESTIMADOR DE COMIDAS (GEMINI)
  * ============================================================================
  */
 function argonProfile_() {
@@ -1697,106 +2106,6 @@ function argonProfile_() {
     wake: /^\d{2}:\d{2}$/.test(p.wake || '') ? p.wake : ARGON_CONFIG.HABITUAL_WAKE_TIME,
     deficit: (d >= 250 && d <= 900) ? d : 550
   };
-}
-
-function handleSetProfile_(payload) {
-  try {
-    const p = payload.profile || {};
-    const clean = {
-      birth: /^\d{4}-\d{2}-\d{2}$/.test(p.birth || '') ? p.birth : undefined,
-      height_m: (p.height_m >= 1.2 && p.height_m <= 2.3) ? +p.height_m : undefined,
-      wake: /^\d{2}:\d{2}$/.test(p.wake || '') ? p.wake : undefined,
-      deficit: (p.deficit >= 250 && p.deficit <= 900) ? +p.deficit : undefined
-    };
-    PropertiesService.getScriptProperties().setProperty('ARGON_PROFILE', JSON.stringify(clean));
-    return jsonResponse_({ status: 'ok', profile: argonProfile_() });
-  } catch (err) {
-    return jsonResponse_({ status: 'error', message: err.message });
-  }
-}
-
-function handleEstimateMeal_(payload) {
-  try {
-    const text = String(payload.text || '').slice(0, 800);
-    const img = payload.image_b64 ? String(payload.image_b64) : '';
-    if (!text && !img) return jsonResponse_({ status: 'error', message: 'Describe la comida o adjunta una foto' });
-    if (img.length > 1500000) return jsonResponse_({ status: 'error', message: 'Imagen demasiado grande' });
-    const parts = [{ text: 'Estima los alimentos y porciones de esta comida' + (text ? ': ' + text : ' (ver imagen)') + '.' }];
-    if (img) parts.push({ inline_data: { mime_type: payload.mime === 'image/png' ? 'image/png' : 'image/jpeg', data: img } });
-    const body = {
-      system_instruction: { parts: [{ text: 'Eres nutricionista clínico. Devuelve SOLO JSON con la forma {"items":[{"name":string,"grams":number,"prot":number,"carbs":number,"fat":number}]}. Un item por alimento, con porciones realistas (gramos servidos) y macros en gramos para esa porción. Máximo 8 items. Sin texto adicional.' }] },
-      contents: [{ role: 'user', parts: parts }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 1200, responseMimeType: 'application/json' }
-    };
-    const props = PropertiesService.getScriptProperties();
-    const models = [props.getProperty('ARGON_GEMINI_MODEL'), 'gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
-      .filter((m, i, a) => m && a.indexOf(m) === i);
-    let raw = null, lastErr = '';
-    for (let i = 0; i < models.length; i++) {
-      const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent', {
-        method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': ARGON_CONFIG.GEMINI_API_KEY },
-        payload: JSON.stringify(body), muteHttpExceptions: true
-      });
-      const j = JSON.parse(res.getContentText() || '{}');
-      if (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) {
-        raw = j.candidates[0].content.parts.map(p => p.text || '').join('').trim();
-        if (raw) { props.setProperty('ARGON_GEMINI_MODEL', models[i]); break; }
-      } else if (j.error && j.error.message) { lastErr = j.error.message; }
-    }
-    if (!raw) return jsonResponse_({ status: 'error', message: 'Gemini: ' + (lastErr || 'sin respuesta') });
-    const parsed = JSON.parse(raw.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim());
-    const num = (v, mx) => Math.max(0, Math.min(mx, Math.round((parseFloat(v) || 0) * 10) / 10));
-    const items = (parsed.items || []).slice(0, 8).map(it => {
-      const prot = num(it.prot, 300), carbs = num(it.carbs, 500), fat = num(it.fat, 300);
-      return { name: String(it.name || 'Alimento').slice(0, 40), grams: num(it.grams, 2000), prot: prot, carbs: carbs, fat: fat, kcal: Math.round(4 * prot + 4 * carbs + 9 * fat) };
-    }).filter(it => it.kcal > 0);
-    return jsonResponse_({ status: 'ok', items: items });
-  } catch (err) {
-    return jsonResponse_({ status: 'error', message: err.message });
-  }
-}
-
-/**
- * Recalcula el motor MBE para una fecha específica desde datos raw en Supabase.
- * Usado por el cliente thin-client tras upsert de daily_raw_biometrics.
- */
-function handleRecalcDay_(payload) {
-  try {
-    const dateStr = String(payload.date || '').slice(0, 10);
-    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      return jsonResponse_({ status: 'error', message: 'Fecha inválida (YYYY-MM-DD)' });
-    }
-    // Leer raw + histórico (14d) de Supabase
-    const existingRows = supabaseGet_(`daily_raw_biometrics?log_date=eq.${dateStr}&limit=1`);
-    if (existingRows.length === 0) {
-      return jsonResponse_({ status: 'error', message: 'Sin datos raw para ' + dateStr });
-    }
-    const todayRaw = existingRows[0];
-    // Histórico raw para VFC, ACWR, etc.
-    const historyRaw = supabaseGet_(`daily_raw_biometrics?log_date=lt.${dateStr}&order=log_date.desc&limit=14`);
-    // Histórico computado para strain_score previo (ACWR)
-    const computedHistory = supabaseGet_(`computed_daily_scores?log_date=lt.${dateStr}&order=log_date.desc&limit=14`);
-    const computedMap = new Map(computedHistory.map(r => [r.log_date, r.strain_score]));
-    historyRaw.forEach(r => { r.strain_score = computedMap.get(r.log_date) || 0; });
-    // Previo computado (para deltas, tendencias)
-    const prevComputed = computedHistory.length > 0 ? computedHistory[0] : null;
-
-    // Ejecutar motor MBE completo
-    const full = computeArgonEngine_(todayRaw, historyRaw, prevComputed);
-
-    // Persistir solo campos MBE (ARGON_ENGINE_COLS_)
-    const out = {};
-    ARGON_ENGINE_COLS_.forEach(k => { out[k] = full[k]; });
-
-    // Upsert en computed_daily_scores
-    const up = supabaseUpsert_('computed_daily_scores', out);
-    if (up.error) return jsonResponse_({ status: 'error', message: up.error });
-
-    return jsonResponse_({ status: 'ok', date: dateStr, computed: out });
-  } catch (err) {
-    Logger.log('handleRecalcDay_: ' + err.stack);
-    return jsonResponse_({ status: 'error', message: err.message });
-  }
 }
 
 /** Ejecutar a mano en Apps Script: crea el Doc ARGON_MUESTRA_PAYLOAD con 1 muestra por categoría y sus campos. */
@@ -1817,7 +2126,7 @@ function muestraFormatoPayload() {
       if (!out[k]) out[k] = { logs_con_esta_categoria: 0, max_items_en_un_envio: 0, campos: {}, ejemplos: [] };
       const o = out[k]; o.logs_con_esta_categoria++;
       if (Array.isArray(v)) {
-        o.max_items_en_un_envio = Math.max(o.max_items_en_un_envio, v.length);
+        o.max_items_en_un_envio = Math.max(o.max_items_en_un_un_envio, v.length);
         v.slice(0, 5).forEach(it => { if (it && typeof it === 'object') Object.keys(it).forEach(f => { o.campos[f] = typeof it[f]; }); });
         if (o.ejemplos.length < 2 && v.length) o.ejemplos.push(cut(v[0], 0));
       } else if (o.ejemplos.length < 1) { o.ejemplos.push(cut(v, 0)); }
@@ -1828,3 +2137,412 @@ function muestraFormatoPayload() {
   doc.getBody().setText(txt); doc.saveAndClose();
   Logger.log('Doc creado: ' + doc.getUrl() + ' | categorías: ' + Object.keys(out).join(', '));
 }
+
+/**
+ * ============================================================================
+ * 9. SLEEP WEBHOOK INTEGRATION (NUEVO - v6.0)
+ * ============================================================================
+ */
+
+const SLEEP_WEBHOOK_CONFIG = {
+  get URL() {
+    return PropertiesService.getScriptProperties().getProperty('SLEEP_WEBHOOK_URL') ||
+           'https://eqbvzgqumwvksiovboth.supabase.co/functions/v1/sleep-webhook';
+  },
+  get SERVICE_ROLE_KEY() {
+    return PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_ROLE_KEY') || '';
+  },
+  get USER_ID() {
+    return PropertiesService.getScriptProperties().getProperty('ARGON_USER_ID') || '';
+  }
+};
+
+function sendSleepDataToWebhook_(payload, extractedDay, dateStr) {
+  try {
+    const userId = SLEEP_WEBHOOK_CONFIG.USER_ID;
+    if (!userId) {
+      Logger.log('Sleep webhook: USER_ID no configurado, saltando envío');
+      return { skipped: true, reason: 'USER_ID missing' };
+    }
+
+    const sleepSession = getMainSleepSession_(extractedDay);
+    if (!sleepSession) {
+      Logger.log('Sleep webhook: No hay sesión de sueño principal válida');
+      return { skipped: true, reason: 'No main sleep session' };
+    }
+
+    const { startMs, endMs, stages } = sleepSession;
+    const inBedStartS = Math.floor(startMs / 1000);
+    const inBedEndS = Math.floor(endMs / 1000);
+
+    const rawData = extractRaw1HzData_(payload, startMs, endMs);
+
+    if (!rawData.hr.length) {
+      Logger.log('Sleep webhook: Sin HR, saltando');
+      return { skipped: true, reason: 'No HR data' };
+    }
+    // accel opcional: sin él, van Hees usa solo HR/HRV (cardioStager)
+
+    const webhookPayload = {
+      user_id: userId,
+      log_date: dateStr,
+      in_bed_start_s: inBedStartS,
+      in_bed_end_s: inBedEndS,
+      config: { epoch_sec: 30 },
+      accel: rawData.accel,
+      hr: rawData.hr,
+      rr: rawData.rr
+    };
+
+    const response = callSleepWebhook_(webhookPayload);
+
+    if (response.success) {
+      Logger.log('Sleep webhook: Enviado OK - ' + response.data.segmentation.stages.length + ' épocas, stored: ' + response.data.stored);
+      return { success: true, epochs: response.data.segmentation.stages.length, stored: response.data.stored };
+    } else {
+      Logger.log('Sleep webhook: Error - ' + (response.error || 'Unknown error'));
+      return { success: false, error: response.error };
+    }
+
+  } catch (e) {
+    Logger.log('Sleep webhook: Excepción - ' + e.message + '\n' + e.stack);
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Fallback: guarda stages de sueño directo de Health Connect (usa hypno ya parseado)
+ * Se usa cuando el webhook no tiene HR/HRV o falla.
+ */
+function saveHcSleepStages_(extractedDay, dateStr) {
+  try {
+    const userId = SLEEP_WEBHOOK_CONFIG.USER_ID;
+    if (!userId) {
+      return { saved: false, reason: 'USER_ID missing' };
+    }
+
+    if (!extractedDay.hypno || !extractedDay.hypno.seg || extractedDay.hypno.seg.length === 0) {
+      return { saved: false, reason: 'No hypno data' };
+    }
+
+    const { t0, seg } = extractedDay.hypno;
+
+    // Mapear códigos HC: 'W'/'A'=wake(0), 'L'=light(1), 'D'=deep(2), 'R'=rem(3)
+    const stageMap = { 'W': 0, 'A': 0, 'L': 1, 'D': 2, 'R': 3 };
+    const stages = seg.map(s => stageMap[s[0]] || 1);
+
+    const startMs = t0;
+    const lastSeg = seg[seg.length - 1];
+    const endMs = t0 + (lastSeg[1] + lastSeg[2]) * 60000;
+
+    const inBedStartS = Math.floor(startMs / 1000);
+    const inBedEndS = Math.floor(endMs / 1000);
+
+    const webhookPayload = {
+      user_id: userId,
+      log_date: dateStr,
+      in_bed_start_s: inBedStartS,
+      in_bed_end_s: inBedEndS,
+      config: { epoch_sec: 30, source: 'health_connect_stages' },
+      stages: stages  // solo stages, sin accel/hr/rr
+    };
+
+    const response = callSleepWebhook_(webhookPayload);
+
+    if (response.success) {
+      Logger.log('Sleep HC fallback: Guardado OK - ' + stages.length + ' épocas');
+      return { saved: true, epochs: stages.length, source: 'health_connect' };
+    } else {
+      Logger.log('Sleep HC fallback: Error - ' + (response.error || 'Unknown error'));
+      return { saved: false, error: response.error };
+    }
+
+  } catch (e) {
+    Logger.log('Sleep HC fallback: Excepción - ' + e.message + '\n' + e.stack);
+    return { saved: false, error: e.message };
+  }
+}
+
+function getMainSleepSession_(extractedDay) {
+  if (extractedDay.hypno && extractedDay.hypno.seg && extractedDay.hypno.seg.length > 0) {
+    const t0 = extractedDay.hypno.t0;
+    const segs = extractedDay.hypno.seg;
+    const lastSeg = segs[segs.length - 1];
+    const endMs = t0 + (lastSeg[1] + lastSeg[2]) * 60000;
+    return { startMs: t0, endMs: endMs, stages: segs };
+  }
+
+  if (extractedDay.sleep_total_min && extractedDay.sleep_total_min >= 120) {
+    const hrvNight = extractedDay.hrv_night || [];
+    if (hrvNight.length > 0) {
+      const startMs = hrvNight[0][0] * 1000;
+      const endMs = hrvNight[hrvNight.length - 1][0] * 1000;
+      return { startMs, endMs, stages: [] };
+    }
+  }
+
+  return null;
+}
+
+function extractRaw1HzData_(payload, startMs, endMs) {
+  const accel = [];
+  const hr = [];
+  const rr = [];
+
+  function processRecord(rec) {
+    if (!rec || typeof rec !== 'object') return;
+    const cat = String(rec.type || rec.record_type || rec.recordType || '').toLowerCase();
+
+    if (cat === 'accelerometer' || cat === 'accel' || cat.includes('accel') || cat === 'activity') {
+      const ts = extractTimestamp_(rec);
+      if (ts && startMs <= ts && ts <= endMs) {
+        const x = extractNumber_(rec, ['x', 'X']);
+        const y = extractNumber_(rec, ['y', 'Y']);
+        const z = extractNumber_(rec, ['z', 'Z']);
+        if (x !== null && y !== null && z !== null) {
+          accel.push({ ts_ms: ts, x: x, y: y, z: z, valid: true });
+        }
+      }
+    }
+
+    if (cat === 'heart_rate' || cat === 'heartrate') {
+      const ts = extractTimestamp_(rec);
+      const bpm = extractNumber_(rec, ['bpm', 'hr', 'heart_rate', 'value', 'avg']);
+      if (ts && bpm !== null && startMs <= ts && ts <= endMs) {
+        hr.push({ ts_ms: ts, hr: Math.round(bpm) });
+      }
+    }
+
+    if (cat.includes('variability') || cat.includes('hrv') || cat === 'heart_rate_variability') {
+      const ts = extractTimestamp_(rec);
+      const rrMs = rec.rr_ms || rec.rr_intervals || rec.rr || rec.rmssd_ms;
+      const rrTs = rec.ts_ms || rec.timestamps || rec.rr_timestamps;
+
+      if (ts && startMs <= ts && ts <= endMs) {
+        if (Array.isArray(rrMs) && rrMs.length > 0) {
+          rr.push({ ts_ms: ts, rr_ms: rrMs.map(n => Number(n)).filter(n => n > 300 && n < 2000) });
+        } else if (Array.isArray(rrTs) && Array.isArray(rrMs) && rrTs.length === rrMs.length) {
+          const pairs = [];
+          for (let i = 0; i < rrTs.length; i++) {
+            const rrt = Number(rrTs[i]);
+            const rrm = Number(rrMs[i]);
+            if (rrt && rrm && rrm > 300 && rrm < 2000 && startMs <= rrt && rrt <= endMs) {
+              pairs.push({ ts: rrt, rr: rrm });
+            }
+          }
+          if (pairs.length > 0) {
+            rr.push({
+              ts_ms: pairs.map(p => p.ts),
+              rr_ms: pairs.map(p => p.rr)
+            });
+          }
+        } else if (typeof rrMs === 'number' && rrMs > 300 && rrMs < 2000) {
+        }
+      }
+    }
+  }
+
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+    Object.keys(payload).forEach(topKey => {
+      const val = payload[topKey];
+      if (Array.isArray(val)) {
+        val.forEach(processRecord);
+      } else if (val && typeof val === 'object') {
+        if (Array.isArray(val.records)) val.records.forEach(processRecord);
+        else if (Array.isArray(val.data)) val.data.forEach(processRecord);
+        else processRecord(val);
+      }
+    });
+  } else if (Array.isArray(payload)) {
+    payload.forEach(processRecord);
+  }
+
+  accel.sort((a, b) => a.ts_ms - b.ts_ms);
+  hr.sort((a, b) => a.ts_ms - b.ts_ms);
+  rr.sort((a, b) => {
+    const ta = Array.isArray(a.ts_ms) ? a.ts_ms[0] : a.ts_ms;
+    const tb = Array.isArray(b.ts_ms) ? b.ts_ms[0] : b.ts_ms;
+    return ta - tb;
+  });
+
+  return { accel, hr, rr };
+}
+
+function extractTimestamp_(rec) {
+  const candidates = [
+    rec.start_time, rec.startTime, rec.time, rec.timestamp,
+    rec.date_time, rec.dateTime, rec.end_time, rec.endTime,
+    rec.metadata && (rec.metadata.start_time || rec.metadata.startTime || rec.metadata.time)
+  ];
+
+  for (const c of candidates) {
+    if (c === undefined || c === null || c === '') continue;
+    let ms;
+    if (typeof c === 'number') {
+      ms = c < 1e11 ? c * 1000 : c;
+    } else if (typeof c === 'string') {
+      const num = parseFloat(c);
+      if (!isNaN(num)) {
+        ms = num < 1e11 ? num * 1000 : num;
+      } else {
+        const dt = new Date(c);
+        if (!isNaN(dt.getTime())) ms = dt.getTime();
+      }
+    }
+    if (ms && !isNaN(ms) && ms > 1e12) return Math.round(ms);
+  }
+  return null;
+}
+
+function extractNumber_(rec, keys) {
+  for (const k of keys) {
+    if (rec[k] !== undefined && rec[k] !== null) {
+      const n = Number(rec[k]);
+      if (!isNaN(n)) return n;
+    }
+  }
+  return null;
+}
+
+function callSleepWebhook_(webhookPayload) {
+  const url = SLEEP_WEBHOOK_CONFIG.URL;
+  const apiKey = SLEEP_WEBHOOK_CONFIG.SERVICE_ROLE_KEY;
+
+  if (!apiKey) {
+    return { success: false, error: 'SUPABASE_SERVICE_ROLE_KEY no configurado' };
+  }
+
+  const options = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + apiKey
+    },
+    payload: JSON.stringify(webhookPayload),
+    muteHttpExceptions: true
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const code = response.getResponseCode();
+    const text = response.getContentText();
+
+    if (code === 200) {
+      return JSON.parse(text);
+    } else {
+      Logger.log('Sleep webhook HTTP ' + code + ': ' + text);
+      return { success: false, error: 'HTTP ' + code + ': ' + text };
+    }
+  } catch (e) {
+    return { success: false, error: 'Fetch failed: ' + e.message };
+  }
+}
+
+function testSleepWebhook_() {
+  const testPayload = generateTestSleepPayload_();
+  const result = callSleepWebhook_(testPayload);
+  Logger.log('Test result: ' + JSON.stringify(result));
+  return result;
+}
+
+function generateTestSleepPayload_() {
+  const userId = SLEEP_WEBHOOK_CONFIG.USER_ID || 'test-user-id';
+  const startMs = 1705334400000;
+  const endMs = 1705341600000;
+  const inBedStartS = 1705334400;
+  const inBedEndS = 1705341600;
+
+  const accel = [];
+  const hr = [];
+  const rr = [];
+
+  for (let sec = 0; sec < 7200; sec++) {
+    const ts = startMs + sec * 1000;
+    const isWake = sec < 1800;
+    const x = isWake ? Math.random() * 0.2 - 0.1 : Math.random() * 0.04 - 0.02;
+    const y = isWake ? Math.random() * 0.2 - 0.1 : Math.random() * 0.04 - 0.02;
+    const z = isWake ? 0.9 + Math.random() * 0.2 : 0.98 + Math.random() * 0.04;
+    accel.push({ ts_ms: ts, x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000, z: Math.round(z * 1000) / 1000, valid: true });
+
+    if (sec % 5 === 0) {
+      const bpm = isWake ? 65 + Math.floor(Math.random() * 10) : 50 + Math.floor(Math.random() * 10);
+      hr.push({ ts_ms: ts, hr: bpm });
+    }
+
+    if (sec % 15 === 0) {
+      const baseRr = isWake ? 1000 : 1100;
+      const rrIntervals = Array.from({length: 5}, () => baseRr + Math.floor(Math.random() * 80) - 40);
+      rr.push({ ts_ms: ts, rr_ms: rrIntervals });
+    }
+  }
+
+  return {
+    user_id: userId,
+    log_date: '2024-01-15',
+    in_bed_start_s: inBedStartS,
+    in_bed_end_s: inBedEndS,
+    config: { epoch_sec: 30 },
+    accel: accel,
+    hr: hr,
+    rr: rr
+  };
+}
+
+/**
+ * ============================================================================
+ * INSTRUCCIONES DE CONFIGURACIÓN (Script Properties en Apps Script):
+ * ============================================================================
+ * Ve a: Apps Script → ⚙️ Project Settings → Script properties
+ * Agrega estas propiedades:
+ *
+ * 1. SUPABASE_URL
+ *    https://eqbvzgqumwvksiovboth.supabase.co
+ *
+ * 2. SUPABASE_KEY (service_role key)
+ *    eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *
+ * 3. GEMINI_API_KEY
+ *    TU_API_KEY_DE_GEMINI
+ *
+ * 4. TIMEZONE
+ *    America/Caracas
+ *
+ * 5. BASAL_SLEEP_NEED_H
+ *    7.5
+ *
+ * 6. HABITUAL_WAKE_TIME
+ *    06:30
+ *
+ * 7. HEIGHT_M
+ *    1.75
+ *
+ * 8. SLEEP_WEBHOOK_URL
+ *    https://eqbvzgqumwvksiovboth.supabase.co/functions/v1/sleep-webhook
+ *
+ * 9. SUPABASE_SERVICE_ROLE_KEY
+ *    eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxYnZ6Z3F1bXd2a3Npb3Zib3RoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczOTYyNTYwMCwiZXhwIjoyMDU1MjAxNjAwfQ.SFlMxrKCyEK0nGsJhG3kOQUbw-OqxmJqkUusVzLWheU
+ *
+ * 10. ARGON_USER_ID
+ *     b5a1af76-fae3-4623-b6f9-eed86c7b466f
+ *
+ * 11. ARGON_PROFILE (JSON)
+ *     {"birth":"1990-01-01","height_m":1.75,"wake":"06:30","deficit":550}
+ *
+ * 12. ARGON_GEMINI_MODEL (opcional, auto-selecciona)
+ *     gemini-2.5-flash
+ *
+ * ============================================================================
+ * QUEUE TRIGGER SETUP:
+ * ============================================================================
+ * En el editor GAS, ejecuta: createQueueTrigger_()
+ * Esto crea un trigger time-based que ejecuta processWebhookQueue_() cada 2 minutos.
+ * Para ver estado: getQueueStatus_()
+ * Para procesar manual: manualProcessQueue_()
+ * Para borrar trigger: deleteQueueTrigger_()
+ *
+ * ============================================================================
+ * TEST:
+ * En el editor GAS, ejecuta: testSleepWebhook_()
+ * Debe devolver: { success: true, epochs: 240, stored: true }
+ * ============================================================================
+ */

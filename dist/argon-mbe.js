@@ -66,7 +66,12 @@ var init_constants = __esm({
 });
 
 // src/api/client.ts
-import { createClient } from "@supabase/supabase-js";
+function getCreateClient() {
+  if (typeof window !== "undefined" && window.supabase?.createClient) {
+    return window.supabase.createClient;
+  }
+  return import("@supabase/supabase-js").then((m) => m.createClient);
+}
 function getSbConfig() {
   const url2 = (localStorage.getItem(STORAGE_KEYS.SB_URL) || "").trim();
   const key = (localStorage.getItem(STORAGE_KEYS.SB_KEY) || "").trim();
@@ -77,22 +82,31 @@ function getUserId() {
   return stored?.trim() || null;
 }
 function getClient() {
+  return _client;
+}
+async function getClientAsync() {
   if (_client) return _client;
+  if (_clientPromise) return _clientPromise;
   const { url: url2, key } = getSbConfig();
   if (!url2 || !key) {
     return null;
   }
-  _client = createClient(url2, key, {
-    auth: { persistSession: false },
-    global: { headers: { "x-client-info": "argon-pwa/6.0" } }
-  });
-  return _client;
+  _clientPromise = (async () => {
+    const createClient = await getCreateClient();
+    _client = createClient(url2, key, {
+      auth: { persistSession: false },
+      global: { headers: { "x-client-info": "argon-pwa/6.0" } }
+    });
+    return _client;
+  })();
+  return _clientPromise;
 }
 function resetClient() {
   _client = null;
+  _clientPromise = null;
 }
 async function request(table, params = {}) {
-  const client = getClient();
+  const client = await getClientAsync();
   if (!client) {
     throw new Error("Supabase no configurado: ve a \u2699\uFE0F Ajustes");
   }
@@ -158,12 +172,13 @@ async function sbGetRawBiometrics(daysBack = 30) {
     limit: daysBack + 5
   });
 }
-var _client, supabaseClient;
+var _client, _clientPromise, supabaseClient;
 var init_client = __esm({
   "src/api/client.ts"() {
     "use strict";
     init_constants();
     _client = null;
+    _clientPromise = null;
     supabaseClient = new Proxy({}, {
       get(_, prop) {
         const client = getClient();

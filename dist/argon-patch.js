@@ -20068,23 +20068,8 @@ var GasActionSchema = external_exports.discriminatedUnion("action", [
 ]);
 
 // src/api/client.ts
-import { createClient } from "@supabase/supabase-js";
-function getSbConfig() {
-  const url2 = (localStorage.getItem(STORAGE_KEYS.SB_URL) || "").trim();
-  const key = (localStorage.getItem(STORAGE_KEYS.SB_KEY) || "").trim();
-  return { url: url2, key };
-}
 var _client = null;
 function getClient() {
-  if (_client) return _client;
-  const { url: url2, key } = getSbConfig();
-  if (!url2 || !key) {
-    return null;
-  }
-  _client = createClient(url2, key, {
-    auth: { persistSession: false },
-    global: { headers: { "x-client-info": "argon-pwa/6.0" } }
-  });
   return _client;
 }
 var supabaseClient = new Proxy({}, {
@@ -20224,7 +20209,7 @@ var setStatus = (t) => {
 };
 function getSbClient() {
   try {
-    return getClient();
+    return window.getClient?.();
   } catch {
     return null;
   }
@@ -20265,8 +20250,8 @@ async function syncFromSupabase() {
       ["rmssd_ms", "rhr_bpm", "resp_rate_brpm", "spo2_pct"].forEach((k) => {
         if (!(num(rClean[k]) > 0)) delete rClean[k];
       });
-      const lastW = prevComp ? prevComp.weight_kg : config2.defaults.weightKg || 70;
-      const lastBf = prevComp ? prevComp.body_fat_pct : config2.defaults.bodyFatPct || 20;
+      const lastW = prevComp ? prevComp.weight_kg : config2.profile?.weightKg ?? DEFAULTS.weightKg;
+      const lastBf = prevComp ? prevComp.body_fat_pct : config2.profile?.bodyFatPct ?? DEFAULTS.bodyFatPct;
       const w = num(r.weight_kg);
       const bf = num(r.body_fat_pct);
       const pick2 = (k, isInt) => {

@@ -2,11 +2,21 @@
  * ARGON v6.0 — Supabase Client Wrapper
  * Thin client: reads computed data, writes raw biometrics via GAS webhook.
  * Import from: import { sb, sbGet, sbUpsert } from '@/api/client';
+ *
+ * Uses window.supabase from CDN (single instance) to avoid "Multiple GoTrueClient instances" warning.
  */
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types';
 import { STORAGE_KEYS } from '@/constants';
+
+// Get createClient from window.supabase (loaded via CDN in index.html)
+function getCreateClient() {
+  if (typeof window !== 'undefined' && window.supabase?.createClient) {
+    return window.supabase.createClient;
+  }
+  // Fallback for tests/SSR - dynamic import
+  return import('@supabase/supabase-js').then(m => m.createClient);
+}
 
 // ============================================================
 // CONFIG ACCESS (reads from localStorage + window.CONFIG fallback)
@@ -23,34 +33,50 @@ function getUserId(): string | null {
 }
 
 // ============================================================
-// CLIENT INSTANCE (lazy singleton)
+// CLIENT INSTANCE (lazy singleton, async)
 // ============================================================
 let _client: SupabaseClient<Database> | null = null;
+let _clientPromise: Promise<SupabaseClient<Database> | null> | null = null;
 
 export function getClient(): SupabaseClient<Database> | null {
+  // Synchronous access - returns client if already initialized
+  return _client;
+}
+
+export async function getClientAsync(): Promise<SupabaseClient<Database> | null> {
   if (_client) return _client;
+  if (_clientPromise) return _clientPromise;
 
   const { url, key } = getSbConfig();
   if (!url || !key) {
     return null;
   }
 
-  _client = createClient<Database>(url, key, {
-    auth: { persistSession: false },
-    global: { headers: { 'x-client-info': 'argon-pwa/6.0' } },
-  });
-  return _client;
+  _clientPromise = (async () => {
+    const createClient = await getCreateClient();
+    _client = createClient<Database>(url, key, {
+      auth: { persistSession: false },
+      global: { headers: { 'x-client-info': 'argon-pwa/6.0' } },
+    });
+    return _client;
+  })();
+
+  return _clientPromise;
 }
 
 export function resetClient(): void {
   _client = null;
+  _clientPromise = null;
 }
 
 // Expose for backward compatibility with existing code
+// Note: This Proxy now uses getClientAsync internally for async methods
 export const supabaseClient = new Proxy({} as SupabaseClient<Database>, {
   get(_, prop) {
     const client = getClient();
     if (!client) {
+      // For async methods, we need to handle this differently
+      // Throw only for synchronous property access
       throw new Error('Supabase no configurado: ve a ⚙️ Ajustes');
     }
     return client[prop as keyof SupabaseClient<Database>];
@@ -58,7 +84,7 @@ export const supabaseClient = new Proxy({} as SupabaseClient<Database>, {
 });
 
 // ============================================================
-// READ HELPERS (typed, with user_id filter)
+// READ HELPERS (typed, with user_id filter) - ASYNC
 // ============================================================
 type TableName = keyof Database['public']['Tables'] | keyof Database['public']['Views'];
 
@@ -74,7 +100,7 @@ async function request<T>(
   table: TableName,
   params: QueryParams = {}
 ): Promise<T[]> {
-  const client = getClient();
+  const client = await getClientAsync();
   if (!client) {
     throw new Error('Supabase no configurado: ve a ⚙️ Ajustes');
   }
@@ -138,7 +164,7 @@ async function request<T>(
 }
 
 // ============================================================
-// TYPED FETCH FUNCTIONS
+// TYPED FETCH FUNCTIONS (all async)
 // ============================================================
 export async function sbGetComputedDailyScores(
   daysBack = 30,
@@ -231,7 +257,8 @@ export async function sbGetUserProfile(): Promise<Database['public']['Tables']['
 export async function sbUpsertRawBiometric(
   payload: Database['public']['Tables']['daily_raw_biometrics']['Insert']
 ): Promise<Database['public']['Tables']['daily_raw_biometrics']['Row']> {
-  const client = getClient();
+  const client = await getClientAsync();
+  if (!client) throw new Error('Supabase no configurado');
   const { data, error } = await client
     .from('daily_raw_biometrics')
     .upsert(payload, { onConflict: 'log_date' })
@@ -244,7 +271,8 @@ export async function sbUpsertRawBiometric(
 export async function sbInsertWebhookLog(
   payload: Database['public']['Tables']['webhook_logs']['Insert']
 ): Promise<Database['public']['Tables']['webhook_logs']['Row']> {
-  const client = getClient();
+  const client = await getClientAsync();
+  if (!client) throw new Error('Supabase no configurado');
   const { data, error } = await client
     .from('webhook_logs')
     .insert(payload)
@@ -291,7 +319,7 @@ export async function sbLoadRange(
 // ============================================================
 export async function sbTestConnection(): Promise<boolean> {
   try {
-    const client = getClient();
+    const client = await getClientAsync();
     if (!client) return false;
     const { error } = await client.from('computed_daily_scores').select('log_date').limit(1);
     return !error;

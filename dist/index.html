@@ -13,11 +13,8 @@
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="icon" type="image/png" href="icon-192.png" />
 
-  <!-- CSP: permite eval para Tailwind CDN JIT + conexiones a Supabase/GAS + CDNs -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https://*.supabase.co https://script.google.com https://script.googleusercontent.com https://cdn.jsdelivr.net https://unpkg.com;">
-
-  <!-- Tailwind CSS -->
-  
+  <!-- CSP: conexiones a Supabase/GAS + CDNs (sin Tailwind CDN - usa build local) -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https://*.supabase.co https://script.google.com https://script.googleusercontent.com https://cdn.jsdelivr.net https://unpkg.com;">
   <!-- Swiper.js (Física táctil deslizable tipo Whoop) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
   
@@ -252,8 +249,8 @@
     #detail-body .d-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;border-radius:14px;background:rgba(2,6,23,.65);border:1px solid rgba(255,255,255,.06);font-size:12px}
     #argon-confetti{position:fixed;inset:0;z-index:70;pointer-events:none}
   </style>
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tailwind CSS (compiled) -->
+  <link rel="stylesheet" href="output.css" />
   <!-- Swiper.js (Física táctil deslizable tipo Whoop) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
@@ -1135,6 +1132,56 @@
       const dial = document.getElementById('speed-dial'); if (!dial) return;
       const open = typeof force === 'boolean' ? force : !dial.classList.contains('open');
       dial.classList.toggle('open', open); document.body.classList.toggle('dial-open', open);
+    };
+    // drawerGo: navega por el menú ☰ y cierra el drawer
+    window.drawerGo = (action) => {
+      window.closeDrawer();
+      const run = () => {
+        switch (action) {
+          case 'log':     window.openModal?.('detail-modal'); break;
+          case 'meal':    window.quickAddMeal?.(420, 30, 40, 15, 'Desayuno'); break;
+          case 'water':   window.quickAddMeal?.(0, 0, 0, 0, '+250 ml agua'); break;
+          case 'journal': window.openModal?.('journal-modal'); break;
+          case 'sync':    window.syncFromSupabase?.(); break;
+          case 'export':  window.exportData?.(); break;
+          case 'demo':    window.seedCalibratedFeelfitHistory?.(true); break;
+          case 'coach':   window.showCoach?.(); break;
+          case 'profile':
+          case 'settings': window.openModal?.('settings-modal'); break;
+          case 'qa':      window.runQualityAuditModal?.(); break;
+          case 'install': window.installPWA?.(); break;
+          case 'about':   window.openModal?.('about-modal'); break;
+        }
+      };
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => setTimeout(run, 100), { once: true });
+      } else {
+        setTimeout(run, 50);
+      }
+    };
+    // saveSettings: called from settings modal button (inline onclick)
+    window.saveSettings = () => {
+      const url = document.getElementById('cfg-url')?.value?.trim() || '';
+      const key = document.getElementById('cfg-key')?.value?.trim() || '';
+      const userId = document.getElementById('cfg-user-id')?.value?.trim() || '';
+      const targetW = document.getElementById('cfg-target-weight')?.value || '';
+      const wakeTime = document.getElementById('cfg-wake-time')?.value || '';
+      const startW = document.getElementById('cfg-start-weight')?.value;
+      const goalDate = document.getElementById('cfg-goal-date')?.value;
+      const gasUrl = document.getElementById('cfg-gas-url')?.value?.trim() || '';
+      const webappUrl = document.getElementById('cfg-webapp-url')?.value?.trim() || '';
+      if (url) localStorage.setItem('argon_sb_url', url);
+      if (key) localStorage.setItem('argon_sb_key', key);
+      if (userId) localStorage.setItem('argon_user_id', userId);
+      if (targetW) localStorage.setItem('argon_target_w', targetW);
+      if (wakeTime) localStorage.setItem('argon_wake_time', wakeTime);
+      if (startW) localStorage.setItem('argon_start_w', startW);
+      if (goalDate) localStorage.setItem('argon_goal_date', goalDate);
+      if (gasUrl) localStorage.setItem('argon_gas_url', gasUrl);
+      if (webappUrl) localStorage.setItem('ARGON_WEBAPP_URL', webappUrl);
+      if (typeof window.updateCountdown === 'function') window.updateCountdown();
+      if (typeof window.closeModal === 'function') window.closeModal('settings-modal');
+      if (typeof window.initSupabaseFromStorage === 'function') window.initSupabaseFromStorage();
     };
   </script>
   <script type="module" src="main-app.js"></script>

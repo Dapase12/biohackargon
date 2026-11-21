@@ -100,6 +100,60 @@ function si(obj, key, def = "--") {
   return v === null || v === void 0 || Number.isNaN(v) ? def : String(v);
 }
 
+// src/api/client.ts
+function getCreateClient() {
+  if (typeof window !== "undefined" && window.supabase?.createClient) {
+    return window.supabase.createClient;
+  }
+  return import("@supabase/supabase-js").then((m) => m.createClient);
+}
+function getSbConfig() {
+  const url2 = (localStorage.getItem(STORAGE_KEYS.SB_URL) || "").trim();
+  const key = (localStorage.getItem(STORAGE_KEYS.SB_KEY) || "").trim();
+  return { url: url2, key };
+}
+var _client = null;
+var _clientPromise = null;
+function getClient() {
+  return _client;
+}
+async function getClientAsync() {
+  if (_client) return _client;
+  if (_clientPromise) return _clientPromise;
+  const { url: url2, key } = getSbConfig();
+  if (!url2 || !key) {
+    return null;
+  }
+  _clientPromise = (async () => {
+    const createClient = await getCreateClient();
+    _client = createClient(url2, key, {
+      auth: { persistSession: false },
+      global: { headers: { "x-client-info": "argon-pwa/6.0" } }
+    });
+    return _client;
+  })();
+  return _clientPromise;
+}
+var supabaseClient = new Proxy({}, {
+  get(_, prop) {
+    const client = getClient();
+    if (!client) {
+      throw new Error("Supabase no configurado: ve a \u2699\uFE0F Ajustes");
+    }
+    return client[prop];
+  }
+});
+async function sbTestConnection() {
+  try {
+    const client = await getClientAsync();
+    if (!client) return false;
+    const { error: error62 } = await client.from("computed_daily_scores").select("log_date").limit(1);
+    return !error62;
+  } catch {
+    return false;
+  }
+}
+
 // node_modules/zod/v4/classic/external.js
 var external_exports = {};
 __export(external_exports, {
@@ -20105,36 +20159,6 @@ var GasActionSchema = external_exports.discriminatedUnion("action", [
   external_exports.object({ action: external_exports.literal("sync"), user_id: external_exports.string().uuid().optional() })
 ]);
 
-// src/api/client.ts
-import { createClient } from "@supabase/supabase-js";
-function getSbConfig() {
-  const url2 = (localStorage.getItem(STORAGE_KEYS.SB_URL) || "").trim();
-  const key = (localStorage.getItem(STORAGE_KEYS.SB_KEY) || "").trim();
-  return { url: url2, key };
-}
-var _client = null;
-function getClient() {
-  if (_client) return _client;
-  const { url: url2, key } = getSbConfig();
-  if (!url2 || !key) {
-    return null;
-  }
-  _client = createClient(url2, key, {
-    auth: { persistSession: false },
-    global: { headers: { "x-client-info": "argon-pwa/6.0" } }
-  });
-  return _client;
-}
-var supabaseClient = new Proxy({}, {
-  get(_, prop) {
-    const client = getClient();
-    if (!client) {
-      throw new Error("Supabase no configurado: ve a \u2699\uFE0F Ajustes");
-    }
-    return client[prop];
-  }
-});
-
 // src/config/index.ts
 var originalConfigJs;
 if (typeof window !== "undefined") {
@@ -20901,8 +20925,6 @@ if (typeof window !== "undefined") {
 }
 
 // src/components/app/sync-helpers.ts
-var SUPABASE_URL = config2.supabase?.url || "";
-var SUPABASE_ANON_KEY = config2.supabase?.anonKey || "";
 var STORAGE_KEY_RECORDS = "argon_graphos_records_v54";
 function getLocalStore3() {
   try {
@@ -20921,16 +20943,22 @@ function showToast4(msg) {
     console.log("Toast:", msg);
   }
 }
+function getSbConfig2() {
+  const c = config2.supabase;
+  return { url: c?.url || "", anonKey: c?.anonKey || "" };
+}
 function sbHeaders() {
+  const { anonKey } = getSbConfig2();
   return {
     "Content-Type": "application/json",
-    "apikey": SUPABASE_ANON_KEY,
-    "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+    "apikey": anonKey,
+    "Authorization": `Bearer ${anonKey}`
   };
 }
 async function sbFetch(path, opts = {}) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Supabase no configurado");
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...opts, headers: { ...sbHeaders(), ...opts.headers || {} } });
+  const { url: url2, anonKey } = getSbConfig2();
+  if (!url2 || !anonKey) throw new Error("Supabase no configurado");
+  const res = await fetch(`${url2}/rest/v1/${path}`, { ...opts, headers: { ...sbHeaders(), ...opts.headers || {} } });
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(`${res.status}: ${txt}`);
@@ -21069,7 +21097,8 @@ async function pushDayToSupabase(date5) {
   }
 }
 async function syncFromSupabase(renderAllFn) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return showToast4("Configura Supabase en Ajustes");
+  const { url: url2, anonKey } = getSbConfig2();
+  if (!url2 || !anonKey) return showToast4("Configura Supabase en Ajustes");
   try {
     const [raw, comp] = await Promise.all([
       sbFetch("daily_raw_biometrics?select=*&order=log_date.asc"),
@@ -21301,6 +21330,9 @@ function renderDashboard(record2, allRecordsSorted) {
 }
 
 // main-app.js
+window.sbTestConnection = sbTestConnection;
+window.getClientAsync = getClientAsync;
+window.getClient = getClient;
 var CACHE_KEY_PREFIX = "argon:cache:";
 var CACHE_TTL_MS = 5 * 60 * 1e3;
 var STORAGE_KEY_RECORDS2 = "argon_graphos_records_v54";

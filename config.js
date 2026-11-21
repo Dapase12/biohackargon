@@ -4,6 +4,11 @@
 // ESTE ARCHIVO SE DEPLOYA A PAGES — SIN SECRETOS REALES
 // Usuario real: copia config.template.js a config.js local y edita con TUS claves
 // ============================================================================
+// ⚠️ NO EDITES ESTE ARCHIVO DIRECTAMENTE PARA TU PROPIO USO
+// 1. Copia config.template.js a config.js (gitignored)
+// 2. Edita config.js con TUS datos reales
+// 3. NO comitees config.js — solo config.template.js
+// ============================================================================
 
 window.CONFIG = {
   // ---------------------------------------------------------------------------
@@ -11,10 +16,10 @@ window.CONFIG = {
   // ---------------------------------------------------------------------------
   supabase: {
     // URL de tu proyecto: https://TU_PROJECT_ID.supabase.co
-    url: 'https://demo.supabase.co',
+    url: 'https://TU_PROJECT_ID.supabase.co',
 
     // Clave anon/pública (segura en cliente): Settings → API → anon public
-    anonKey: 'demo-anon-key-replace-with-real',
+    anonKey: 'TU_ANON_KEY_AQUI',
   },
 
   // ---------------------------------------------------------------------------
@@ -22,7 +27,7 @@ window.CONFIG = {
   // ---------------------------------------------------------------------------
   gas: {
     // URL del webhook desplegado: Deploy → New deployment → Web app → URL
-    // Formato: https://script.google.com/macros/s/TU_SCRIPT_ID/exec
+    // Formato: https://script.google.com/macros/s/AKfycbyND-xWjtdQp2-1zv4QiM9hHkVVv7nsV5ciPIVtklTDFyIuDNaVs9C9-Is3Gp1kEOc1/exec
     webhookUrl: '',
   },
 
