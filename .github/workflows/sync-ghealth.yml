@@ -97,6 +97,10 @@ jobs:
 
       - name: Set ghealth timezone (America/Caracas)
         run: |
+          if [ -z "${GHEALTH_CONFIG_DIR}" ]; then
+            echo "ERROR: GHEALTH_CONFIG_DIR not set"
+            exit 1
+          fi
           ghealth config set timezone America/Caracas
         env:
           GHEALTH_CONFIG_DIR: ${{ secrets.GHEALTH_CONFIG_DIR }}

@@ -1,111 +1,118 @@
 /**
  * ARGON v7.0 — ETL Type Definitions
  * Types for ghealth CLI data structures and transformer outputs.
- * Matches actual ghealth CLI JSON output (Google Health API v4).
+ * Matches actual ghealth CLI SIMPLIFIED JSON output (--format json).
+ * See google-health-cli/pkg/output/simplify.go for source of truth.
  */
 
 // ========================================================================
-// GHEALTH RAW RESPONSE TYPES (from Google Health API v4)
+// GHEALTH SIMPLIFIED JSON RESPONSE TYPES (--format json)
 // ========================================================================
 
-export interface GHealthSleepSession {
-  startTimeMillis: string;
-  endTimeMillis: string;
+// Common simplified dataPoint structure
+export interface GHealthSimplifiedDataPoint {
+  source: string;
+  id: string;
+}
+
+// Heart Rate: dataPoints with time, beatsPerMinute
+export interface GHealthHrvSimplifiedSample extends GHealthSimplifiedDataPoint {
+  time: string; // ISO 8601 with offset, e.g. "2026-03-29T17:05:00+01:00"
+  rmssd: number; // rootMeanSquareOfSuccessiveDifferencesMilliseconds
+}
+
+export interface GHealthHrSimplifiedSample extends GHealthSimplifiedDataPoint {
+  time: string; // ISO 8601 with offset
+  beatsPerMinute: number;
+}
+
+export interface GHealthHrListResponse {
+  dataPoints: GHealthHrSimplifiedSample[];
+  nextPageToken: string | null;
+}
+
+export interface GHealthHrvListResponse {
+  dataPoints: GHealthHrvSimplifiedSample[];
+  nextPageToken: string | null;
+}
+
+// Exercise: dataPoints with start, end, type, name, caloriesKcal, averageHeartRateBeatsPerMinute, maxHeartRateBeatsPerMinute
+export interface GHealthExerciseSimplifiedSession extends GHealthSimplifiedDataPoint {
+  start: string; // ISO 8601 with offset
+  end: string;   // ISO 8601 with offset
+  type: string;
+  name: string;
+  caloriesKcal: number;
+  averageHeartRateBeatsPerMinute: number;
+  maxHeartRateBeatsPerMinute: number;
+}
+
+export interface GHealthExerciseListResponse {
+  dataPoints: GHealthExerciseSimplifiedSession[];
+  nextPageToken: string | null;
+}
+
+// Exercise Events: rollupDataPoints with start, end, type
+export interface GHealthExerciseEvent {
+  start: string; // ISO 8601
+  end: string;   // ISO 8601
+  type: 'PAUSE' | 'RESUME';
+}
+
+export interface GHealthExerciseEventsResponse {
+  rollupDataPoints: GHealthExerciseEvent[];
+  nextPageToken: string | null;
+}
+
+// Sleep: dataPoints with start, end, sleepType, isNap, minutesAsleep, minutesAwake, totalMinutes, minutesToFallAsleep, stageMinutes, stages (with --detail)
+export interface GHealthSleepSimplifiedSession extends GHealthSimplifiedDataPoint {
+  start: string; // ISO 8601 with offset
+  end: string;   // ISO 8601 with offset
+  sleepType: string;
   isNap: boolean;
-  sleepQuality: string;
-  stageMinutes: Record<string, string>;
-  stages: Array<{
-    start: number;
-    end: number;
+  minutesAsleep: number;
+  minutesAwake: number;
+  totalMinutes: number;
+  minutesToFallAsleep: number;
+  stageMinutes: Record<string, number>; // e.g. { "DEEP": 120, "LIGHT": 200, "REM": 90, "AWAKE": 30 }
+  stages?: Array<{
     type: string;
+    start: string; // ISO 8601 with offset
+    end: string;   // ISO 8601 with offset
   }>;
 }
 
 export interface GHealthSleepListResponse {
-  dataPoints: GHealthSleepSession[];
+  dataPoints: GHealthSleepSimplifiedSession[];
   nextPageToken: string | null;
 }
 
-export interface GHealthHrvSample {
-  startTimeMillis: string;
-  endTimeMillis: string;
-  // int64 fields are strings in protobuf JSON encoding
-  rootMeanSquareOfSuccessiveDifferencesMilliseconds: string;
-}
-
-export interface GHealthHrvListResponse {
-  dataPoints: GHealthHrvSample[];
-  nextPageToken: string | null;
-}
-
-export interface GHealthExerciseSession {
-  startTimeMillis: string;
-  endTimeMillis: string;
-  name: string;
-  type: string;
-  // int64 fields are strings
-  averageHeartRateBeatsPerMinute: string | null;
-  maxHeartRateBeatsPerMinute: string | null;
-  // int64 fields are strings
-  caloriesBurned: string | null;
-}
-
-export interface GHealthExerciseListResponse {
-  dataPoints: GHealthExerciseSession[];
-  nextPageToken: string | null;
-}
-
-export interface GHealthHrSampleRaw {
-  startTimeMillis: string;
-  endTimeMillis: string;
-  // int64 fields are strings
-  beatsPerMinute: string;
-}
-
-export interface GHealthHrListResponse {
-  dataPoints: GHealthHrSampleRaw[];
-  nextPageToken: string | null;
-}
-
-export type GHealthExerciseEventType = 'PAUSE' | 'RESUME';
-
-export interface GHealthExerciseEvent {
-  startTimeMillis: string;
-  endTimeMillis: string;
-  type: GHealthExerciseEventType;
-}
-
-export interface GHealthExerciseEventsResponse {
-  events: GHealthExerciseEvent[];
-  nextPageToken: string | null;
-}
-
-export interface GHealthWeightSample {
-  startTimeMillis: string;
-  endTimeMillis: string;
-  // weight.value is string for int64, weight.unit is string
-  weight: { value: string; unit: string };
+// Weight: dataPoints with date (YYYY-MM-DD), weightGrams, unit
+export interface GHealthWeightSimplifiedSample extends GHealthSimplifiedDataPoint {
+  date: string; // YYYY-MM-DD
+  weightGrams: number; // int64 value in grams
+  unit: string; // "g" or "kg" (but value always in grams per simplify.go)
 }
 
 export interface GHealthWeightListResponse {
-  dataPoints: GHealthWeightSample[];
+  dataPoints: GHealthWeightSimplifiedSample[];
   nextPageToken: string | null;
 }
 
-export interface GHealthBodyFatSample {
-  startTimeMillis: string;
-  endTimeMillis: string;
-  // bodyFatPercentage.value is string for int64, bodyFatPercentage.unit is string
-  bodyFatPercentage: { value: string; unit: string };
+// Body Fat: dataPoints with date (YYYY-MM-DD), percentage, unit
+export interface GHealthBodyFatSimplifiedSample extends GHealthSimplifiedDataPoint {
+  date: string; // YYYY-MM-DD
+  percentage: number; // int64 value as percentage * 100? No, simplify.go uses toInt which returns the raw value
+  unit: string; // "%"
 }
 
 export interface GHealthBodyFatListResponse {
-  dataPoints: GHealthBodyFatSample[];
+  dataPoints: GHealthBodyFatSimplifiedSample[];
   nextPageToken: string | null;
 }
 
 // ========================================================================
-// PARSED/INTERNAL TYPES (after parsing from ghealth)
+// PARSED/INTERNAL TYPES (after parsing from ghealth simplified JSON)
 // ========================================================================
 
 export interface ParsedSleepSession {
@@ -209,7 +216,7 @@ export interface SleepTransformerOutput {
   hrv_nocturnal_median: number | null;
   hrv_deep_sleep_median: number | null;
   hrv_nocturnal_count: number;
-  hrv_mode: 'night' | 'nap' | 'fallback';
+  hrv_mode: 'night' | 'nap' | 'deep' | 'fallback';
 }
 
 export interface ExerciseTransformerOutput {

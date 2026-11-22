@@ -1,13 +1,13 @@
 /**
  * ARGON v7.0 — Sleep + HRV Transformer Unit Tests (TDD: RED phase)
  * Tests for parsing ghealth sleep sessions, hypnogram, HRV nocturnal cross-reference.
- * Based on real ghealth payloads from user account (timezone -04:00).
+ * Based on real ghealth SIMPLIFIED JSON payloads (--format json, timezone -04:00).
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import type {
-  GHealthSleepSession,
-  GHealthHrvSample,
+  GHealthSleepListResponse,
+  GHealthHrvListResponse,
   SleepTransformerOutput,
 } from '@/etl/types';
 import {
@@ -19,66 +19,79 @@ import {
 } from '@/etl/transformers/sleep-hrv';
 
 // ========================================================================
-// REAL GHEALTH PAYLOAD FIXTURES (from user account, timezone -04:00)
+// REAL GHEALTH SIMPLIFIED JSON PAYLOAD FIXTURES (timezone -04:00)
+// Matches google-health-cli/pkg/output/simplify.go output
 // ========================================================================
 
-const FIXTURE_SLEEP_LIST_RESPONSE = {
+const FIXTURE_SLEEP_LIST_RESPONSE: GHealthSleepListResponse = {
   dataPoints: [
     {
-      // Main nocturnal sleep
-      startTimeMillis: "1732064400000", // 2024-11-20 00:00:00 -04:00
-      endTimeMillis: "1732089600000",   // 2024-11-20 07:00:00 -04:00
+      // Main nocturnal sleep: 2024-11-20 00:00 to 07:00 -04:00
+      source: 'Amazfit Bip 6',
+      id: 'sleep_1',
+      start: '2024-11-20T00:00:00-04:00',
+      end: '2024-11-20T07:00:00-04:00',
+      sleepType: 'MAIN',
       isNap: false,
-      sleepQuality: "GOOD",
+      minutesAsleep: 390,
+      minutesAwake: 30,
+      totalMinutes: 420,
+      minutesToFallAsleep: 10,
       stageMinutes: {
-        DEEP: "90",
-        LIGHT: "200",
-        REM: "100",
-        AWAKE: "30",
+        DEEP: 90,
+        LIGHT: 200,
+        REM: 100,
+        AWAKE: 30,
       },
       stages: [
-        { start: 0, end: 90, type: "DEEP" },
-        { start: 90, end: 180, type: "LIGHT" },
-        { start: 180, end: 240, type: "REM" },
-        { start: 240, end: 250, type: "AWAKE" },
-        { start: 250, end: 340, type: "LIGHT" },
-        { start: 340, end: 400, type: "DEEP" },
-        { start: 400, end: 420, type: "AWAKE" },
+        { type: 'DEEP', start: '2024-11-20T00:00:00-04:00', end: '2024-11-20T01:30:00-04:00' },
+        { type: 'LIGHT', start: '2024-11-20T01:30:00-04:00', end: '2024-11-20T03:00:00-04:00' },
+        { type: 'REM', start: '2024-11-20T03:00:00-04:00', end: '2024-11-20T04:00:00-04:00' },
+        { type: 'AWAKE', start: '2024-11-20T04:00:00-04:00', end: '2024-11-20T04:10:00-04:00' },
+        { type: 'LIGHT', start: '2024-11-20T04:10:00-04:00', end: '2024-11-20T05:40:00-04:00' },
+        { type: 'DEEP', start: '2024-11-20T05:40:00-04:00', end: '2024-11-20T06:40:00-04:00' },
+        { type: 'AWAKE', start: '2024-11-20T06:40:00-04:00', end: '2024-11-20T07:00:00-04:00' },
       ],
     },
     {
-      // Nap
-      startTimeMillis: "1732123200000", // 2024-11-20 14:00:00 -04:00
-      endTimeMillis: "1732126800000",   // 2024-11-20 15:00:00 -04:00
+      // Nap: 2024-11-20 14:00 to 15:00 -04:00
+      source: 'Amazfit Bip 6',
+      id: 'sleep_2',
+      start: '2024-11-20T14:00:00-04:00',
+      end: '2024-11-20T15:00:00-04:00',
+      sleepType: 'NAP',
       isNap: true,
-      sleepQuality: "UNKNOWN",
+      minutesAsleep: 60,
+      minutesAwake: 0,
+      totalMinutes: 60,
+      minutesToFallAsleep: 5,
       stageMinutes: {
-        LIGHT: "40",
-        REM: "20",
+        LIGHT: 40,
+        REM: 20,
       },
       stages: [
-        { start: 0, end: 40, type: "LIGHT" },
-        { start: 40, end: 60, type: "REM" },
+        { type: 'LIGHT', start: '2024-11-20T14:00:00-04:00', end: '2024-11-20T14:40:00-04:00' },
+        { type: 'REM', start: '2024-11-20T14:40:00-04:00', end: '2024-11-20T15:00:00-04:00' },
       ],
     },
   ],
   nextPageToken: null,
 };
 
-const FIXTURE_HRV_LIST_RESPONSE = {
+const FIXTURE_HRV_LIST_RESPONSE: GHealthHrvListResponse = {
   dataPoints: [
-    // Samples during nocturnal sleep
-    { startTimeMillis: "1732064400000", endTimeMillis: "1732064460000", rootMeanSquareOfSuccessiveDifferencesMilliseconds: "52.1" }, // 00:00 - deep
-    { startTimeMillis: "1732068000000", endTimeMillis: "1732068060000", rootMeanSquareOfSuccessiveDifferencesMilliseconds: "48.3" }, // 01:00 - deep
-    { startTimeMillis: "1732071600000", endTimeMillis: "1732071660000", rootMeanSquareOfSuccessiveDifferencesMilliseconds: "55.7" }, // 02:00 - deep
-    { startTimeMillis: "1732075200000", endTimeMillis: "1732075260000", rootMeanSquareOfSuccessiveDifferencesMilliseconds: "51.2" }, // 03:00 - deep
-    { startTimeMillis: "1732078800000", endTimeMillis: "1732078860000", rootMeanSquareOfSuccessiveDifferencesMilliseconds: "49.8" }, // 04:00 - light
-    { startTimeMillis: "1732082400000", endTimeMillis: "1732082460000", rootMeanSquareOfSuccessiveDifferencesMilliseconds: "47.5" }, // 05:00 - light
-    { startTimeMillis: "1732086000000", endTimeMillis: "1732086060000", rootMeanSquareOfSuccessiveDifferencesMilliseconds: "46.9" }, // 06:00 - REM
+    // Samples during nocturnal sleep (00:00-07:00 -04:00)
+    { source: 'Amazfit Bip 6', id: 'hrv_1', time: '2024-11-20T00:00:00-04:00', rmssd: 52.1 },
+    { source: 'Amazfit Bip 6', id: 'hrv_2', time: '2024-11-20T01:00:00-04:00', rmssd: 48.3 },
+    { source: 'Amazfit Bip 6', id: 'hrv_3', time: '2024-11-20T02:00:00-04:00', rmssd: 55.7 },
+    { source: 'Amazfit Bip 6', id: 'hrv_4', time: '2024-11-20T03:00:00-04:00', rmssd: 51.2 },
+    { source: 'Amazfit Bip 6', id: 'hrv_5', time: '2024-11-20T04:00:00-04:00', rmssd: 49.8 },
+    { source: 'Amazfit Bip 6', id: 'hrv_6', time: '2024-11-20T05:00:00-04:00', rmssd: 47.5 },
+    { source: 'Amazfit Bip 6', id: 'hrv_7', time: '2024-11-20T06:00:00-04:00', rmssd: 46.9 },
     // Sample during nap (should be ignored for nocturnal HRV)
-    { startTimeMillis: "1732123200000", endTimeMillis: "1732123260000", rootMeanSquareOfSuccessiveDifferencesMilliseconds: "42.1" }, // 14:00 - nap
-    // Sample outside sleep
-    { startTimeMillis: "1732104000000", endTimeMillis: "1732104060000", rootMeanSquareOfSuccessiveDifferencesMilliseconds: "38.2" }, // 11:00 - awake
+    { source: 'Amazfit Bip 6', id: 'hrv_8', time: '2024-11-20T14:00:00-04:00', rmssd: 42.1 },
+    // Sample outside sleep (11:00 - awake)
+    { source: 'Amazfit Bip 6', id: 'hrv_9', time: '2024-11-20T11:00:00-04:00', rmssd: 38.2 },
   ],
   nextPageToken: null,
 };
@@ -88,8 +101,8 @@ const FIXTURE_HRV_LIST_RESPONSE = {
 // ========================================================================
 
 describe('ETL Transformers - Sleep + HRV', () => {
-  let sleepSessions: GHealthSleepSession[];
-  let hrvSamples: GHealthHrvSample[];
+  let sleepSessions: ReturnType<typeof parseSleepSessions>;
+  let hrvSamples: ReturnType<typeof parseHrvSamples>;
 
   beforeEach(() => {
     sleepSessions = parseSleepSessions(FIXTURE_SLEEP_LIST_RESPONSE);
@@ -97,15 +110,18 @@ describe('ETL Transformers - Sleep + HRV', () => {
   });
 
   describe('parseSleepSessions', () => {
-    it('parses sleep sessions from ghealth response', () => {
+    it('parses sleep sessions from ghealth SIMPLIFIED JSON response', () => {
       expect(sleepSessions).toHaveLength(2);
       expect(sleepSessions[0].isNap).toBe(false);
       expect(sleepSessions[1].isNap).toBe(true);
     });
 
-    it('converts string timestamps to numbers', () => {
+    it('converts ISO 8601 timestamps to milliseconds', () => {
+      // 2024-11-20T00:00:00-04:00 = 1732075200000
+      // 2024-11-20T07:00:00-04:00 = 1732100400000
       expect(typeof sleepSessions[0].startTimeMillis).toBe('number');
-      expect(sleepSessions[0].startTimeMillis).toBe(1732064400000);
+      expect(sleepSessions[0].startTimeMillis).toBe(1732075200000);
+      expect(sleepSessions[0].endTimeMillis).toBe(1732100400000);
     });
 
     it('parses stageMinutes as numbers', () => {
@@ -115,40 +131,55 @@ describe('ETL Transformers - Sleep + HRV', () => {
       expect(sleepSessions[0].stageMinutes.AWAKE).toBe(30);
     });
 
-    it('parses hypnogram stages with numeric start/end/type', () => {
+    it('parses hypnogram stages with millisecond start/end/type', () => {
       expect(sleepSessions[0].stages).toHaveLength(7);
-      expect(sleepSessions[0].stages[0]).toEqual({ start: 0, end: 90, type: 'DEEP' });
-      expect(sleepSessions[0].stages[2]).toEqual({ start: 180, end: 240, type: 'REM' });
+      // First stage: DEEP from 00:00 to 01:30
+      expect(sleepSessions[0].stages[0].type).toBe('DEEP');
+      expect(sleepSessions[0].stages[0].start).toBe(1732075200000);
+      expect(sleepSessions[0].stages[0].end).toBe(1732080600000);
+      // Third stage: REM from 03:00 to 04:00
+      expect(sleepSessions[0].stages[2].type).toBe('REM');
+      expect(sleepSessions[0].stages[2].start).toBe(1732086000000);
+      expect(sleepSessions[0].stages[2].end).toBe(1732089600000);
     });
 
     it('handles missing stageMinutes gracefully', () => {
-      const response = {
-        dataPoints: [{ startTimeMillis: "1000", endTimeMillis: "2000", isNap: false }],
+      const response: GHealthSleepListResponse = {
+        dataPoints: [{ source: 'test', id: '1', start: '2024-11-20T00:00:00-04:00', end: '2024-11-20T07:00:00-04:00', sleepType: 'MAIN', isNap: false, minutesAsleep: 0, minutesAwake: 0, totalMinutes: 0, minutesToFallAsleep: 0, stageMinutes: {} }],
         nextPageToken: null,
       };
       const parsed = parseSleepSessions(response);
       expect(parsed[0].stageMinutes).toEqual({});
     });
+
+    it('handles missing stages gracefully', () => {
+      const response: GHealthSleepListResponse = {
+        dataPoints: [{ source: 'test', id: '1', start: '2024-11-20T00:00:00-04:00', end: '2024-11-20T07:00:00-04:00', sleepType: 'MAIN', isNap: false, minutesAsleep: 0, minutesAwake: 0, totalMinutes: 0, minutesToFallAsleep: 0, stageMinutes: {} }],
+        nextPageToken: null,
+      };
+      const parsed = parseSleepSessions(response);
+      expect(parsed[0].stages).toEqual([]);
+    });
   });
 
   describe('parseHrvSamples', () => {
-    it('parses HRV samples from ghealth response', () => {
+    it('parses HRV samples from ghealth SIMPLIFIED JSON response', () => {
       expect(hrvSamples).toHaveLength(9);
     });
 
-    it('converts RMSSD string to number', () => {
+    it('converts ISO 8601 time to milliseconds', () => {
+      expect(typeof hrvSamples[0].startTimeMillis).toBe('number');
+      expect(hrvSamples[0].startTimeMillis).toBe(1732075200000);
+    });
+
+    it('parses RMSSD as number', () => {
       expect(typeof hrvSamples[0].rmssd).toBe('number');
       expect(hrvSamples[0].rmssd).toBeCloseTo(52.1, 1);
     });
 
-    it('converts timestamps to numbers', () => {
-      expect(typeof hrvSamples[0].startTimeMillis).toBe('number');
-      expect(hrvSamples[0].startTimeMillis).toBe(1732064400000);
-    });
-
     it('handles missing RMSSD (null)', () => {
-      const response = {
-        dataPoints: [{ startTimeMillis: "1000", endTimeMillis: "2000" }],
+      const response: GHealthHrvListResponse = {
+        dataPoints: [{ source: 'test', id: '1', time: '2024-11-20T00:00:00-04:00' }],
         nextPageToken: null,
       };
       const parsed = parseHrvSamples(response);
@@ -182,10 +213,10 @@ describe('ETL Transformers - Sleep + HRV', () => {
   });
 
   describe('computeSleepMetrics', () => {
-    it('computes total sleep minutes from stageMinutes', () => {
+    it('computes total sleep minutes from stageMinutes (excludes awake)', () => {
       const nocturnal = sleepSessions.filter(s => !s.isNap);
       const metrics = computeSleepMetrics(nocturnal);
-      // TST = DEEP + LIGHT + REM = 90+200+100 = 390 (excludes AWAKE)
+      // TST = DEEP + LIGHT + REM = 90+200+100 = 390 (excludes AWAKE 30)
       expect(metrics.total_sleep_min).toBe(390);
     });
 
@@ -201,22 +232,18 @@ describe('ETL Transformers - Sleep + HRV', () => {
     it('computes sleep efficiency from hypnogram', () => {
       const nocturnal = sleepSessions.filter(s => !s.isNap);
       const metrics = computeSleepMetrics(nocturnal);
-      // TST = 420, TIB = 420 + 30 (awake) = 450? Actually from timestamps: 7h = 420min
-      // The fixture has 7 hours between start/end = 420min TIB
-      // But hypnogram awake = 30min, so TST = 390? Let's check...
-      // stages total: 90+90+60+10+90+60+20 = 420min = TIB
-      // awake in stages = 10+20 = 30min
-      // TST = 420 - 30 = 390min
-      // Wait, stageMinutes sums to 420, awake=30, so TST=390
+      // Time in bed = 7 hours = 420 min
+      // Total sleep time = 390 min
+      // Efficiency = 390/420 * 100 = 92.85... ≈ 93
       expect(metrics.time_in_bed_min).toBe(420);
       expect(metrics.total_sleep_min).toBe(390);
-      expect(metrics.sleep_efficiency_pct).toBeCloseTo(92.9, 0); // 390/420 * 100
+      expect(metrics.sleep_efficiency_pct).toBe(93); // Math.round(92.85) = 93
     });
 
     it('computes sleep onset latency (first non-AWAKE stage start)', () => {
       const nocturnal = sleepSessions.filter(s => !s.isNap);
       const metrics = computeSleepMetrics(nocturnal);
-      // First stage is DEEP at start=0, so latency = 0
+      // First stage is DEEP at start=0 (relative to session start), so latency = 0
       expect(metrics.sleep_onset_latency_min).toBe(0);
     });
 
@@ -225,7 +252,7 @@ describe('ETL Transformers - Sleep + HRV', () => {
       const metrics = computeSleepMetrics(naps);
       expect(metrics.naps_count).toBe(1);
       expect(metrics.naps_total_min).toBe(60);
-      expect(metrics.nap_sleep_min).toBe(60);
+      expect(metrics.nap_sleep_min).toBe(60); // LIGHT 40 + REM 20
     });
   });
 
@@ -265,7 +292,8 @@ describe('ETL Transformers - Sleep + HRV', () => {
       expect(output.deep_sleep_min).toBe(90);
       expect(output.rem_sleep_min).toBe(100);
       expect(output.hrv_nocturnal_count).toBe(7);
-      expect(output.hrv_nocturnal_median).toBeCloseTo(50, 0); // median of [46.9, 47.5, 48.3, 49.8, 51.2, 52.1, 55.7] ≈ 49.8
+      // Sorted RMSSD: [46.9, 47.5, 48.3, 49.8, 51.2, 52.1, 55.7], median = 49.8
+      expect(output.hrv_nocturnal_median).toBeCloseTo(49.8, 1);
     });
 
     it('falls back to all nocturnal HRV when deep sleep samples < 5', () => {

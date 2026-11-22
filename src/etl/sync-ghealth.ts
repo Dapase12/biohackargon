@@ -81,18 +81,29 @@ function parseDateArg(dateStr: string): Date {
   return date;
 }
 
-function dateToRfc3339(date: Date): string {
-  return date.toISOString();
+/**
+ * Format date as YYYY-MM-DD for ghealth CLI --from/--to flags.
+ * ghealth --to is EXCLUSIVE, so pass D+1 to include day D.
+ */
+function formatGHealthDate(date: Date): string {
+  return date.toISOString().split('T')[0] ?? '';
 }
 
-function getDateRange(from: string | undefined, to: string | undefined): { start: Date; end: Date } {
+/**
+ * Get date range for ghealth CLI.
+ * Returns { from: YYYY-MM-DD, to: YYYY-MM-DD (exclusive, so D+1 for inclusive end) }
+ */
+function getDateRange(from: string | undefined, to: string | undefined): { from: string; to: string } {
   const end = to ? parseDateArg(to) : new Date();
-  end.setHours(23, 59, 59, 999);
+  // ghealth --to is exclusive, so add 1 day to include the end date
+  const toDate = new Date(end.getTime() + 86400000);
 
   const start = from ? parseDateArg(from) : new Date(end.getTime() - 30 * 86400000);
-  start.setHours(0, 0, 0, 0);
 
-  return { start, end };
+  return {
+    from: formatGHealthDate(start),
+    to: formatGHealthDate(toDate),
+  };
 }
 
 // ========================================================================
@@ -435,21 +446,22 @@ async function syncDate(
   profile: UserEtlProfile,
   dryRun: boolean
 ): Promise<SyncResult> {
-  const startOfDay = new Date(date + 'T00:00:00');
-  const endOfDay = new Date(date + 'T23:59:59');
-  const startRfc = dateToRfc3339(startOfDay);
-  const endRfc = dateToRfc3339(endOfDay);
+  // ghealth expects YYYY-MM-DD for --from/--to, with --to being exclusive (D+1)
+  const startDate = new Date(date + 'T00:00:00');
+  const endDate = new Date(startDate.getTime() + 86400000); // D+1 for exclusive --to
+  const fromGHealth = formatGHealthDate(startDate);
+  const toGHealth = formatGHealthDate(endDate);
 
   try {
-    // Fetch all data for this date
+    // Fetch all data for this date using YYYY-MM-DD format
     const [sleepSessions, hrvSamples, exerciseSessions, hrSamples, exerciseEvents, bodyCompSamples] =
       await Promise.all([
-        ghealthClient.getSleepSessions(startRfc, endRfc),
-        ghealthClient.getHrvSamples(startRfc, endRfc),
-        ghealthClient.getExerciseSessions(startRfc, endRfc),
-        ghealthClient.getHeartRateSamples(startRfc, endRfc),
-        ghealthClient.getExerciseEvents(startRfc, endRfc),
-        ghealthClient.getBodyCompositionSamples(startRfc, endRfc),
+        ghealthClient.getSleepSessions(fromGHealth, toGHealth),
+        ghealthClient.getHrvSamples(fromGHealth, toGHealth),
+        ghealthClient.getExerciseSessions(fromGHealth, toGHealth),
+        ghealthClient.getHeartRateSamples(fromGHealth, toGHealth),
+        ghealthClient.getExerciseEvents(fromGHealth, toGHealth),
+        ghealthClient.getBodyCompositionSamples(fromGHealth, toGHealth),
       ]);
 
     // Transform
@@ -501,10 +513,31 @@ async function syncDate(
     };
 
     if (dryRun) {
+      // Helper to get first element keys
+      const getFirstKeys = (arr: any[]) => arr.length > 0 ? Object.keys(arr[0]) : [];
+
       console.log(`[DRY RUN] ${date}:`, {
         sleep: sleepData ? 'yes' : 'no',
         exercise: exerciseData.length,
         bodyComp: bodyCompData ? 'yes' : 'no',
+        rawCounts: {
+          sleepSessions: sleepSessions.length,
+          hrvSamples: hrvSamples.length,
+          exerciseSessions: exerciseSessions.length,
+          hrSamples: hrSamples.length,
+          bodyCompWeight: bodyCompSamples.weight.length,
+          bodyCompBodyFat: bodyCompSamples.bodyFat.length,
+        },
+        rawKeys: {
+          sleepSessions: getFirstKeys(sleepSessions),
+          hrvSamples: getFirstKeys(hrvSamples),
+          exerciseSessions: getFirstKeys(exerciseSessions),
+          hrSamples: getFirstKeys(hrSamples),
+          exerciseEvents: getFirstKeys(exerciseEvents),
+          bodyCompWeight: getFirstKeys(bodyCompSamples.weight),
+          bodyCompBodyFat: getFirstKeys(bodyCompSamples.bodyFat),
+        },
+        mergedRaw,
       });
       return { date, success: true, rowsAffected: 0 };
     }
@@ -542,9 +575,14 @@ async function runSync(options: SyncOptions): Promise<void> {
       dates.push(formatDate(d));
     }
   } else {
-    const { start, end } = getDateRange(options.from, options.to);
+    const range = getDateRange(options.from, options.to);
+    // Generate dates from range.from to range.to (exclusive)
+    const start = parseDateArg(range.from);
+    const end = parseDateArg(range.to);
+    // end is already D+1 exclusive, so subtract 1 day to get the last inclusive date
+    const lastInclusive = new Date(end.getTime() - 86400000);
     dates = [];
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    for (let d = new Date(start); d <= lastInclusive; d.setDate(d.getDate() + 1)) {
       dates.push(formatDate(d));
     }
   }

@@ -2,14 +2,14 @@
  * ARGON v7.0 — Exercise + HR Zones Transformer Unit Tests (TDD: RED phase)
  * Tests for parsing ghealth exercise sessions, minute HR, pause/resume events,
  * Karvonen %HRR zone classification.
- * Based on real ghealth payloads.
+ * Based on real ghealth SIMPLIFIED JSON payloads (--format json, timezone -04:00).
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import type {
-  GHealthExerciseSession,
-  GHealthHrSample,
-  GHealthExerciseEvent,
+  GHealthExerciseListResponse,
+  GHealthHrListResponse,
+  GHealthExerciseEventsResponse,
   ExerciseTransformerOutput,
 } from '@/etl/types';
 import {
@@ -22,115 +22,120 @@ import {
 } from '@/etl/transformers/exercise-zones';
 
 // ========================================================================
-// REAL GHEALTH PAYLOAD FIXTURES
+// REAL GHEALTH SIMPLIFIED JSON PAYLOAD FIXTURES (timezone -04:00)
+// Matches google-health-cli/pkg/output/simplify.go output
 // ========================================================================
 
-const FIXTURE_EXERCISE_LIST_RESPONSE = {
+const FIXTURE_EXERCISE_LIST_RESPONSE: GHealthExerciseListResponse = {
   dataPoints: [
     {
-      // Session 1: Running 30 min
-      startTimeMillis: "1732110000000", // 2024-11-20 10:00:00 -04:00
-      endTimeMillis: "1732111800000",   // 2024-11-20 10:30:00 -04:00
-      name: "Running",
-      type: "RUNNING",
-      averageHeartRateBeatsPerMinute: "145",
-      maxHeartRateBeatsPerMinute: "168",
-      caloriesBurned: "320",
+      // Session 1: Running 30 min (10:00-10:30 -04:00)
+      source: 'Amazfit Bip 6',
+      id: 'exercise_1',
+      start: '2024-11-20T10:00:00-04:00',
+      end: '2024-11-20T10:30:00-04:00',
+      type: 'RUNNING',
+      name: 'Running',
+      caloriesKcal: 320,
+      averageHeartRateBeatsPerMinute: 145,
+      maxHeartRateBeatsPerMinute: 168,
     },
     {
-      // Session 2: Strength training 45 min
-      startTimeMillis: "1732128000000", // 2024-11-20 16:00:00 -04:00
-      endTimeMillis: "1732129800000",   // 2024-11-20 16:30:00 -04:00
-      name: "Strength Training",
-      type: "STRENGTH_TRAINING",
-      averageHeartRateBeatsPerMinute: "120",
-      maxHeartRateBeatsPerMinute: "142",
-      caloriesBurned: "250",
+      // Session 2: Strength training 30 min (16:00-16:30 -04:00)
+      source: 'Amazfit Bip 6',
+      id: 'exercise_2',
+      start: '2024-11-20T16:00:00-04:00',
+      end: '2024-11-20T16:30:00-04:00',
+      type: 'STRENGTH_TRAINING',
+      name: 'Strength Training',
+      caloriesKcal: 250,
+      averageHeartRateBeatsPerMinute: 120,
+      maxHeartRateBeatsPerMinute: 142,
     },
   ],
   nextPageToken: null,
 };
 
-const FIXTURE_HR_LIST_RESPONSE = {
+const FIXTURE_HR_LIST_RESPONSE: GHealthHrListResponse = {
   dataPoints: [
     // Session 1 HR samples (10:00-10:30)
-    { startTimeMillis: "1732110000000", endTimeMillis: "1732110060000", beatsPerMinute: "130" },
-    { startTimeMillis: "1732110060000", endTimeMillis: "1732110120000", beatsPerMinute: "135" },
-    { startTimeMillis: "1732110120000", endTimeMillis: "1732110180000", beatsPerMinute: "140" },
-    { startTimeMillis: "1732110180000", endTimeMillis: "1732110240000", beatsPerMinute: "145" },
-    { startTimeMillis: "1732110240000", endTimeMillis: "1732110300000", beatsPerMinute: "150" },
-    { startTimeMillis: "1732110300000", endTimeMillis: "1732110360000", beatsPerMinute: "155" },
-    { startTimeMillis: "1732110360000", endTimeMillis: "1732110420000", beatsPerMinute: "160" },
-    { startTimeMillis: "1732110420000", endTimeMillis: "1732110480000", beatsPerMinute: "165" },
-    { startTimeMillis: "1732110480000", endTimeMillis: "1732110540000", beatsPerMinute: "168" },
-    { startTimeMillis: "1732110540000", endTimeMillis: "1732110600000", beatsPerMinute: "165" },
-    { startTimeMillis: "1732110600000", endTimeMillis: "1732110660000", beatsPerMinute: "160" },
-    { startTimeMillis: "1732110660000", endTimeMillis: "1732110720000", beatsPerMinute: "155" },
-    { startTimeMillis: "1732110720000", endTimeMillis: "1732110780000", beatsPerMinute: "150" },
-    { startTimeMillis: "1732110780000", endTimeMillis: "1732110840000", beatsPerMinute: "145" },
-    { startTimeMillis: "1732110840000", endTimeMillis: "1732110900000", beatsPerMinute: "140" },
-    { startTimeMillis: "1732110900000", endTimeMillis: "1732110960000", beatsPerMinute: "135" },
-    { startTimeMillis: "1732110960000", endTimeMillis: "1732111020000", beatsPerMinute: "130" },
-    { startTimeMillis: "1732111020000", endTimeMillis: "1732111080000", beatsPerMinute: "125" },
-    { startTimeMillis: "1732111080000", endTimeMillis: "1732111140000", beatsPerMinute: "120" },
-    { startTimeMillis: "1732111140000", endTimeMillis: "1732111200000", beatsPerMinute: "115" },
-    { startTimeMillis: "1732111200000", endTimeMillis: "1732111260000", beatsPerMinute: "110" },
-    { startTimeMillis: "1732111260000", endTimeMillis: "1732111320000", beatsPerMinute: "105" },
-    { startTimeMillis: "1732111320000", endTimeMillis: "1732111380000", beatsPerMinute: "100" },
-    { startTimeMillis: "1732111380000", endTimeMillis: "1732111440000", beatsPerMinute: "95" },
-    { startTimeMillis: "1732111440000", endTimeMillis: "1732111500000", beatsPerMinute: "90" },
-    { startTimeMillis: "1732111500000", endTimeMillis: "1732111560000", beatsPerMinute: "88" },
-    { startTimeMillis: "1732111560000", endTimeMillis: "1732111620000", beatsPerMinute: "85" },
-    { startTimeMillis: "1732111620000", endTimeMillis: "1732111680000", beatsPerMinute: "82" },
-    { startTimeMillis: "1732111680000", endTimeMillis: "1732111740000", beatsPerMinute: "80" },
-    { startTimeMillis: "1732111740000", endTimeMillis: "1732111800000", beatsPerMinute: "78" },
+    { source: 'Amazfit Bip 6', id: 'hr_1', time: '2024-11-20T10:00:00-04:00', beatsPerMinute: 130 },
+    { source: 'Amazfit Bip 6', id: 'hr_2', time: '2024-11-20T10:01:00-04:00', beatsPerMinute: 135 },
+    { source: 'Amazfit Bip 6', id: 'hr_3', time: '2024-11-20T10:02:00-04:00', beatsPerMinute: 140 },
+    { source: 'Amazfit Bip 6', id: 'hr_4', time: '2024-11-20T10:03:00-04:00', beatsPerMinute: 145 },
+    { source: 'Amazfit Bip 6', id: 'hr_5', time: '2024-11-20T10:04:00-04:00', beatsPerMinute: 150 },
+    { source: 'Amazfit Bip 6', id: 'hr_6', time: '2024-11-20T10:05:00-04:00', beatsPerMinute: 155 },
+    { source: 'Amazfit Bip 6', id: 'hr_7', time: '2024-11-20T10:06:00-04:00', beatsPerMinute: 160 },
+    { source: 'Amazfit Bip 6', id: 'hr_8', time: '2024-11-20T10:07:00-04:00', beatsPerMinute: 165 },
+    { source: 'Amazfit Bip 6', id: 'hr_9', time: '2024-11-20T10:08:00-04:00', beatsPerMinute: 168 },
+    { source: 'Amazfit Bip 6', id: 'hr_10', time: '2024-11-20T10:09:00-04:00', beatsPerMinute: 165 },
+    { source: 'Amazfit Bip 6', id: 'hr_11', time: '2024-11-20T10:10:00-04:00', beatsPerMinute: 160 },
+    { source: 'Amazfit Bip 6', id: 'hr_12', time: '2024-11-20T10:11:00-04:00', beatsPerMinute: 155 },
+    { source: 'Amazfit Bip 6', id: 'hr_13', time: '2024-11-20T10:12:00-04:00', beatsPerMinute: 150 },
+    { source: 'Amazfit Bip 6', id: 'hr_14', time: '2024-11-20T10:13:00-04:00', beatsPerMinute: 145 },
+    { source: 'Amazfit Bip 6', id: 'hr_15', time: '2024-11-20T10:14:00-04:00', beatsPerMinute: 140 },
+    { source: 'Amazfit Bip 6', id: 'hr_16', time: '2024-11-20T10:15:00-04:00', beatsPerMinute: 135 },
+    { source: 'Amazfit Bip 6', id: 'hr_17', time: '2024-11-20T10:16:00-04:00', beatsPerMinute: 130 },
+    { source: 'Amazfit Bip 6', id: 'hr_18', time: '2024-11-20T10:17:00-04:00', beatsPerMinute: 125 },
+    { source: 'Amazfit Bip 6', id: 'hr_19', time: '2024-11-20T10:18:00-04:00', beatsPerMinute: 120 },
+    { source: 'Amazfit Bip 6', id: 'hr_20', time: '2024-11-20T10:19:00-04:00', beatsPerMinute: 115 },
+    { source: 'Amazfit Bip 6', id: 'hr_21', time: '2024-11-20T10:20:00-04:00', beatsPerMinute: 110 },
+    { source: 'Amazfit Bip 6', id: 'hr_22', time: '2024-11-20T10:21:00-04:00', beatsPerMinute: 105 },
+    { source: 'Amazfit Bip 6', id: 'hr_23', time: '2024-11-20T10:22:00-04:00', beatsPerMinute: 100 },
+    { source: 'Amazfit Bip 6', id: 'hr_24', time: '2024-11-20T10:23:00-04:00', beatsPerMinute: 95 },
+    { source: 'Amazfit Bip 6', id: 'hr_25', time: '2024-11-20T10:24:00-04:00', beatsPerMinute: 90 },
+    { source: 'Amazfit Bip 6', id: 'hr_26', time: '2024-11-20T10:25:00-04:00', beatsPerMinute: 88 },
+    { source: 'Amazfit Bip 6', id: 'hr_27', time: '2024-11-20T10:26:00-04:00', beatsPerMinute: 85 },
+    { source: 'Amazfit Bip 6', id: 'hr_28', time: '2024-11-20T10:27:00-04:00', beatsPerMinute: 82 },
+    { source: 'Amazfit Bip 6', id: 'hr_29', time: '2024-11-20T10:28:00-04:00', beatsPerMinute: 80 },
+    { source: 'Amazfit Bip 6', id: 'hr_30', time: '2024-11-20T10:29:00-04:00', beatsPerMinute: 78 },
     // Session 2 HR samples (16:00-16:30)
-    { startTimeMillis: "1732128000000", endTimeMillis: "1732128060000", beatsPerMinute: "100" },
-    { startTimeMillis: "1732128060000", endTimeMillis: "1732128120000", beatsPerMinute: "105" },
-    { startTimeMillis: "1732128120000", endTimeMillis: "1732128180000", beatsPerMinute: "110" },
-    { startTimeMillis: "1732128180000", endTimeMillis: "1732128240000", beatsPerMinute: "115" },
-    { startTimeMillis: "1732128240000", endTimeMillis: "1732128300000", beatsPerMinute: "120" },
-    { startTimeMillis: "1732128300000", endTimeMillis: "1732128360000", beatsPerMinute: "125" },
-    { startTimeMillis: "1732128360000", endTimeMillis: "1732128420000", beatsPerMinute: "130" },
-    { startTimeMillis: "1732128420000", endTimeMillis: "1732128480000", beatsPerMinute: "135" },
-    { startTimeMillis: "1732128480000", endTimeMillis: "1732128540000", beatsPerMinute: "140" },
-    { startTimeMillis: "1732128540000", endTimeMillis: "1732128600000", beatsPerMinute: "142" },
-    { startTimeMillis: "1732128600000", endTimeMillis: "1732128660000", beatsPerMinute: "140" },
-    { startTimeMillis: "1732128660000", endTimeMillis: "1732128720000", beatsPerMinute: "135" },
-    { startTimeMillis: "1732128720000", endTimeMillis: "1732128780000", beatsPerMinute: "130" },
-    { startTimeMillis: "1732128780000", endTimeMillis: "1732128840000", beatsPerMinute: "125" },
-    { startTimeMillis: "1732128840000", endTimeMillis: "1732128900000", beatsPerMinute: "120" },
-    { startTimeMillis: "1732128900000", endTimeMillis: "1732128960000", beatsPerMinute: "115" },
-    { startTimeMillis: "1732128960000", endTimeMillis: "1732129020000", beatsPerMinute: "110" },
-    { startTimeMillis: "1732129020000", endTimeMillis: "1732129080000", beatsPerMinute: "105" },
-    { startTimeMillis: "1732129080000", endTimeMillis: "1732129140000", beatsPerMinute: "100" },
-    { startTimeMillis: "1732129140000", endTimeMillis: "1732129200000", beatsPerMinute: "95" },
-    { startTimeMillis: "1732129200000", endTimeMillis: "1732129260000", beatsPerMinute: "92" },
-    { startTimeMillis: "1732129260000", endTimeMillis: "1732129320000", beatsPerMinute: "90" },
-    { startTimeMillis: "1732129320000", endTimeMillis: "1732129380000", beatsPerMinute: "88" },
-    { startTimeMillis: "1732129380000", endTimeMillis: "1732129440000", beatsPerMinute: "85" },
-    { startTimeMillis: "1732129440000", endTimeMillis: "1732129500000", beatsPerMinute: "82" },
-    { startTimeMillis: "1732129500000", endTimeMillis: "1732129560000", beatsPerMinute: "80" },
-    { startTimeMillis: "1732129560000", endTimeMillis: "1732129620000", beatsPerMinute: "78" },
-    { startTimeMillis: "1732129620000", endTimeMillis: "1732129680000", beatsPerMinute: "76" },
-    { startTimeMillis: "1732129680000", endTimeMillis: "1732129740000", beatsPerMinute: "74" },
-    { startTimeMillis: "1732129740000", endTimeMillis: "1732129800000", beatsPerMinute: "72" },
+    { source: 'Amazfit Bip 6', id: 'hr_31', time: '2024-11-20T16:00:00-04:00', beatsPerMinute: 100 },
+    { source: 'Amazfit Bip 6', id: 'hr_32', time: '2024-11-20T16:01:00-04:00', beatsPerMinute: 105 },
+    { source: 'Amazfit Bip 6', id: 'hr_33', time: '2024-11-20T16:02:00-04:00', beatsPerMinute: 110 },
+    { source: 'Amazfit Bip 6', id: 'hr_34', time: '2024-11-20T16:03:00-04:00', beatsPerMinute: 115 },
+    { source: 'Amazfit Bip 6', id: 'hr_35', time: '2024-11-20T16:04:00-04:00', beatsPerMinute: 120 },
+    { source: 'Amazfit Bip 6', id: 'hr_36', time: '2024-11-20T16:05:00-04:00', beatsPerMinute: 125 },
+    { source: 'Amazfit Bip 6', id: 'hr_37', time: '2024-11-20T16:06:00-04:00', beatsPerMinute: 130 },
+    { source: 'Amazfit Bip 6', id: 'hr_38', time: '2024-11-20T16:07:00-04:00', beatsPerMinute: 135 },
+    { source: 'Amazfit Bip 6', id: 'hr_39', time: '2024-11-20T16:08:00-04:00', beatsPerMinute: 140 },
+    { source: 'Amazfit Bip 6', id: 'hr_40', time: '2024-11-20T16:09:00-04:00', beatsPerMinute: 142 },
+    { source: 'Amazfit Bip 6', id: 'hr_41', time: '2024-11-20T16:10:00-04:00', beatsPerMinute: 140 },
+    { source: 'Amazfit Bip 6', id: 'hr_42', time: '2024-11-20T16:11:00-04:00', beatsPerMinute: 135 },
+    { source: 'Amazfit Bip 6', id: 'hr_43', time: '2024-11-20T16:12:00-04:00', beatsPerMinute: 130 },
+    { source: 'Amazfit Bip 6', id: 'hr_44', time: '2024-11-20T16:13:00-04:00', beatsPerMinute: 125 },
+    { source: 'Amazfit Bip 6', id: 'hr_45', time: '2024-11-20T16:14:00-04:00', beatsPerMinute: 120 },
+    { source: 'Amazfit Bip 6', id: 'hr_46', time: '2024-11-20T16:15:00-04:00', beatsPerMinute: 115 },
+    { source: 'Amazfit Bip 6', id: 'hr_47', time: '2024-11-20T16:16:00-04:00', beatsPerMinute: 110 },
+    { source: 'Amazfit Bip 6', id: 'hr_48', time: '2024-11-20T16:17:00-04:00', beatsPerMinute: 105 },
+    { source: 'Amazfit Bip 6', id: 'hr_49', time: '2024-11-20T16:18:00-04:00', beatsPerMinute: 100 },
+    { source: 'Amazfit Bip 6', id: 'hr_50', time: '2024-11-20T16:19:00-04:00', beatsPerMinute: 95 },
+    { source: 'Amazfit Bip 6', id: 'hr_51', time: '2024-11-20T16:20:00-04:00', beatsPerMinute: 92 },
+    { source: 'Amazfit Bip 6', id: 'hr_52', time: '2024-11-20T16:21:00-04:00', beatsPerMinute: 90 },
+    { source: 'Amazfit Bip 6', id: 'hr_53', time: '2024-11-20T16:22:00-04:00', beatsPerMinute: 88 },
+    { source: 'Amazfit Bip 6', id: 'hr_54', time: '2024-11-20T16:23:00-04:00', beatsPerMinute: 85 },
+    { source: 'Amazfit Bip 6', id: 'hr_55', time: '2024-11-20T16:24:00-04:00', beatsPerMinute: 82 },
+    { source: 'Amazfit Bip 6', id: 'hr_56', time: '2024-11-20T16:25:00-04:00', beatsPerMinute: 80 },
+    { source: 'Amazfit Bip 6', id: 'hr_57', time: '2024-11-20T16:26:00-04:00', beatsPerMinute: 78 },
+    { source: 'Amazfit Bip 6', id: 'hr_58', time: '2024-11-20T16:27:00-04:00', beatsPerMinute: 76 },
+    { source: 'Amazfit Bip 6', id: 'hr_59', time: '2024-11-20T16:28:00-04:00', beatsPerMinute: 74 },
+    { source: 'Amazfit Bip 6', id: 'hr_60', time: '2024-11-20T16:29:00-04:00', beatsPerMinute: 72 },
   ],
   nextPageToken: null,
 };
 
-const FIXTURE_EXERCISE_EVENTS_RESPONSE = {
-  events: [
+const FIXTURE_EXERCISE_EVENTS_RESPONSE: GHealthExerciseEventsResponse = {
+  rollupDataPoints: [
     {
       // Pause at 10:10, Resume at 10:12 (2 min pause)
-      startTimeMillis: "1732110600000",
-      endTimeMillis: "1732110720000",
-      type: "PAUSE",
+      start: '2024-11-20T10:10:00-04:00',
+      end: '2024-11-20T10:12:00-04:00',
+      type: 'PAUSE',
     },
     {
-      startTimeMillis: "1732110720000",
-      endTimeMillis: "1732110720000",
-      type: "RESUME",
+      start: '2024-11-20T10:12:00-04:00',
+      end: '2024-11-20T10:12:00-04:00',
+      type: 'RESUME',
     },
     // No pauses in session 2
   ],
@@ -143,12 +148,13 @@ const TEST_PROFILE = {
   restingHR: 55,
   maxHR: 187, // Tanaka: 208 - 0.7*30 = 187
   biologicalSex: 'male' as const,
+  heightM: 1.75,
 };
 
 describe('ETL Transformers - Exercise + HR Zones', () => {
-  let exercises: GHealthExerciseSession[];
-  let hrSamples: GHealthHrSample[];
-  let events: GHealthExerciseEvent[];
+  let exercises: ReturnType<typeof parseExerciseSessions>;
+  let hrSamples: ReturnType<typeof parseHrSamples>;
+  let events: ReturnType<typeof parseExerciseEvents>;
 
   beforeEach(() => {
     exercises = parseExerciseSessions(FIXTURE_EXERCISE_LIST_RESPONSE);
@@ -157,59 +163,72 @@ describe('ETL Transformers - Exercise + HR Zones', () => {
   });
 
   describe('parseExerciseSessions', () => {
-    it('parses exercise sessions from ghealth response', () => {
+    it('parses exercise sessions from ghealth SIMPLIFIED JSON response', () => {
       expect(exercises).toHaveLength(2);
       expect(exercises[0].name).toBe('Running');
       expect(exercises[1].name).toBe('Strength Training');
     });
 
-    it('converts string numeric fields to numbers', () => {
+    it('converts ISO 8601 timestamps to milliseconds', () => {
+      // 2024-11-20T10:00:00-04:00 = 1732111200000
+      // 2024-11-20T10:30:00-04:00 = 1732113000000
+      expect(typeof exercises[0].startTimeMillis).toBe('number');
+      expect(exercises[0].startTimeMillis).toBe(1732111200000);
+      expect(exercises[0].endTimeMillis).toBe(1732113000000);
+    });
+
+    it('parses numeric fields as numbers', () => {
       expect(typeof exercises[0].averageHeartRateBeatsPerMinute).toBe('number');
       expect(exercises[0].averageHeartRateBeatsPerMinute).toBe(145);
       expect(typeof exercises[0].caloriesBurned).toBe('number');
       expect(exercises[0].caloriesBurned).toBe(320);
     });
 
-    it('converts timestamps to numbers', () => {
-      expect(typeof exercises[0].startTimeMillis).toBe('number');
-      expect(exercises[0].startTimeMillis).toBe(1732110000000);
+    it('computes durationMin from timestamps', () => {
+      expect(exercises[0].durationMin).toBe(30);
+      expect(exercises[1].durationMin).toBe(30);
     });
 
     it('handles missing optional fields', () => {
-      const response = {
-        dataPoints: [{ startTimeMillis: "1000", endTimeMillis: "2000" }],
+      const response: GHealthExerciseListResponse = {
+        dataPoints: [{ source: 'test', id: '1', start: '2024-11-20T10:00:00-04:00', end: '2024-11-20T10:30:00-04:00', type: 'RUNNING', name: 'Run', caloriesKcal: 0, averageHeartRateBeatsPerMinute: 0, maxHeartRateBeatsPerMinute: 0 }],
         nextPageToken: null,
       };
       const parsed = parseExerciseSessions(response);
-      expect(parsed[0].averageHeartRateBeatsPerMinute).toBeNull();
-      expect(parsed[0].caloriesBurned).toBeNull();
+      expect(parsed[0].averageHeartRateBeatsPerMinute).toBe(0);
+      expect(parsed[0].caloriesBurned).toBe(0);
     });
   });
 
   describe('parseHrSamples', () => {
-    it('parses HR samples from ghealth response', () => {
+    it('parses HR samples from ghealth SIMPLIFIED JSON response', () => {
       expect(hrSamples).toHaveLength(60); // 30 + 30 samples
     });
 
-    it('converts beatsPerMinute string to number', () => {
-      expect(typeof hrSamples[0].bpm).toBe('number');
-      expect(hrSamples[0].bpm).toBe(130);
+    it('converts ISO 8601 time to milliseconds', () => {
+      expect(typeof hrSamples[0].startTimeMillis).toBe('number');
+      expect(hrSamples[0].startTimeMillis).toBe(1732111200000);
     });
 
-    it('converts timestamps to numbers', () => {
-      expect(typeof hrSamples[0].startTimeMillis).toBe('number');
+    it('parses beatsPerMinute as number', () => {
+      expect(typeof hrSamples[0].bpm).toBe('number');
+      expect(hrSamples[0].bpm).toBe(130);
     });
   });
 
   describe('parseExerciseEvents', () => {
-    it('parses PAUSE and RESUME events', () => {
+    it('parses PAUSE and RESUME events from rollupDataPoints', () => {
       expect(events).toHaveLength(2);
       expect(events[0].type).toBe('PAUSE');
       expect(events[1].type).toBe('RESUME');
     });
 
-    it('converts timestamps to numbers', () => {
+    it('converts ISO 8601 timestamps to milliseconds', () => {
+      // 2024-11-20T10:10:00-04:00 = 1732111800000
+      // 2024-11-20T10:12:00-04:00 = 1732111920000
       expect(typeof events[0].startTimeMillis).toBe('number');
+      expect(events[0].startTimeMillis).toBe(1732111800000);
+      expect(events[0].endTimeMillis).toBe(1732111920000);
     });
   });
 
@@ -227,10 +246,10 @@ describe('ETL Transformers - Exercise + HR Zones', () => {
       const session1 = exercises[0];
       const filtered = filterHrDuringExercise(hrSamples, session1, events);
 
-      // Pause: 1732110600000 to 1732110720000 (2 min = 120 sec)
+      // Pause: 1732111800000 to 1732111920000 (2 min = 120 sec)
       // These samples should be excluded
       const pauseSamples = filtered.filter(s =>
-        s.startTimeMillis >= 1732110600000 && s.startTimeMillis < 1732110720000
+        s.startTimeMillis >= 1732111800000 && s.startTimeMillis < 1732111920000
       );
       expect(pauseSamples).toHaveLength(0);
     });
@@ -243,10 +262,11 @@ describe('ETL Transformers - Exercise + HR Zones', () => {
     });
 
     it('handles multiple pause/resume pairs', () => {
+      // Session2 starts at 16:00 (1732132800000), add pause at 16:10-16:12
       const multiPauseEvents = [
         ...events,
-        { startTimeMillis: 1732128600000, endTimeMillis: 1732128720000, type: 'PAUSE' as const },
-        { startTimeMillis: 1732128720000, endTimeMillis: 1732128720000, type: 'RESUME' as const },
+        { startTimeMillis: 1732133400000, endTimeMillis: 1732133520000, type: 'PAUSE' as const },
+        { startTimeMillis: 1732133520000, endTimeMillis: 1732133520000, type: 'RESUME' as const },
       ];
       const session2 = exercises[1];
       const filtered = filterHrDuringExercise(hrSamples, session2, multiPauseEvents);
@@ -354,14 +374,14 @@ describe('ETL Transformers - Exercise + HR Zones', () => {
       expect(output.max_hr).toBe(168);
     });
 
-    it('computes kcal from ghealth caloriesBurned when available', () => {
+    it('computes kcal from ghealth caloriesKcal when available', () => {
       const session = exercises[0];
       const output = computeExerciseMetrics(session, [], { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0, real: false });
       expect(output.kcal).toBe(320);
     });
 
     it('estimates kcal from HR when ghealth calories missing', () => {
-      const session = { ...exercises[0], caloriesBurned: null, averageHeartRateBeatsPerMinute: 145 };
+      const session = { ...exercises[0], caloriesBurned: 0, averageHeartRateBeatsPerMinute: 145 };
       const filteredHr = [{ bpm: 145, startTimeMillis: 0, endTimeMillis: 60000 }] as any;
       const output = computeExerciseMetrics(session, filteredHr, { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0, real: true });
       expect(output.kcal).toBeGreaterThan(0);

@@ -3,13 +3,14 @@
  * Parses ghealth weight/body-fat samples, cross-references,
  * EWMA trends, fat/FFM/muscle/bone/water, visceral fat, BMI, Katch-McArdle TDEE.
  * Pure functions, no side effects.
+ * Input: ghealth SIMPLIFIED JSON (--format json)
  */
 
 import type {
   GHealthWeightListResponse,
   GHealthBodyFatListResponse,
-  GHealthWeightSample,
-  GHealthBodyFatSample,
+  GHealthWeightSimplifiedSample,
+  GHealthBodyFatSimplifiedSample,
   ParsedBodyCompositionSample,
   BodyCompositionTransformerOutput,
   UserEtlProfile,
@@ -24,36 +25,57 @@ interface PairedBodyComp {
 /**
  * Safely parse a string to number, returning null if invalid.
  * ghealth CLI returns int64 fields as strings in protobuf JSON encoding.
- * weight.value and bodyFatPercentage.value are int64 (strings).
- * weight.unit and bodyFatPercentage.unit are strings.
  */
-function parseNumber(value: string | null | undefined): number | null {
+function parseNumber(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null;
-  const n = Number(value);
+  const n = typeof value === 'string' ? Number(value) : value;
   return Number.isFinite(n) ? n : null;
 }
 
 /**
- * Parse weight samples from ghealth response
+ * Parse ISO 8601 date string (YYYY-MM-DD) to milliseconds since epoch (midnight UTC)
+ */
+function parseDateToMillis(dateString: string | undefined): number {
+  if (!dateString) {
+    throw new Error('ISO 8601 date string is required');
+  }
+  // Parse YYYY-MM-DD as UTC midnight
+  const regex = /^(\d{4})-(\d{2})-(\d{2})$/;
+  const match = dateString.match(regex);
+
+  if (!match) {
+    // Fallback to Date.parse
+    const ms = Date.parse(dateString);
+    if (isNaN(ms)) {
+      throw new Error(`Invalid ISO 8601 date: ${dateString}`);
+    }
+    return ms;
+  }
+
+  const year = parseInt(match[1]!, 10);
+  const month = parseInt(match[2]!, 10) - 1;
+  const day = parseInt(match[3]!, 10);
+
+  return Date.UTC(year, month, day, 0, 0, 0, 0);
+}
+
+/**
+ * Parse weight samples from ghealth SIMPLIFIED JSON response
+ * Fields: date (YYYY-MM-DD), weightGrams (int64 in grams), unit
  */
 export function parseWeightSamples(
   response: GHealthWeightListResponse
 ): ParsedBodyCompositionSample[] {
-  return (response.dataPoints ?? []).map((sample: GHealthWeightListResponse['dataPoints'][0]) => {
+  return (response.dataPoints ?? []).map((sample) => {
     let weightKg: number | null = null;
-    if (sample.weight?.value) {
-      const value = parseNumber(sample.weight.value);
-      // Convert lb to kg if needed
-      if (value !== null && (sample.weight.unit === 'lb' || sample.weight.unit === 'lbs')) {
-        weightKg = value * 0.453592;
-      } else if (value !== null) {
-        weightKg = value;
-      }
+    if (sample.weightGrams !== undefined && sample.weightGrams !== null) {
+      // weightGrams is in grams, convert to kg
+      weightKg = sample.weightGrams / 1000;
     }
 
     return {
-      startTimeMillis: parseNumber(sample.startTimeMillis) ?? 0,
-      endTimeMillis: parseNumber(sample.endTimeMillis) ?? 0,
+      startTimeMillis: parseDateToMillis(sample.date!),
+      endTimeMillis: parseDateToMillis(sample.date!),
       weightKg,
       bodyFatPct: null,
     };
@@ -61,20 +83,23 @@ export function parseWeightSamples(
 }
 
 /**
- * Parse body fat samples from ghealth response
+ * Parse body fat samples from ghealth SIMPLIFIED JSON response
+ * Fields: date (YYYY-MM-DD), percentage (int64 = percentage * 100), unit
+ * Example: 20.20% is stored as 2020
  */
 export function parseBodyFatSamples(
   response: GHealthBodyFatListResponse
 ): ParsedBodyCompositionSample[] {
-  return (response.dataPoints ?? []).map((sample: GHealthBodyFatListResponse['dataPoints'][0]) => {
+  return (response.dataPoints ?? []).map((sample) => {
     let bodyFatPct: number | null = null;
-    if (sample.bodyFatPercentage?.value) {
-      bodyFatPct = parseNumber(sample.bodyFatPercentage.value);
+    if (sample.percentage !== undefined && sample.percentage !== null) {
+      // ghealth stores percentage as int64 * 100 (e.g., 20.20% = 2020)
+      bodyFatPct = sample.percentage / 100;
     }
 
     return {
-      startTimeMillis: parseNumber(sample.startTimeMillis) ?? 0,
-      endTimeMillis: parseNumber(sample.endTimeMillis) ?? 0,
+      startTimeMillis: parseDateToMillis(sample.date!),
+      endTimeMillis: parseDateToMillis(sample.date!),
       weightKg: null,
       bodyFatPct,
     };

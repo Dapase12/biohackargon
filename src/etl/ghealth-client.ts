@@ -79,7 +79,16 @@ async function executeGHealth<T>(
       stderr += data.toString();
     });
 
+    // 60 second timeout - store timer reference to clear it on completion
+    const timeoutTimer = setTimeout(() => {
+      proc.kill('SIGTERM');
+      reject(new Error('ghealth command timed out after 60s'));
+    }, 60000);
+
     proc.on('close', (code) => {
+      // Clear timeout timer to prevent memory leak
+      clearTimeout(timeoutTimer);
+
       if (code !== 0) {
         reject(new Error(`ghealth exited with code ${code}: ${stderr}`));
         return;
@@ -97,14 +106,9 @@ async function executeGHealth<T>(
     });
 
     proc.on('error', (err) => {
+      clearTimeout(timeoutTimer);
       reject(new Error(`Failed to spawn ghealth: ${err.message}`));
     });
-
-    // 60 second timeout
-    setTimeout(() => {
-      proc.kill('SIGTERM');
-      reject(new Error('ghealth command timed out after 60s'));
-    }, 60000);
   });
 }
 
@@ -205,6 +209,7 @@ export class GHealthClient {
 
   /**
    * Fetch heart rate samples for date range
+   * limit 500 per page to avoid large payloads (ghealth default max)
    */
   async getHeartRateSamples(
     from: string,
@@ -215,7 +220,7 @@ export class GHealthClient {
       GHealthHrListResponse['dataPoints'][0]
     >(
       ['data', 'heart-rate', 'list'],
-      { ...this.config, from, to, limit: 1000 },
+      { ...this.config, from, to, limit: 500 },
       (data) => data.dataPoints ?? [],
       (data) => data.nextPageToken ?? null
     );

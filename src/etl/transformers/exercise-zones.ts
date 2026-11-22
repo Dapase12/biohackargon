@@ -3,6 +3,7 @@
  * Parses ghealth exercise sessions, minute HR, pause/resume events,
  * Karvonen %HRR zone classification.
  * Pure functions, no side effects.
+ * Input: ghealth SIMPLIFIED JSON (--format json)
  */
 
 import type {
@@ -21,46 +22,104 @@ import type {
  * Safely parse a string to number, returning null if invalid.
  * ghealth CLI returns int64 fields as strings in protobuf JSON encoding.
  */
-function parseNumber(value: string | null | undefined): number | null {
+function parseNumber(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null;
-  const n = Number(value);
+  const n = typeof value === 'string' ? Number(value) : value;
   return Number.isFinite(n) ? n : null;
 }
 
 /**
- * Parse exercise sessions from ghealth response
+ * Parse ISO 8601 datetime string (with offset) to milliseconds since epoch
+ * Correctly handles timezone offsets like "2024-11-20T10:00:00-04:00"
+ * Uses manual parsing to ensure offset is applied correctly across all environments
  */
-export function parseExerciseSessions(response: GHealthExerciseListResponse): ParsedExerciseSession[] {
-  return (response.dataPoints ?? []).map((session: GHealthExerciseListResponse['dataPoints'][0]) => ({
-    startTimeMillis: parseNumber(session.startTimeMillis) ?? 0,
-    endTimeMillis: parseNumber(session.endTimeMillis) ?? 0,
-    name: session.name ?? '',
-    type: session.type ?? '',
-    averageHeartRateBeatsPerMinute: parseNumber(session.averageHeartRateBeatsPerMinute),
-    maxHeartRateBeatsPerMinute: parseNumber(session.maxHeartRateBeatsPerMinute),
-    caloriesBurned: parseNumber(session.caloriesBurned),
-    durationMin: Math.round((Number(session.endTimeMillis) - Number(session.startTimeMillis)) / 60000),
-  }));
+function parseIsoToMillis(isoString: string | undefined): number {
+  if (!isoString) {
+    throw new Error('ISO 8601 datetime string is required');
+  }
+  // Parse ISO 8601 with offset: "2024-11-20T00:00:00-04:00" or "2024-11-20T00:00:00.000-04:00"
+  // or "2024-11-20T00:00:00Z"
+  // More flexible regex that handles various formats
+  const regex = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})?$/;
+  const match = isoString.match(regex);
+
+  if (!match) {
+    // Fallback to Date.parse for unexpected formats
+    const ms = Date.parse(isoString);
+    if (isNaN(ms)) {
+      throw new Error(`Invalid ISO 8601 datetime: ${isoString}`);
+    }
+    return ms;
+  }
+
+  const year = parseInt(match[1]!, 10);
+  const month = parseInt(match[2]!, 10) - 1; // 0-indexed
+  const day = parseInt(match[3]!, 10);
+  const hour = parseInt(match[4]!, 10);
+  const minute = parseInt(match[5]!, 10);
+  const second = parseInt(match[6]!, 10);
+  const ms = match[7] ? parseInt(match[7]!.padEnd(3, '0').slice(0, 3), 10) : 0;
+  const tz = match[8]; // 'Z', '+04:00', '-04:00', '+0400', '-0400', or undefined
+
+  // Create date in UTC (treating the parsed time as local time)
+  const utcMs = Date.UTC(year, month, day, hour, minute, second, ms);
+
+  // Apply timezone offset if present
+  if (tz && tz !== 'Z') {
+    // Parse offset: +HH:MM, +HHMM, -HH:MM, -HHMM
+    const sign = tz[0] === '-' ? 1 : -1; // '-' means local is behind UTC, so add to get UTC
+    const tzClean = tz.slice(1).replace(':', '');
+    const tzHour = parseInt(tzClean.slice(0, 2), 10);
+    const tzMinute = parseInt(tzClean.slice(2, 4), 10);
+    const offsetMs = sign * (tzHour * 3600 + tzMinute * 60) * 1000;
+    return utcMs + offsetMs;
+  }
+
+  return utcMs;
 }
 
 /**
- * Parse HR samples from ghealth response
+ * Parse exercise sessions from ghealth SIMPLIFIED JSON response
+ * Fields: start, end, type, name, caloriesKcal, averageHeartRateBeatsPerMinute, maxHeartRateBeatsPerMinute
+ */
+export function parseExerciseSessions(response: GHealthExerciseListResponse): ParsedExerciseSession[] {
+  return (response.dataPoints ?? []).map((session) => {
+    const startTimeMillis = parseIsoToMillis(session.start!);
+    const endTimeMillis = parseIsoToMillis(session.end!);
+
+    return {
+      startTimeMillis,
+      endTimeMillis,
+      name: session.name ?? '',
+      type: session.type ?? '',
+      averageHeartRateBeatsPerMinute: parseNumber(session.averageHeartRateBeatsPerMinute),
+      maxHeartRateBeatsPerMinute: parseNumber(session.maxHeartRateBeatsPerMinute),
+      caloriesBurned: parseNumber(session.caloriesKcal),
+      durationMin: Math.round((endTimeMillis - startTimeMillis) / 60000),
+    };
+  });
+}
+
+/**
+ * Parse HR samples from ghealth SIMPLIFIED JSON response
+ * Fields: time, beatsPerMinute
  */
 export function parseHrSamples(response: GHealthHrListResponse): ParsedHrSample[] {
-  return (response.dataPoints ?? []).map((sample: GHealthHrListResponse['dataPoints'][0]) => ({
-    startTimeMillis: parseNumber(sample.startTimeMillis) ?? 0,
-    endTimeMillis: parseNumber(sample.endTimeMillis) ?? 0,
+  return (response.dataPoints ?? []).map((sample) => ({
+    startTimeMillis: parseIsoToMillis(sample.time!),
+    endTimeMillis: parseIsoToMillis(sample.time!), // HR samples are point-in-time
     bpm: parseNumber(sample.beatsPerMinute) ?? 0,
   }));
 }
 
 /**
- * Parse exercise events (pause/resume) from ghealth response
+ * Parse exercise events (pause/resume) from ghealth SIMPLIFIED JSON response
+ * Fields: start, end, type (PAUSE/RESUME)
  */
 export function parseExerciseEvents(response: GHealthExerciseEventsResponse): ParsedExerciseEvent[] {
-  return (response.events ?? []).map((event: GHealthExerciseEventsResponse['events'][0]) => ({
-    startTimeMillis: Number(event.startTimeMillis),
-    endTimeMillis: Number(event.endTimeMillis),
+  return (response.rollupDataPoints ?? []).map((event) => ({
+    startTimeMillis: parseIsoToMillis(event.start!),
+    endTimeMillis: parseIsoToMillis(event.end!),
     type: event.type,
   }));
 }
