@@ -55,7 +55,7 @@ const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROL
   auth: { persistSession: false },
 });
 
-// Default user profile (should come from user_profiles table in production)
+// Default user profile (fallback if profiles table not found)
 const DEFAULT_PROFILE: UserEtlProfile = {
   age: 30,
   restingHR: 55,
@@ -65,33 +65,70 @@ const DEFAULT_PROFILE: UserEtlProfile = {
 };
 
 /**
- * Fetch user profile from user_profiles table, fallback to DEFAULT_PROFILE
+ * Format Supabase/PostgREST error for logging - extracts message, code, details, hint
+ */
+function formatError(err: unknown): string {
+  if (!err) return 'Unknown error';
+
+  // PostgREST error object
+  if (typeof err === 'object' && err !== null) {
+    const e = err as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof e.message === 'string') parts.push(e.message);
+    if (typeof e.code === 'string') parts.push(`code: ${e.code}`);
+    if (typeof e.details === 'string') parts.push(`details: ${e.details}`);
+    if (typeof e.hint === 'string') parts.push(`hint: ${e.hint}`);
+    if (parts.length > 0) return parts.join(' | ');
+    // Fallback: stringify the whole object
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return String(err);
+    }
+  }
+
+  return String(err);
+}
+
+/**
+ * Fetch user profile from profiles table, fallback to DEFAULT_PROFILE
+ * profiles table has: birth_date, height_m, biological_sex, timezone, etc.
+ * resting_hr and max_hr are computed from age if not present
  */
 async function fetchUserProfile(userId: string): Promise<UserEtlProfile> {
   try {
     const { data, error } = await supabase
-      .from('user_profiles')
-      .select('age, resting_hr, max_hr, biological_sex, height_m')
+      .from('profiles')
+      .select('birth_date, height_m, biological_sex, resting_hr, max_hr')
       .eq('user_id', userId)
       .single();
 
     if (error || !data) {
-      console.warn(`[PROFILE] user_profiles not found for ${userId}, using DEFAULT_PROFILE`);
+      console.warn(`[PROFILE] profiles not found for ${userId}, using DEFAULT_PROFILE`);
       return DEFAULT_PROFILE;
     }
 
+    // Compute age from birth_date
+    const birthDate = new Date(data.birth_date);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+
     // Compute maxHR from Tanaka formula if not stored
-    const maxHR = data.max_hr ?? Math.round(208 - 0.7 * data.age);
+    const maxHR = data.max_hr ?? Math.round(208 - 0.7 * age);
 
     return {
-      age: data.age,
-      restingHR: data.resting_hr,
+      age,
+      restingHR: data.resting_hr ?? DEFAULT_PROFILE.restingHR,
       maxHR,
       biologicalSex: data.biological_sex,
       heightM: data.height_m,
     };
   } catch (error) {
-    console.warn(`[PROFILE] Error fetching profile for ${userId}:`, error);
+    console.warn(`[PROFILE] Error fetching profile for ${userId}:`, formatError(error));
     return DEFAULT_PROFILE;
   }
 }
@@ -226,8 +263,14 @@ async function transformBodyCompositionData(
 interface DailyRawBiometrics {
   user_id: string;
   log_date: string;
-  rmssd_ms?: number | null;
+  // HRV
+  hrv_rmssd_ms?: number | null;
+  hrv_sdnn_ms?: number | null;
+  hrv_pnn50_pct?: number | null;
+  // RHR
   rhr_bpm?: number | null;
+  // Sleep
+  sleep_score?: number | null;
   total_sleep_min?: number | null;
   deep_sleep_min?: number | null;
   rem_sleep_min?: number | null;
@@ -238,24 +281,43 @@ interface DailyRawBiometrics {
   sleep_onset_latency_min?: number | null;
   naps_count?: number;
   naps_total_min?: number;
+  // Activity
   steps?: number | null;
+  active_calories?: number | null;
+  exercise_min?: number | null;
+  exercise_type?: string | null;
+  exercise_intensity?: string | null;
+  // Body Composition
+  weight_kg?: number | null;
+  body_fat_pct?: number | null;
+  muscle_mass_kg?: number | null;
+  hydration_ml?: number | null;
+  // Nutrition
   intake_kcal?: number | null;
   intake_protein_g?: number | null;
   intake_carbs_g?: number | null;
   intake_fat_g?: number | null;
-  weight_kg?: number | null;
-  body_fat_pct?: number | null;
-  hydration_ml?: number | null;
+  meals_log_json?: any;
+  // HR zones (individual columns + jsonb)
+  z1_minutes?: number | null;
+  z2_minutes?: number | null;
+  z3_minutes?: number | null;
+  z4_minutes?: number | null;
+  z5_minutes?: number | null;
+  hr_zones_minutes?: any;
+  // Respiratory rate
   resp_rate_brpm?: number | null;
+  // SpO2
   spo2_pct?: number | null;
+  // Hospital shift
+  is_hospital_shift?: boolean | null;
+  night_awake_shift_hours?: number | null;
+  // Subjective
   session_rpe?: number | null;
   pickleball_or_gym_minutes?: number | null;
-  hr_zones_minutes?: any;
-  meals_log_json?: any;
-  hrv_nocturnal_median?: number | null;
-  hrv_deep_sleep_median?: number | null;
-  hrv_nocturnal_count?: number;
-  hrv_mode?: string;
+  // Metadata
+  raw_payload_hash?: string | null;
+  source?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -361,7 +423,7 @@ async function upsertDailyRawBiometrics(
     if (error) throw error;
     return { success: true };
   } catch (error) {
-    return { success: false, error: String(error) };
+    return { success: false, error: formatError(error) };
   }
 }
 
@@ -394,6 +456,7 @@ async function upsertComputedDailyScores(
 
 /**
  * Build daily_raw_biometrics from sleep transformer output
+ * Maps SleepTransformerOutput fields to daily_raw_biometrics schema columns
  */
 function buildRawBiometricsFromSleep(
   userId: string,
@@ -403,21 +466,58 @@ function buildRawBiometricsFromSleep(
   return {
     user_id: userId,
     log_date: date,
-    rmssd_ms: sleep.hrv_nocturnal_median,
-    total_sleep_min: sleep.total_sleep_min,
-    deep_sleep_min: sleep.deep_sleep_min,
-    rem_sleep_min: sleep.rem_sleep_min,
-    light_sleep_min: sleep.light_sleep_min,
-    awake_sleep_min: sleep.awake_sleep_min,
-    sleep_efficiency_pct: sleep.sleep_efficiency_pct,
-    time_in_bed_min: sleep.time_in_bed_min,
-    sleep_onset_latency_min: sleep.sleep_onset_latency_min,
-    naps_count: sleep.naps_count,
-    naps_total_min: sleep.naps_total_min,
-    hrv_nocturnal_median: sleep.hrv_nocturnal_median,
-    hrv_deep_sleep_median: sleep.hrv_deep_sleep_median,
-    hrv_nocturnal_count: sleep.hrv_nocturnal_count,
-    hrv_mode: sleep.hrv_mode,
+    // HRV: use nocturnal median as rmssd
+    hrv_rmssd_ms: sleep.hrv_nocturnal_median ? Math.round(sleep.hrv_nocturnal_median * 100) / 100 : null,
+    // RHR: not available from sleep alone
+    rhr_bpm: null,
+    // Sleep
+    sleep_score: null, // computed elsewhere
+    total_sleep_min: sleep.total_sleep_min ? Math.round(sleep.total_sleep_min) : null,
+    deep_sleep_min: sleep.deep_sleep_min ? Math.round(sleep.deep_sleep_min) : null,
+    rem_sleep_min: sleep.rem_sleep_min ? Math.round(sleep.rem_sleep_min) : null,
+    light_sleep_min: sleep.light_sleep_min ? Math.round(sleep.light_sleep_min) : null,
+    awake_sleep_min: sleep.awake_sleep_min ? Math.round(sleep.awake_sleep_min) : null,
+    sleep_efficiency_pct: sleep.sleep_efficiency_pct ? Math.round(sleep.sleep_efficiency_pct * 10) / 10 : null,
+    time_in_bed_min: sleep.time_in_bed_min ? Math.round(sleep.time_in_bed_min) : null,
+    sleep_onset_latency_min: sleep.sleep_onset_latency_min ? Math.round(sleep.sleep_onset_latency_min) : null,
+    naps_count: sleep.naps_count ?? 0,
+    naps_total_min: sleep.naps_total_min ?? 0,
+    // Activity: not from sleep
+    steps: null,
+    active_calories: null,
+    exercise_min: null,
+    exercise_type: null,
+    exercise_intensity: null,
+    // Body composition: not from sleep
+    weight_kg: null,
+    body_fat_pct: null,
+    muscle_mass_kg: null,
+    hydration_ml: null,
+    // Nutrition: not from sleep
+    intake_kcal: null,
+    intake_protein_g: null,
+    intake_carbs_g: null,
+    intake_fat_g: null,
+    meals_log_json: null,
+    // HR zones: not from sleep
+    z1_minutes: null,
+    z2_minutes: null,
+    z3_minutes: null,
+    z4_minutes: null,
+    z5_minutes: null,
+    hr_zones_minutes: null,
+    // Respiratory rate / SpO2: not available
+    resp_rate_brpm: null,
+    spo2_pct: null,
+    // Hospital shift
+    is_hospital_shift: false,
+    night_awake_shift_hours: null,
+    // Subjective
+    session_rpe: null,
+    pickleball_or_gym_minutes: null,
+    // Metadata
+    raw_payload_hash: null,
+    source: 'health_connect',
   };
 }
 
@@ -439,7 +539,7 @@ function buildRawBiometricsFromExercise(
   const maxHr = Math.max(...exercises.map(e => e.max_hr ?? 0).filter(h => h > 0));
   const avgHr = exercises.reduce((sum, e) => sum + (e.avg_hr ?? 0), 0) / exercises.length;
 
-  // Combine HR zones
+  // Combine HR zones (sum minutes across workouts)
   const combinedZones = exercises.reduce((acc, e) => {
     acc.z1_minutes += e.zones.z1;
     acc.z2_minutes += e.zones.z2;
@@ -459,11 +559,59 @@ function buildRawBiometricsFromExercise(
     workouts: [] as any[],
   });
 
+  // Determine primary exercise type from first workout
+  const primaryType = exercises[0]?.zones.workouts[0]?.type ?? null;
+
   return {
     user_id: userId,
     log_date: date,
-    pickleball_or_gym_minutes: totalDuration,
+    // Activity
+    steps: null, // not from exercise sessions
+    active_calories: Math.round(totalKcal),
+    exercise_min: Math.round(totalDuration),
+    exercise_type: primaryType,
+    exercise_intensity: maxHr > 0 && avgHr > 0 ? (avgHr / maxHr > 0.8 ? 'vigorous' : avgHr / maxHr > 0.6 ? 'moderate' : 'light') : null,
+    // HR zones (individual columns - rounded integers)
+    z1_minutes: Math.round(combinedZones.z1_minutes),
+    z2_minutes: Math.round(combinedZones.z2_minutes),
+    z3_minutes: Math.round(combinedZones.z3_minutes),
+    z4_minutes: Math.round(combinedZones.z4_minutes),
+    z5_minutes: Math.round(combinedZones.z5_minutes),
     hr_zones_minutes: combinedZones,
+    // Subjective
+    pickleball_or_gym_minutes: Math.round(totalDuration),
+    // Other fields not from exercise
+    hrv_rmssd_ms: null,
+    hrv_sdnn_ms: null,
+    hrv_pnn50_pct: null,
+    rhr_bpm: null,
+    sleep_score: null,
+    total_sleep_min: null,
+    deep_sleep_min: null,
+    rem_sleep_min: null,
+    light_sleep_min: null,
+    awake_sleep_min: null,
+    sleep_efficiency_pct: null,
+    time_in_bed_min: null,
+    sleep_onset_latency_min: null,
+    naps_count: 0,
+    naps_total_min: 0,
+    weight_kg: null,
+    body_fat_pct: null,
+    muscle_mass_kg: null,
+    hydration_ml: null,
+    intake_kcal: null,
+    intake_protein_g: null,
+    intake_carbs_g: null,
+    intake_fat_g: null,
+    meals_log_json: null,
+    resp_rate_brpm: null,
+    spo2_pct: null,
+    is_hospital_shift: false,
+    night_awake_shift_hours: null,
+    session_rpe: null,
+    raw_payload_hash: null,
+    source: 'health_connect',
   };
 }
 
@@ -560,6 +708,13 @@ async function syncDate(
     const exerciseData = await transformExerciseData(exerciseSessions, hrSamples, exerciseEvents, date, profile);
     const bodyCompData = await transformBodyCompositionData(bodyCompSamples.weight, bodyCompSamples.bodyFat, date, profile);
 
+    // Skip if no data at all (empty day) - don't insert empty rows in backfill
+    const hasAnyData = sleepData || exerciseData.length > 0 || bodyCompData;
+    if (!hasAnyData) {
+      console.log(`[SKIP] ${date}: no sleep, exercise, or body composition data`);
+      return { date, success: true, rowsAffected: 0 };
+    }
+
     // Build merged raw biometrics
     const rawParts: DailyRawBiometrics[] = [
       { user_id: userId, log_date: date },
@@ -569,39 +724,6 @@ async function syncDate(
     if (bodyCompData) rawParts.push(buildRawBiometricsFromBodyComp(userId, date, bodyCompData));
 
     const mergedRaw = mergeRawBiometrics(...rawParts);
-
-    // Build computed scores (placeholder - would use computeEngine in production)
-    const computed: ComputedDailyScores = {
-      user_id: userId,
-      log_date: date,
-      // Sleep scores
-      sleep_architecture_score: sleepData?.sleep_architecture_score ?? null,
-      sleep_regularity_pct: sleepData?.sleep_regularity_pct ?? null,
-      sleep_debt_h: sleepData?.sleep_debt_h ?? null,
-      dynamic_sleep_need_h: sleepData?.dynamic_sleep_need_h ?? null,
-      optimal_bedtime_start: sleepData?.optimal_bedtime_start ?? null,
-      optimal_bedtime_end: sleepData?.optimal_bedtime_end ?? null,
-      high_sleep_stress_pct: sleepData?.high_sleep_stress_pct ?? null,
-      cumulative_sleep_debt_hours: sleepData?.cumulative_sleep_debt_hours ?? null,
-      // HRV scores
-      ln_rmssd: sleepData?.hrv_nocturnal_median ? Math.log(sleepData.hrv_nocturnal_median) : null,
-      hrv_7d_avg_rmssd: sleepData?.hrv_nocturnal_median ?? null,
-      hrv_14d_avg_rmssd: sleepData?.hrv_nocturnal_median ?? null,
-      // Exercise scores
-      strain_score: exerciseData.length > 0 ? 8 : null, // placeholder
-      hr_z1_min: exerciseData.reduce((sum, e) => sum + e.zones.z1, 0) || null,
-      hr_z2_min: exerciseData.reduce((sum, e) => sum + e.zones.z2, 0) || null,
-      hr_z3_min: exerciseData.reduce((sum, e) => sum + e.zones.z3, 0) || null,
-      hr_z4_min: exerciseData.reduce((sum, e) => sum + e.zones.z4, 0) || null,
-      hr_z5_min: exerciseData.reduce((sum, e) => sum + e.zones.z5, 0) || null,
-      // Body comp scores
-      ffm_kg: bodyCompData?.ffm_kg ?? null,
-      muscle_mass_kg: bodyCompData?.muscle_mass_kg ?? null,
-      bone_mass_kg: bodyCompData?.bone_mass_kg ?? null,
-      water_kg: bodyCompData?.water_kg ?? null,
-      visceral_fat_index: bodyCompData?.visceral_fat_index ?? null,
-      bmi: bodyCompData?.bmi ?? null,
-    };
 
     if (dryRun) {
       // Helper to get first element keys
@@ -633,19 +755,16 @@ async function syncDate(
       return { date, success: true, rowsAffected: 0 };
     }
 
-    // Upsert to Supabase
-    const [rawResult, computedResult] = await Promise.all([
-      upsertDailyRawBiometrics(supabase, mergedRaw),
-      upsertComputedDailyScores(supabase, computed),
-    ]);
+    // Upsert to Supabase - ONLY daily_raw_biometrics (computed_daily_scores disabled per audit)
+    const rawResult = await upsertDailyRawBiometrics(supabase, mergedRaw);
+    // upsertComputedDailyScores DISABLED - no placeholder scores written during ETL sync
+    // computed_daily_scores is populated by a separate server-side computation job
 
     if (!rawResult.success) throw new Error(rawResult.error);
-    if (!computedResult.success) throw new Error(computedResult.error);
 
-    return { date, success: true, rowsAffected: 2 };
+    return { date, success: true, rowsAffected: 1 };
   } catch (error) {
-    const err = error as Error;
-    return { date, success: false, error: `${err.message}\n${err.stack ?? ''}`, rowsAffected: 0 };
+    return { date, success: false, error: formatError(error), rowsAffected: 0 };
   }
 }
 
