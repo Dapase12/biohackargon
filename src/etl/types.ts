@@ -87,11 +87,12 @@ export interface GHealthSleepListResponse {
   nextPageToken: string | null;
 }
 
-// Weight: dataPoints with date (YYYY-MM-DD), weightGrams, unit
+// Weight: dataPoints with time (ISO 8601 with offset) or date (YYYY-MM-DD), weightGrams, unit
 export interface GHealthWeightSimplifiedSample extends GHealthSimplifiedDataPoint {
-  date: string; // YYYY-MM-DD
+  time?: string; // ISO 8601 with offset (from sampleTime in simplify.go)
+  date?: string; // YYYY-MM-DD fallback
   weightGrams: number; // int64 value in grams
-  unit: string; // "g" or "kg" (but value always in grams per simplify.go)
+  unit: string; // "g" or "kg"
 }
 
 export interface GHealthWeightListResponse {
@@ -99,12 +100,12 @@ export interface GHealthWeightListResponse {
   nextPageToken: string | null;
 }
 
-// Body Fat: dataPoints with date (YYYY-MM-DD), percentage, unit
-// simplify.go: toInt(sample.GetBodyFat().GetPercentage()) -> returns raw int64 value
-// But ghealth protobuf stores percentage as float (e.g., 20.2 for 20.2%)
+// Body Fat: dataPoints with time (ISO 8601 with offset) or date (YYYY-MM-DD), percentage, unit
+// simplify.go copies percentage directly (float 0-100, e.g., 20.2)
 export interface GHealthBodyFatSimplifiedSample extends GHealthSimplifiedDataPoint {
-  date: string; // YYYY-MM-DD
-  percentage: number; // float value like 20.2 (NOT *100)
+  time?: string; // ISO 8601 with offset (from sampleTime in simplify.go)
+  date?: string; // YYYY-MM-DD fallback
+  percentage: number; // float value 0-100 like 20.2 (NOT *100)
   unit: string; // "%"
 }
 
@@ -165,6 +166,7 @@ export interface ParsedBodyCompositionSample {
   endTimeMillis: number;
   weightKg: number | null;
   bodyFatPct: number | null;
+  localDate?: string; // Local date YYYY-MM-DD from timestamp prefix
 }
 
 // ========================================================================

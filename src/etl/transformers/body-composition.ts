@@ -4,6 +4,7 @@
  * EWMA trends, fat/FFM/muscle/bone/water, visceral fat, BMI, Katch-McArdle TDEE.
  * Pure functions, no side effects.
  * Input: ghealth SIMPLIFIED JSON (--format json)
+ * Matches simplify.go: weight/body-fat have 'time' (ISO 8601 with offset) or 'date' (YYYY-MM-DD)
  */
 
 import type {
@@ -17,7 +18,7 @@ import type {
 } from '@/etl/types';
 
 interface PairedBodyComp {
-  date: string;
+  date: string; // Local date YYYY-MM-DD from timestamp prefix
   weightKg: number | null;
   bodyFatPct: number | null;
 }
@@ -33,79 +34,165 @@ function parseNumber(value: string | number | null | undefined): number | null {
 }
 
 /**
- * Parse ISO 8601 date string (YYYY-MM-DD) to milliseconds since epoch (midnight UTC)
+ * Parse ISO 8601 datetime string (with offset) to milliseconds since epoch
+ * Correctly handles timezone offsets like "2024-11-20T07:30:00-04:00"
+ * Uses manual parsing to ensure offset is applied correctly across all environments
  */
-function parseDateToMillis(dateString: string | undefined): number {
-  if (!dateString) {
-    throw new Error('ISO 8601 date string is required');
+function parseIsoToMillis(isoString: string | undefined): number {
+  if (!isoString) {
+    throw new Error('ISO 8601 datetime string is required');
   }
-  // Parse YYYY-MM-DD as UTC midnight
-  const regex = /^(\d{4})-(\d{2})-(\d{2})$/;
-  const match = dateString.match(regex);
+  // Handle formats from ghealth simplified JSON:
+  // "2024-11-20T07:30:00-04:00" or "2024-11-20T07:30:00Z" or "2024-11-20T07:30:00.000-04:00"
 
-  if (!match) {
+  // Split into date/time part and timezone part
+  let dateTimePart = isoString;
+  let tzPart: string = '';
+
+  // Find timezone indicator (Z or +/-HH:MM or +/-HHMM at the end)
+  const tzMatch = isoString.match(/(Z|[+-]\d{2}:?\d{2})$/);
+  if (tzMatch) {
+    tzPart = tzMatch[1] ?? '';
+    dateTimePart = isoString.slice(0, -tzPart.length);
+  }
+
+  // Parse date/time part: "2024-11-20T07:30:00" or "2024-11-20T07:30:00.000"
+  const dtRegex = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$/;
+  const dtMatch = dateTimePart.match(dtRegex);
+
+  if (!dtMatch) {
     // Fallback to Date.parse
-    const ms = Date.parse(dateString);
+    const ms = Date.parse(isoString);
     if (isNaN(ms)) {
-      throw new Error(`Invalid ISO 8601 date: ${dateString}`);
+      throw new Error(`Invalid ISO 8601 datetime: ${isoString}`);
     }
     return ms;
   }
 
-  const year = parseInt(match[1]!, 10);
-  const month = parseInt(match[2]!, 10) - 1;
-  const day = parseInt(match[3]!, 10);
+  const year = parseInt(dtMatch[1]!, 10);
+  const month = parseInt(dtMatch[2]!, 10) - 1; // 0-indexed
+  const day = parseInt(dtMatch[3]!, 10);
+  const hour = parseInt(dtMatch[4]!, 10);
+  const minute = parseInt(dtMatch[5]!, 10);
+  const second = parseInt(dtMatch[6]!, 10);
+  const ms = dtMatch[7] ? parseInt(dtMatch[7]!.padEnd(3, '0').slice(0, 3), 10) : 0;
 
-  return Date.UTC(year, month, day, 0, 0, 0, 0);
+  // Create date in UTC (treating the parsed time as local time)
+  const utcMs = Date.UTC(year, month, day, hour, minute, second, ms);
+
+  // Apply timezone offset if present
+  if (tzPart && tzPart !== 'Z') {
+    // Parse offset: +HH:MM, +HHMM, -HH:MM, -HHMM
+    const sign = tzPart[0] === '-' ? 1 : -1; // '-' means local is behind UTC, so add to get UTC
+    const tzClean = tzPart.slice(1).replace(':', '');
+    const tzHour = parseInt(tzClean.slice(0, 2), 10);
+    const tzMinute = parseInt(tzClean.slice(2, 4), 10);
+    const offsetMs = sign * (tzHour * 3600 + tzMinute * 60) * 1000;
+    return utcMs + offsetMs;
+  }
+
+  return utcMs;
 }
 
 /**
  * Parse weight samples from ghealth SIMPLIFIED JSON response
- * Fields: date (YYYY-MM-DD), weightGrams (int64 in grams), unit
+ * Fields: time (ISO 8601 with offset) OR date (YYYY-MM-DD), weightGrams (int64 in grams), unit
+ * Filters out samples without valid timestamp
  */
 export function parseWeightSamples(
   response: GHealthWeightListResponse
 ): ParsedBodyCompositionSample[] {
-  return (response.dataPoints ?? []).map((sample) => {
+  const result: ParsedBodyCompositionSample[] = [];
+
+  for (const sample of response.dataPoints ?? []) {
+    // Accept time (ISO 8601 with offset) OR date (YYYY-MM-DD) per simplify.go
+    const timestamp = sample.time ?? sample.date;
+    if (!timestamp) {
+      // Sample without valid timestamp - skip it
+      continue;
+    }
+
+    let startTimeMillis: number;
+    try {
+      startTimeMillis = parseIsoToMillis(timestamp);
+    } catch {
+      // Invalid timestamp - skip it
+      continue;
+    }
+
     let weightKg: number | null = null;
     if (sample.weightGrams !== undefined && sample.weightGrams !== null) {
       // weightGrams is in grams, convert to kg
-      weightKg = sample.weightGrams / 1000;
+      weightKg = parseNumber(sample.weightGrams) ?? null;
+      if (weightKg !== null) {
+        weightKg = weightKg / 1000;
+      }
     }
 
-    return {
-      startTimeMillis: parseDateToMillis(sample.date!),
-      endTimeMillis: parseDateToMillis(sample.date!),
+    // Extract local date from timestamp prefix (YYYY-MM-DD) for grouping
+    // Avoids UTC midnight boundary issues for night-time weigh-ins
+    const localDate = timestamp.slice(0, 10);
+
+    result.push({
+      startTimeMillis,
+      endTimeMillis: startTimeMillis,
       weightKg,
       bodyFatPct: null,
-    };
-  });
+      localDate,
+    });
+  }
+
+  return result;
 }
 
 /**
  * Parse body fat samples from ghealth SIMPLIFIED JSON response
- * Fields: date (YYYY-MM-DD), percentage (float like 20.2), unit
- * simplify.go: toInt(sample.GetBodyFat().GetPercentage()) - but GetPercentage() returns float64
- * So percentage is already a float value like 20.2 (NOT *100)
+ * Fields: time (ISO 8601 with offset) OR date (YYYY-MM-DD), percentage (float 0-100), unit
+ * simplify.go copies percentage directly as float64 (e.g., 20.2 for 20.2%)
+ * Filters out samples without valid timestamp
  */
 export function parseBodyFatSamples(
   response: GHealthBodyFatListResponse
 ): ParsedBodyCompositionSample[] {
-  return (response.dataPoints ?? []).map((sample) => {
+  const result: ParsedBodyCompositionSample[] = [];
+
+  for (const sample of response.dataPoints ?? []) {
+    // Accept time (ISO 8601 with offset) OR date (YYYY-MM-DD) per simplify.go
+    const timestamp = sample.time ?? sample.date;
+    if (!timestamp) {
+      // Sample without valid timestamp - skip it
+      continue;
+    }
+
+    let startTimeMillis: number;
+    try {
+      startTimeMillis = parseIsoToMillis(timestamp);
+    } catch {
+      // Invalid timestamp - skip it
+      continue;
+    }
+
     let bodyFatPct: number | null = null;
     if (sample.percentage !== undefined && sample.percentage !== null) {
-      // ghealth returns percentage as float (e.g., 20.2 for 20.2%)
+      // ghealth returns percentage as float 0-100 (e.g., 20.2 for 20.2%)
       // parseNumber handles string->number conversion from protobuf JSON
+      // NO /100 division needed - already in correct scale
       bodyFatPct = parseNumber(sample.percentage);
     }
 
-    return {
-      startTimeMillis: parseDateToMillis(sample.date!),
-      endTimeMillis: parseDateToMillis(sample.date!),
+    // Extract local date from timestamp prefix (YYYY-MM-DD) for grouping
+    const localDate = timestamp.slice(0, 10);
+
+    result.push({
+      startTimeMillis,
+      endTimeMillis: startTimeMillis,
       weightKg: null,
       bodyFatPct,
-    };
-  });
+      localDate,
+    });
+  }
+
+  return result;
 }
 
 /**
@@ -121,18 +208,25 @@ export function parseBodyCompositionSamples(
 }
 
 /**
- * Cross-reference weight and body fat samples by date
+ * Cross-reference weight and body fat samples by local date
  * Prefers morning sample (earliest of day) for both weight and body fat
+ * Uses localDate from timestamp prefix to avoid UTC midnight boundary issues
+ * Falls back to deriving localDate from startTimeMillis if not present
  */
 export function crossReferenceWeightAndBodyFat(
   samples: ParsedBodyCompositionSample[]
 ): PairedBodyComp[] {
-  // Group samples by date
+  // Group samples by local date (from timestamp prefix or derived from startTimeMillis)
   const byDate = new Map<string, ParsedBodyCompositionSample[]>();
 
   for (const sample of samples) {
-    const isoDate = new Date(sample.startTimeMillis).toISOString();
-    const date = isoDate.split('T')[0];
+    // Use localDate if present, otherwise derive from startTimeMillis (UTC date)
+    let date = sample.localDate;
+    if (!date) {
+      // Derive local date from UTC milliseconds (YYYY-MM-DD)
+      const d = new Date(sample.startTimeMillis);
+      date = d.toISOString().slice(0, 10);
+    }
     if (!date) continue;
     if (!byDate.has(date)) {
       byDate.set(date, []);

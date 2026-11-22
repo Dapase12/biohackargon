@@ -140,7 +140,7 @@ async function transformExerciseData(
 ): Promise<ExerciseTransformerOutput[]> {
   const parsedExercises = parseExerciseSessions({ dataPoints: exerciseSessions, nextPageToken: null });
   const parsedHr = parseHrSamples({ dataPoints: hrSamples, nextPageToken: null });
-  const parsedEvents = parseExerciseEvents({ events: exerciseEvents, nextPageToken: null });
+  const parsedEvents = parseExerciseEvents({ rollupDataPoints: exerciseEvents, nextPageToken: null });
 
   const results: ExerciseTransformerOutput[] = [];
 
@@ -472,6 +472,31 @@ async function syncDate(
         ghealthClient.getExerciseEvents(fromGHealth, toGHealth),
         ghealthClient.getBodyCompositionSamples(fromGHealth, toGHealth),
       ]);
+
+    // Diagnostic logging before transformers (dry-run only)
+    if (dryRun) {
+      const getFirstEl = (arr: any[]) => arr.length > 0 ? arr[0] : null;
+      console.log(`[DRY RUN] ${date} - RAW RESPONSES:`, {
+        rawCounts: {
+          sleepSessions: sleepSessions.length,
+          hrvSamples: hrvSamples.length,
+          exerciseSessions: exerciseSessions.length,
+          hrSamples: hrSamples.length,
+          exerciseEvents: exerciseEvents.length,
+          bodyCompWeight: bodyCompSamples.weight.length,
+          bodyCompBodyFat: bodyCompSamples.bodyFat.length,
+        },
+        firstElements: {
+          sleepSessions: getFirstEl(sleepSessions),
+          hrvSamples: getFirstEl(hrvSamples),
+          exerciseSessions: getFirstEl(exerciseSessions),
+          hrSamples: getFirstEl(hrSamples),
+          exerciseEvents: getFirstEl(exerciseEvents),
+          bodyCompWeight: getFirstEl(bodyCompSamples.weight),
+          bodyCompBodyFat: getFirstEl(bodyCompSamples.bodyFat),
+        },
+      });
+    }
 
     // Transform
     const sleepData = await transformSleepData(sleepSessions, hrvSamples, date);
