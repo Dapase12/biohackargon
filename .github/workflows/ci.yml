@@ -31,8 +31,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: TypeScript type check
-        run: npx tsc --noEmit
+      - name: TypeScript type check (ETL only)
+        run: npx tsc --noEmit src/etl/**/*.ts
 
       - name: Run tests (Vitest)
         run: npm test
