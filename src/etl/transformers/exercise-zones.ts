@@ -171,6 +171,9 @@ export function filterHrDuringExercise(
  * Z3: 70-80% HRR
  * Z4: 80-90% HRR
  * Z5: 90-100% HRR
+ *
+ * Calculates REAL minutes by using time delta between consecutive HR samples
+ * (not just counting samples). ghealth returns samples every ~5 seconds.
  */
 export function classifyHrZonesKarvonen(
   hrSamples: ParsedHrSample[],
@@ -194,22 +197,47 @@ export function classifyHrZonesKarvonen(
     workouts: [],
   };
 
-  for (const sample of hrSamples) {
+  // Sort samples by time to calculate durations between consecutive samples
+  const sortedSamples = [...hrSamples].sort((a, b) => a.startTimeMillis - b.startTimeMillis);
+
+  for (let i = 0; i < sortedSamples.length; i++) {
+    const sample = sortedSamples[i];
     const hr = sample.bpm;
-    if (hr < z2Min) {
-      // Below Z2 (including below Z1) counts as Z1
-      zones.z1++;
-    } else if (hr < z3Min) {
-      zones.z2++;
-    } else if (hr < z4Min) {
-      zones.z3++;
-    } else if (hr < z5Min) {
-      zones.z4++;
+
+    // Calculate duration to next sample (or session end for last sample)
+    let durationMs: number;
+    if (i < sortedSamples.length - 1) {
+      durationMs = sortedSamples[i + 1].startTimeMillis - sample.startTimeMillis;
     } else {
-      // Z5 and above counts as Z5
-      zones.z5++;
+      // Last sample: assume same interval as previous, or 5 seconds default
+      durationMs = i > 0
+        ? sample.startTimeMillis - sortedSamples[i - 1].startTimeMillis
+        : 5000; // 5 seconds default
     }
+
+    // Cap at reasonable max (e.g., 60 seconds) to handle gaps
+    const durationMin = Math.min(durationMs / 60000, 1);
+
+    let zone: keyof Pick<HrZoneMinutes, 'z1' | 'z2' | 'z3' | 'z4' | 'z5'>;
+    if (hr < z2Min) {
+      zone = 'z1';
+    } else if (hr < z3Min) {
+      zone = 'z2';
+    } else if (hr < z4Min) {
+      zone = 'z3';
+    } else if (hr < z5Min) {
+      zone = 'z4';
+    } else {
+      zone = 'z5';
+    }
+
+    zones[zone] += durationMin;
   }
+
+  // Round to 1 decimal place for minutes
+  (['z1', 'z2', 'z3', 'z4', 'z5'] as const).forEach(z => {
+    zones[z] = Math.round(zones[z] * 10) / 10;
+  });
 
   return zones;
 }

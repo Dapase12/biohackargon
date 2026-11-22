@@ -69,16 +69,24 @@ const DEFAULT_PROFILE: UserEtlProfile = {
 // ========================================================================
 
 function formatDate(date: Date): string {
-  const iso = date.toISOString();
-  return iso.split('T')[0] ?? '';
+  // Use UTC to ensure consistent date strings regardless of local timezone
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function parseDateArg(dateStr: string): Date {
-  const date = new Date(dateStr + 'T00:00:00');
-  if (isNaN(date.getTime())) {
+  // Parse YYYY-MM-DD as UTC midnight for determinism
+  const regex = /^(\d{4})-(\d{2})-(\d{2})$/;
+  const match = dateStr.match(regex);
+  if (!match) {
     throw new Error(`Invalid date format: ${dateStr}. Use YYYY-MM-DD`);
   }
-  return date;
+  const year = parseInt(match[1]!, 10);
+  const month = parseInt(match[2]!, 10) - 1;
+  const day = parseInt(match[3]!, 10);
+  return Date.UTC(year, month, day, 0, 0, 0, 0);
 }
 
 /**
@@ -553,7 +561,8 @@ async function syncDate(
 
     return { date, success: true, rowsAffected: 2 };
   } catch (error) {
-    return { date, success: false, error: String(error), rowsAffected: 0 };
+    const err = error as Error;
+    return { date, success: false, error: `${err.message}\n${err.stack ?? ''}`, rowsAffected: 0 };
   }
 }
 

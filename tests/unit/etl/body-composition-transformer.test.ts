@@ -30,7 +30,7 @@ import {
 // REAL GHEALTH SIMPLIFIED JSON PAYLOAD FIXTURES
 // Matches google-health-cli/pkg/output/simplify.go output
 // weight: date (YYYY-MM-DD), weightGrams (int64 in grams), unit
-// body-fat: date (YYYY-MM-DD), percentage (int64), unit
+// body-fat: date (YYYY-MM-DD), percentage (float like 20.2, NOT *100), unit
 // ========================================================================
 
 const FIXTURE_WEIGHT_RESPONSE: GHealthWeightListResponse = {
@@ -70,7 +70,7 @@ const FIXTURE_BODY_FAT_RESPONSE: GHealthBodyFatListResponse = {
       source: 'CS20M Scale',
       id: 'bodyfat_1',
       date: '2024-11-20',
-      percentage: 2020, // 20.20% stored as int64 (percentage * 100)
+      percentage: 20.2, // float value like 20.2 (NOT *100) per simplify.go
       unit: '%',
     },
     // Evening body fat - 2024-11-20
@@ -78,7 +78,7 @@ const FIXTURE_BODY_FAT_RESPONSE: GHealthBodyFatListResponse = {
       source: 'CS20M Scale',
       id: 'bodyfat_2',
       date: '2024-11-20',
-      percentage: 2000, // 20.00%
+      percentage: 20.0, // 20.0%
       unit: '%',
     },
     // Next day morning - 2024-11-21
@@ -86,7 +86,7 @@ const FIXTURE_BODY_FAT_RESPONSE: GHealthBodyFatListResponse = {
       source: 'CS20M Scale',
       id: 'bodyfat_3',
       date: '2024-11-21',
-      percentage: 2050, // 20.50%
+      percentage: 20.5, // 20.5%
       unit: '%',
     },
   ],
@@ -163,9 +163,9 @@ describe('ETL Transformers - Body Composition', () => {
       expect(bodyFatSamples).toHaveLength(3);
     });
 
-    it('converts percentage (int64 * 100) to decimal', () => {
+    it('converts percentage (float 0-100) to decimal (NEW: 0-100 scale fix)', () => {
       expect(typeof bodyFatSamples[0].bodyFatPct).toBe('number');
-      expect(bodyFatSamples[0].bodyFatPct).toBe(20.2); // 2020 / 100 = 20.2%
+      expect(bodyFatSamples[0].bodyFatPct).toBe(20.2); // percentage is already 20.2 (NOT *100)
       expect(bodyFatSamples[0].weightKg).toBeNull();
     });
 
@@ -184,7 +184,7 @@ describe('ETL Transformers - Body Composition', () => {
       expect(typeof combinedSamples[0].weightKg).toBe('number');
       expect(combinedSamples[0].weightKg).toBe(80.5);
       expect(typeof combinedSamples[3].bodyFatPct).toBe('number');
-      expect(combinedSamples[3].bodyFatPct).toBe(20.2);
+      expect(combinedSamples[3].bodyFatPct).toBe(20.2); // 0-100 scale, not *100
     });
   });
 
@@ -208,7 +208,7 @@ describe('ETL Transformers - Body Composition', () => {
       const paired = crossReferenceWeightAndBodyFat(combinedSamples);
       const nov20 = paired.find(p => p.date === '2024-11-20');
       expect(nov20).toBeDefined();
-      // Morning body fat (20.2) should be preferred over evening (20.0)
+      // Morning body fat (20.2) should be preferred over evening (20.0) - 0-100 scale
       expect(nov20!.bodyFatPct).toBe(20.2);
     });
 
@@ -302,7 +302,7 @@ describe('ETL Transformers - Body Composition', () => {
 
       expect(output.log_date).toBe('2024-11-20');
       expect(output.weight_kg).toBe(80.5);
-      expect(output.body_fat_pct).toBe(20.2);
+      expect(output.body_fat_pct).toBe(20.2); // 0-100 scale
       expect(output.bmi).toBeCloseTo(26.3, 1); // 80.5 / (1.75^2)
       expect(output.ffm_kg).toBeCloseTo(64.2, 1); // 80.5 * 0.798
       expect(output.muscle_mass_kg).toBeGreaterThan(0);
@@ -317,6 +317,18 @@ describe('ETL Transformers - Body Composition', () => {
       const ffm = output.weight_kg! - fatMass;
       expect(output.ffm_kg).toBeCloseTo(ffm, 1);
       expect(output.fat_mass_kg).toBeCloseTo(fatMass, 1);
+    });
+
+    it('handles body fat percentage in 0-100 scale (NEW: 0-100 scale fix)', () => {
+      // Verify body fat is treated as 0-100, not 0-10000
+      const paired = crossReferenceWeightAndBodyFat(combinedSamples);
+      const output = computeBodyCompositionMetrics('2024-11-20', paired[0], TEST_PROFILE);
+
+      // 20.2% body fat on 80.5kg
+      // fat mass = 80.5 * 0.202 = 16.261 kg
+      // ffm = 80.5 - 16.261 = 64.239 kg
+      expect(output.fat_mass_kg).toBeCloseTo(16.3, 1);
+      expect(output.ffm_kg).toBeCloseTo(64.2, 1);
     });
 
     it('estimates muscle mass as ~50% of FFM for males', () => {
@@ -366,7 +378,7 @@ describe('ETL Transformers - Body Composition', () => {
 
       expect(output.log_date).toBe('2024-11-20');
       expect(output.weight_kg).toBe(80.5);
-      expect(output.body_fat_pct).toBe(20.2);
+      expect(output.body_fat_pct).toBe(20.2); // 0-100 scale
       expect(output.bmi).toBeGreaterThan(0);
       expect(output.ffm_kg).toBeGreaterThan(0);
       expect(output.muscle_mass_kg).toBeGreaterThan(0);

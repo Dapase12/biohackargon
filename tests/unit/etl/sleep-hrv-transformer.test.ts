@@ -16,6 +16,7 @@ import {
   crossReferenceHrvWithSleep,
   computeSleepMetrics,
   detectNaps,
+  computeHrvMedian,
 } from '@/etl/transformers/sleep-hrv';
 
 // ========================================================================
@@ -304,6 +305,55 @@ describe('ETL Transformers - Sleep + HRV', () => {
       // Should use all nocturnal samples when deep < 5
       const allNocturnal = crossReferenceHrvWithSleep(hrvSamples, sleepSessions, { includeNaps: false });
       expect(allNocturnal.length).toBeGreaterThan(3);
+    });
+  });
+
+  describe('computeHrvMedian', () => {
+    it('returns null for empty samples', () => {
+      expect(computeHrvMedian([])).toBeNull();
+    });
+
+    it('returns null when all RMSSD are null', () => {
+      const samples = [
+        { startTimeMillis: 1000, endTimeMillis: 1000, rmssd: null },
+        { startTimeMillis: 2000, endTimeMillis: 2000, rmssd: null },
+      ];
+      expect(computeHrvMedian(samples)).toBeNull();
+    });
+
+    it('returns the single value for 1 sample (NEW: single sample fix)', () => {
+      const samples = [
+        { startTimeMillis: 1000, endTimeMillis: 1000, rmssd: 42.5 },
+      ];
+      expect(computeHrvMedian(samples)).toBe(42.5);
+    });
+
+    it('returns median for odd number of samples', () => {
+      const samples = [
+        { startTimeMillis: 1000, endTimeMillis: 1000, rmssd: 10 },
+        { startTimeMillis: 2000, endTimeMillis: 2000, rmssd: 20 },
+        { startTimeMillis: 3000, endTimeMillis: 3000, rmssd: 30 },
+      ];
+      expect(computeHrvMedian(samples)).toBe(20);
+    });
+
+    it('returns average of two middle values for even number of samples', () => {
+      const samples = [
+        { startTimeMillis: 1000, endTimeMillis: 1000, rmssd: 10 },
+        { startTimeMillis: 2000, endTimeMillis: 2000, rmssd: 20 },
+        { startTimeMillis: 3000, endTimeMillis: 3000, rmssd: 30 },
+        { startTimeMillis: 4000, endTimeMillis: 4000, rmssd: 40 },
+      ];
+      expect(computeHrvMedian(samples)).toBe(25); // (20 + 30) / 2
+    });
+
+    it('ignores null RMSSD values', () => {
+      const samples = [
+        { startTimeMillis: 1000, endTimeMillis: 1000, rmssd: 10 },
+        { startTimeMillis: 2000, endTimeMillis: 2000, rmssd: null },
+        { startTimeMillis: 3000, endTimeMillis: 3000, rmssd: 30 },
+      ];
+      expect(computeHrvMedian(samples)).toBe(20); // (10 + 30) / 2
     });
   });
 });

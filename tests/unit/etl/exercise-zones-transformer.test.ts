@@ -295,64 +295,148 @@ describe('ETL Transformers - Exercise + HR Zones', () => {
       expect(zones.real).toBe(true);
     });
 
-    it('Z1: 50-60% HRR', () => {
-      const hrSamples = [
-        { startTimeMillis: 1000, endTimeMillis: 2000, bpm: 125 }, // Z1 (50% HRR = 121)
-        { startTimeMillis: 2000, endTimeMillis: 3000, bpm: 130 }, // Z1
-      ];
+    it('Z1: 50-60% HRR (uses real minutes from 5-sec intervals)', () => {
+      // 12 samples * 5 sec = 60 sec = 1 min in Z1
+      const hrSamples = [];
+      const baseTime = 1000000;
+      for (let i = 0; i < 12; i++) {
+        hrSamples.push({ startTimeMillis: baseTime + i * 5000, endTimeMillis: baseTime + i * 5000, bpm: 125 }); // Z1
+      }
       const zones = classifyHrZonesKarvonen(hrSamples, TEST_PROFILE);
-      expect(zones.z1).toBe(2);
+      expect(zones.z1).toBeCloseTo(1.0, 1);
     });
 
-    it('Z2: 60-70% HRR', () => {
-      const hrSamples = [
-        { startTimeMillis: 1000, endTimeMillis: 2000, bpm: 135 }, // Z2 (60% HRR = 134)
-        { startTimeMillis: 2000, endTimeMillis: 3000, bpm: 140 }, // Z2
-      ];
+    it('Z2: 60-70% HRR (uses real minutes from 5-sec intervals)', () => {
+      const hrSamples = [];
+      const baseTime = 1000000;
+      for (let i = 0; i < 12; i++) {
+        hrSamples.push({ startTimeMillis: baseTime + i * 5000, endTimeMillis: baseTime + i * 5000, bpm: 135 }); // Z2
+      }
       const zones = classifyHrZonesKarvonen(hrSamples, TEST_PROFILE);
-      expect(zones.z2).toBe(2);
+      expect(zones.z2).toBeCloseTo(1.0, 1);
     });
 
-    it('Z3: 70-80% HRR', () => {
-      const hrSamples = [
-        { startTimeMillis: 1000, endTimeMillis: 2000, bpm: 150 }, // Z3 (70% HRR = 147)
-        { startTimeMillis: 2000, endTimeMillis: 3000, bpm: 155 }, // Z3
-      ];
+    it('Z3: 70-80% HRR (uses real minutes from 5-sec intervals)', () => {
+      const hrSamples = [];
+      const baseTime = 1000000;
+      for (let i = 0; i < 12; i++) {
+        hrSamples.push({ startTimeMillis: baseTime + i * 5000, endTimeMillis: baseTime + i * 5000, bpm: 150 }); // Z3
+      }
       const zones = classifyHrZonesKarvonen(hrSamples, TEST_PROFILE);
-      expect(zones.z3).toBe(2);
+      expect(zones.z3).toBeCloseTo(1.0, 1);
     });
 
-    it('Z4: 80-90% HRR', () => {
-      const hrSamples = [
-        { startTimeMillis: 1000, endTimeMillis: 2000, bpm: 165 }, // Z4 (80% HRR = 161)
-        { startTimeMillis: 2000, endTimeMillis: 3000, bpm: 170 }, // Z4
-      ];
+    it('Z4: 80-90% HRR (uses real minutes from 5-sec intervals)', () => {
+      const hrSamples = [];
+      const baseTime = 1000000;
+      for (let i = 0; i < 12; i++) {
+        hrSamples.push({ startTimeMillis: baseTime + i * 5000, endTimeMillis: baseTime + i * 5000, bpm: 165 }); // Z4
+      }
       const zones = classifyHrZonesKarvonen(hrSamples, TEST_PROFILE);
-      expect(zones.z4).toBe(2);
+      expect(zones.z4).toBeCloseTo(1.0, 1);
     });
 
-    it('Z5: 90-100% HRR', () => {
-      const hrSamples = [
-        { startTimeMillis: 1000, endTimeMillis: 2000, bpm: 180 }, // Z5 (90% HRR = 174)
-      ];
+    it('Z5: 90-100% HRR (uses real minutes from 5-sec intervals)', () => {
+      const hrSamples = [];
+      const baseTime = 1000000;
+      for (let i = 0; i < 12; i++) {
+        hrSamples.push({ startTimeMillis: baseTime + i * 5000, endTimeMillis: baseTime + i * 5000, bpm: 180 }); // Z5
+      }
       const zones = classifyHrZonesKarvonen(hrSamples, TEST_PROFILE);
-      expect(zones.z5).toBe(1);
+      expect(zones.z5).toBeCloseTo(1.0, 1);
     });
 
-    it('handles HR below Z1 (counts as Z1)', () => {
-      const hrSamples = [
-        { startTimeMillis: 1000, endTimeMillis: 2000, bpm: 80 }, // Below Z1
-      ];
+    it('handles HR below Z1 (counts as Z1) (uses real minutes from 5-sec intervals)', () => {
+      const hrSamples = [];
+      const baseTime = 1000000;
+      for (let i = 0; i < 12; i++) {
+        hrSamples.push({ startTimeMillis: baseTime + i * 5000, endTimeMillis: baseTime + i * 5000, bpm: 80 }); // Below Z1
+      }
       const zones = classifyHrZonesKarvonen(hrSamples, TEST_PROFILE);
-      expect(zones.z1).toBe(1);
+      expect(zones.z1).toBeCloseTo(1.0, 1);
     });
 
-    it('handles HR above max (counts as Z5)', () => {
+    it('handles HR above max (counts as Z5) (uses real minutes from 5-sec intervals)', () => {
+      const hrSamples = [];
+      const baseTime = 1000000;
+      for (let i = 0; i < 12; i++) {
+        hrSamples.push({ startTimeMillis: baseTime + i * 5000, endTimeMillis: baseTime + i * 5000, bpm: 200 }); // Above max
+      }
+      const zones = classifyHrZonesKarvonen(hrSamples, TEST_PROFILE);
+      expect(zones.z5).toBeCloseTo(1.0, 1);
+    });
+
+    it('calculates REAL minutes from 5-second sample intervals (NEW: 5-sec sample fix)', () => {
+      // Create samples every 5 seconds for 1 minute (12 samples = 1 minute)
+      const hrSamples = [];
+      const baseTime = 1000000;
+      for (let i = 0; i < 12; i++) {
+        hrSamples.push({
+          startTimeMillis: baseTime + i * 5000, // 5 seconds apart
+          endTimeMillis: baseTime + i * 5000,
+          bpm: 150, // Z3
+        });
+      }
+      const zones = classifyHrZonesKarvonen(hrSamples, TEST_PROFILE);
+
+      // 12 samples * 5 sec = 60 sec = 1 minute in Z3
+      expect(zones.z3).toBeCloseTo(1.0, 1);
+      expect(zones.z1 + zones.z2 + zones.z3 + zones.z4 + zones.z5).toBeCloseTo(1.0, 1);
+    });
+
+    it('handles 5-second samples spanning multiple zones (NEW: 5-sec sample fix)', () => {
+      // 10 samples at 5 sec each = 50 seconds
+      // First 5 at Z1 (125 bpm), next 5 at Z3 (150 bpm)
+      const hrSamples = [];
+      const baseTime = 1000000;
+      for (let i = 0; i < 5; i++) {
+        hrSamples.push({ startTimeMillis: baseTime + i * 5000, endTimeMillis: baseTime + i * 5000, bpm: 125 }); // Z1
+      }
+      for (let i = 5; i < 10; i++) {
+        hrSamples.push({ startTimeMillis: baseTime + i * 5000, endTimeMillis: baseTime + i * 5000, bpm: 150 }); // Z3
+      }
+      const zones = classifyHrZonesKarvonen(hrSamples, TEST_PROFILE);
+
+      // 5 * 5sec = 25sec = 0.416... min in Z1
+      // 5 * 5sec = 25sec = 0.416... min in Z3
+      expect(zones.z1).toBeCloseTo(0.4, 1);
+      expect(zones.z3).toBeCloseTo(0.4, 1);
+      expect(zones.z1 + zones.z3).toBeCloseTo(0.8, 1);
+    });
+
+    it('handles single sample with default 5-second duration (NEW: 5-sec sample fix)', () => {
       const hrSamples = [
-        { startTimeMillis: 1000, endTimeMillis: 2000, bpm: 200 }, // Above max
+        { startTimeMillis: 1000000, endTimeMillis: 1000000, bpm: 150 }, // Z3
       ];
       const zones = classifyHrZonesKarvonen(hrSamples, TEST_PROFILE);
-      expect(zones.z5).toBe(1);
+
+      // Single sample defaults to 5 seconds = 0.0833 min, rounds to 0.1
+      expect(zones.z3).toBeCloseTo(0.1, 1);
+    });
+
+    it('caps duration at 1 minute for large gaps between samples (NEW: 5-sec sample fix)', () => {
+      // Two samples 5 minutes apart (should cap at 1 min each)
+      const hrSamples = [
+        { startTimeMillis: 1000000, endTimeMillis: 1000000, bpm: 150 }, // Z3
+        { startTimeMillis: 1000000 + 5 * 60000, endTimeMillis: 1000000 + 5 * 60000, bpm: 150 }, // Z3
+      ];
+      const zones = classifyHrZonesKarvonen(hrSamples, TEST_PROFILE);
+
+      // First sample: 1 min (capped), second sample: 1 min (capped)
+      expect(zones.z3).toBeCloseTo(2.0, 1);
+    });
+
+    it('rounds zone minutes to 1 decimal place (NEW: 5-sec sample fix)', () => {
+      const hrSamples = [];
+      const baseTime = 1000000;
+      // 3 samples at 5 sec = 15 sec = 0.25 min
+      for (let i = 0; i < 3; i++) {
+        hrSamples.push({ startTimeMillis: baseTime + i * 5000, endTimeMillis: baseTime + i * 5000, bpm: 150 }); // Z3
+      }
+      const zones = classifyHrZonesKarvonen(hrSamples, TEST_PROFILE);
+
+      // 0.25 rounded to 1 decimal = 0.3
+      expect(zones.z3).toBe(0.3);
     });
   });
 
@@ -369,8 +453,11 @@ describe('ETL Transformers - Exercise + HR Zones', () => {
 
       expect(output.duration_min).toBe(30);
       expect(output.zones.real).toBe(true);
-      expect(output.zones.z1 + output.zones.z2 + output.zones.z3 + output.zones.z4 + output.zones.z5).toBe(28); // 30 - 2 pause
-      expect(output.avg_hr).toBeCloseTo(125, 0); // average of filtered samples (28 min after pause removal)
+      // Zone sum is now real minutes (not sample count) - ~28 minutes of actual exercise time
+      const zoneSum = output.zones.z1 + output.zones.z2 + output.zones.z3 + output.zones.z4 + output.zones.z5;
+      expect(zoneSum).toBeGreaterThan(20);
+      expect(zoneSum).toBeLessThan(30);
+      expect(output.avg_hr).toBeCloseTo(125, 0); // average of filtered samples
       expect(output.max_hr).toBe(168);
     });
 

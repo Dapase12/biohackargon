@@ -163,15 +163,16 @@ export function computeSleepMetrics(
   const naps = sleepSessions.filter(s => s.isNap);
 
   // Total sleep time from stage minutes (excludes awake)
+  // stageMinutes values from ghealth are strings in protobuf JSON, use parseNumber
   const totalSleepMin = nocturnal.reduce((sum, s) => {
     const stages = s.stageMinutes ?? {};
-    return sum + (stages.DEEP ?? 0) + (stages.LIGHT ?? 0) + (stages.REM ?? 0);
+    return sum + (parseNumber(stages.DEEP) ?? 0) + (parseNumber(stages.LIGHT) ?? 0) + (parseNumber(stages.REM) ?? 0);
   }, 0);
 
-  const deepSleepMin = nocturnal.reduce((sum, s) => sum + (s.stageMinutes?.DEEP ?? 0), 0);
-  const remSleepMin = nocturnal.reduce((sum, s) => sum + (s.stageMinutes?.REM ?? 0), 0);
-  const lightSleepMin = nocturnal.reduce((sum, s) => sum + (s.stageMinutes?.LIGHT ?? 0), 0);
-  const awakeSleepMin = nocturnal.reduce((sum, s) => sum + (s.stageMinutes?.AWAKE ?? 0), 0);
+  const deepSleepMin = nocturnal.reduce((sum, s) => sum + (parseNumber(s.stageMinutes?.DEEP) ?? 0), 0);
+  const remSleepMin = nocturnal.reduce((sum, s) => sum + (parseNumber(s.stageMinutes?.REM) ?? 0), 0);
+  const lightSleepMin = nocturnal.reduce((sum, s) => sum + (parseNumber(s.stageMinutes?.LIGHT) ?? 0), 0);
+  const awakeSleepMin = nocturnal.reduce((sum, s) => sum + (parseNumber(s.stageMinutes?.AWAKE) ?? 0), 0);
 
   // Time in bed from timestamps
   const timeInBedMin = nocturnal.reduce((sum, s) => sum + s.durationMin, 0);
@@ -244,12 +245,14 @@ export function detectNaps(sleepSessions: ParsedSleepSession[]): ParsedSleepSess
 
 /**
  * Compute HRV median from samples
+ * Handles single sample case (returns that value)
  */
 export function computeHrvMedian(samples: ParsedHrvSample[]): number | null {
   const values = samples
     .filter(s => s.rmssd !== null)
     .map(s => s.rmssd!);
   if (values.length === 0) return null;
+  if (values.length === 1) return values[0]; // Single sample = that value is the median
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   const lower = sorted[mid - 1];
@@ -287,11 +290,17 @@ export function buildSleepTransformerOutput(
   const nocturnalHrv = crossReferenceHrvWithSleep(hrvSamples, sleepSessions, { includeNaps: false });
   const allHrv = crossReferenceHrvWithSleep(hrvSamples, sleepSessions, { includeNaps: true });
 
-  // Deep sleep HRV samples (need hypnogram stages)
+  // Deep sleep HRV samples (filter against hypnogram stages)
+  const nocturnalSessions = sleepSessions.filter(s => !s.isNap);
   const deepSleepHrv = nocturnalHrv.filter(hrv => {
-    // Check if HRV sample falls in deep sleep stage
-    // This is a simplification - real implementation needs stage mapping
-    return true; // Will be refined
+    // Check if HRV sample falls in any deep sleep stage
+    return nocturnalSessions.some(session =>
+      (session.stages ?? []).some(stage =>
+        stage.type === 'DEEP' &&
+        hrv.startTimeMillis >= stage.start &&
+        hrv.startTimeMillis < stage.end
+      )
+    );
   });
 
   const hrvNocturnalMedian = computeHrvMedian(nocturnalHrv);

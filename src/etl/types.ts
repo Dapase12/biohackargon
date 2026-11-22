@@ -100,9 +100,11 @@ export interface GHealthWeightListResponse {
 }
 
 // Body Fat: dataPoints with date (YYYY-MM-DD), percentage, unit
+// simplify.go: toInt(sample.GetBodyFat().GetPercentage()) -> returns raw int64 value
+// But ghealth protobuf stores percentage as float (e.g., 20.2 for 20.2%)
 export interface GHealthBodyFatSimplifiedSample extends GHealthSimplifiedDataPoint {
   date: string; // YYYY-MM-DD
-  percentage: number; // int64 value as percentage * 100? No, simplify.go uses toInt which returns the raw value
+  percentage: number; // float value like 20.2 (NOT *100)
   unit: string; // "%"
 }
 

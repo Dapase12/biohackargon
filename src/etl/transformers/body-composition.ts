@@ -84,8 +84,9 @@ export function parseWeightSamples(
 
 /**
  * Parse body fat samples from ghealth SIMPLIFIED JSON response
- * Fields: date (YYYY-MM-DD), percentage (int64 = percentage * 100), unit
- * Example: 20.20% is stored as 2020
+ * Fields: date (YYYY-MM-DD), percentage (float like 20.2), unit
+ * simplify.go: toInt(sample.GetBodyFat().GetPercentage()) - but GetPercentage() returns float64
+ * So percentage is already a float value like 20.2 (NOT *100)
  */
 export function parseBodyFatSamples(
   response: GHealthBodyFatListResponse
@@ -93,8 +94,9 @@ export function parseBodyFatSamples(
   return (response.dataPoints ?? []).map((sample) => {
     let bodyFatPct: number | null = null;
     if (sample.percentage !== undefined && sample.percentage !== null) {
-      // ghealth stores percentage as int64 * 100 (e.g., 20.20% = 2020)
-      bodyFatPct = sample.percentage / 100;
+      // ghealth returns percentage as float (e.g., 20.2 for 20.2%)
+      // parseNumber handles string->number conversion from protobuf JSON
+      bodyFatPct = parseNumber(sample.percentage);
     }
 
     return {
