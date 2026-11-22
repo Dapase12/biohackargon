@@ -87,8 +87,8 @@ function banisterTrimp(
   return durationMinutes * hrr * Math.exp(k * hrr);
 }
 
-// Daily quiet HRR
-function dailyQuietWakingHrr(
+// Daily quiet HRR (reserved for future use)
+function _dailyQuietWakingHrr(
   hrPerMin: number[],
   restingHr: number,
   maxHr: number,
@@ -133,7 +133,7 @@ function netTrimpAboveQuiet(
 // Strain from net TRIMP (sigmoid)
 function strainFromNetTrimp(netTrimp: number): number {
   if (netTrimp <= 0) return 0;
-  const MAXIMAL_NET_TRIMP = 400;
+  const _MAXIMAL_NET_TRIMP = 400;
   const STRAIN_CURVATURE = 10;
   const rawStrain = 21 * (1 - Math.exp(-netTrimp / STRAIN_CURVATURE));
   return Math.min(21, Math.max(0, rawStrain));
@@ -236,7 +236,7 @@ serve(async (req: Request) => {
       wake_minutes = 960,
       quiet_hrr,
       // exercise_type reserved for future use
-      _exercise_type: exercise_type,
+      _exercise_type,
     } = payload;
 
     // Calculate TRIMP

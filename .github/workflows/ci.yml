@@ -14,9 +14,6 @@ jobs:
   node-build-test:
     name: Node Build & Tests
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./biohackargon-main
 
     steps:
       - name: Checkout code
@@ -118,20 +115,20 @@ jobs:
 
       - name: Validate syntax
         run: |
-          node --check biohackargon-main/argon-mbe.js
-          node --check biohackargon-main/simulate-recovery.js
-          node -e "JSON.parse(require('fs').readFileSync('biohackargon-main/manifest.json'))"
+          node --check argon-mbe.js
+          node --check simulate-recovery.js
+          node -e "JSON.parse(require('fs').readFileSync('manifest.json'))"
           echo "✅ All syntax checks passed"
 
       - name: Run recovery simulation (smoke test)
         run: |
-          node biohackargon-main/simulate-recovery.js 2>&1 | tail -30
+          node simulate-recovery.js 2>&1 | tail -30
           echo "✅ Simulation completed"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: biohackargon-main
+          path: .
 
       - name: Deploy to GitHub Pages
         id: deployment
