@@ -86,7 +86,7 @@ function parseDateArg(dateStr: string): Date {
   const year = parseInt(match[1]!, 10);
   const month = parseInt(match[2]!, 10) - 1;
   const day = parseInt(match[3]!, 10);
-  return Date.UTC(year, month, day, 0, 0, 0, 0);
+  return new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
 }
 
 /**
@@ -455,7 +455,8 @@ async function syncDate(
   dryRun: boolean
 ): Promise<SyncResult> {
   // ghealth expects YYYY-MM-DD for --from/--to, with --to being exclusive (D+1)
-  const startDate = new Date(date + 'T00:00:00');
+  // Parse date as UTC to match formatDate() output
+  const startDate = new Date(date + 'T00:00:00Z');
   const endDate = new Date(startDate.getTime() + 86400000); // D+1 for exclusive --to
   const fromGHealth = formatGHealthDate(startDate);
   const toGHealth = formatGHealthDate(endDate);
