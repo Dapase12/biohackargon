@@ -21,7 +21,7 @@ import type {
  * Parse exercise sessions from ghealth response
  */
 export function parseExerciseSessions(response: GHealthExerciseListResponse): ParsedExerciseSession[] {
-  return (response.sessions ?? []).map((session: GHealthExerciseListResponse['sessions'][0]) => ({
+  return (response.dataPoints ?? []).map((session: GHealthExerciseListResponse['dataPoints'][0]) => ({
     startTimeMillis: Number(session.startTimeMillis),
     endTimeMillis: Number(session.endTimeMillis),
     name: session.name ?? '',
@@ -41,7 +41,7 @@ export function parseExerciseSessions(response: GHealthExerciseListResponse): Pa
  * Parse HR samples from ghealth response
  */
 export function parseHrSamples(response: GHealthHrListResponse): ParsedHrSample[] {
-  return (response.samples ?? []).map((sample: GHealthHrListResponse['samples'][0]) => ({
+  return (response.dataPoints ?? []).map((sample: GHealthHrListResponse['dataPoints'][0]) => ({
     startTimeMillis: Number(sample.startTimeMillis),
     endTimeMillis: Number(sample.endTimeMillis),
     bpm: Number(sample.beatsPerMinute),

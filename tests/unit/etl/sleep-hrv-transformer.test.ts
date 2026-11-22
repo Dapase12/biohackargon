@@ -23,7 +23,7 @@ import {
 // ========================================================================
 
 const FIXTURE_SLEEP_LIST_RESPONSE = {
-  sessions: [
+  dataPoints: [
     {
       // Main nocturnal sleep
       startTimeMillis: "1732064400000", // 2024-11-20 00:00:00 -04:00
@@ -66,7 +66,7 @@ const FIXTURE_SLEEP_LIST_RESPONSE = {
 };
 
 const FIXTURE_HRV_LIST_RESPONSE = {
-  samples: [
+  dataPoints: [
     // Samples during nocturnal sleep
     { startTimeMillis: "1732064400000", endTimeMillis: "1732064460000", rootMeanSquareOfSuccessiveDifferencesMilliseconds: "52.1" }, // 00:00 - deep
     { startTimeMillis: "1732068000000", endTimeMillis: "1732068060000", rootMeanSquareOfSuccessiveDifferencesMilliseconds: "48.3" }, // 01:00 - deep
@@ -123,7 +123,7 @@ describe('ETL Transformers - Sleep + HRV', () => {
 
     it('handles missing stageMinutes gracefully', () => {
       const response = {
-        sessions: [{ startTimeMillis: "1000", endTimeMillis: "2000", isNap: false }],
+        dataPoints: [{ startTimeMillis: "1000", endTimeMillis: "2000", isNap: false }],
         nextPageToken: null,
       };
       const parsed = parseSleepSessions(response);
@@ -148,7 +148,7 @@ describe('ETL Transformers - Sleep + HRV', () => {
 
     it('handles missing RMSSD (null)', () => {
       const response = {
-        samples: [{ startTimeMillis: "1000", endTimeMillis: "2000" }],
+        dataPoints: [{ startTimeMillis: "1000", endTimeMillis: "2000" }],
         nextPageToken: null,
       };
       const parsed = parseHrvSamples(response);

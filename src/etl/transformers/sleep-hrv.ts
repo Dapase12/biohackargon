@@ -16,13 +16,13 @@ import type {
  * Parse sleep sessions from ghealth response
  */
 export function parseSleepSessions(response: GHealthSleepListResponse): ParsedSleepSession[] {
-  return (response.sessions ?? []).map((session: GHealthSleepListResponse['sessions'][0]) => ({
+  return (response.dataPoints ?? []).map((session: GHealthSleepListResponse['dataPoints'][0]) => ({
     startTimeMillis: Number(session.startTimeMillis),
     endTimeMillis: Number(session.endTimeMillis),
     isNap: session.isNap ?? false,
     sleepQuality: session.sleepQuality ?? 'UNKNOWN',
     stageMinutes: Object.fromEntries(
-      Object.entries(session.stageMinutes ?? {}).map(([k, v]: [string, string]) => [k, Number(v)])
+      Object.entries(session.stageMinutes ?? {}).map(([k, v]: [string, unknown]) => [k, Number(v)])
     ),
     stages: (session.stages ?? []).map((s: { start: number; end: number; type: string }) => ({
       start: Number(s.start),
@@ -37,7 +37,7 @@ export function parseSleepSessions(response: GHealthSleepListResponse): ParsedSl
  * Parse HRV samples from ghealth response
  */
 export function parseHrvSamples(response: GHealthHrvListResponse): ParsedHrvSample[] {
-  return (response.samples ?? []).map((sample: GHealthHrvListResponse['samples'][0]) => ({
+  return (response.dataPoints ?? []).map((sample: GHealthHrvListResponse['dataPoints'][0]) => ({
     startTimeMillis: Number(sample.startTimeMillis),
     endTimeMillis: Number(sample.endTimeMillis),
     rmssd: sample.rootMeanSquareOfSuccessiveDifferencesMilliseconds

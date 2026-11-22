@@ -6,7 +6,10 @@
  */
 
 import type {
-  GHealthBodyCompositionResponse,
+  GHealthWeightListResponse,
+  GHealthBodyFatListResponse,
+  GHealthWeightSample,
+  GHealthBodyFatSample,
   ParsedBodyCompositionSample,
   BodyCompositionTransformerOutput,
   UserEtlProfile,
@@ -19,12 +22,12 @@ interface PairedBodyComp {
 }
 
 /**
- * Parse body composition samples from ghealth response
+ * Parse weight samples from ghealth response
  */
-export function parseBodyCompositionSamples(
-  response: GHealthBodyCompositionResponse
+export function parseWeightSamples(
+  response: GHealthWeightListResponse
 ): ParsedBodyCompositionSample[] {
-  return (response.samples ?? []).map((sample: GHealthBodyCompositionResponse['samples'][0]) => {
+  return (response.dataPoints ?? []).map((sample: GHealthWeightListResponse['dataPoints'][0]) => {
     let weightKg: number | null = null;
     if (sample.weight?.value) {
       const value = Number(sample.weight.value);
@@ -36,6 +39,22 @@ export function parseBodyCompositionSamples(
       }
     }
 
+    return {
+      startTimeMillis: Number(sample.startTimeMillis),
+      endTimeMillis: Number(sample.endTimeMillis),
+      weightKg,
+      bodyFatPct: null,
+    };
+  });
+}
+
+/**
+ * Parse body fat samples from ghealth response
+ */
+export function parseBodyFatSamples(
+  response: GHealthBodyFatListResponse
+): ParsedBodyCompositionSample[] {
+  return (response.dataPoints ?? []).map((sample: GHealthBodyFatListResponse['dataPoints'][0]) => {
     let bodyFatPct: number | null = null;
     if (sample.bodyFatPercentage?.value) {
       bodyFatPct = Number(sample.bodyFatPercentage.value);
@@ -44,10 +63,22 @@ export function parseBodyCompositionSamples(
     return {
       startTimeMillis: Number(sample.startTimeMillis),
       endTimeMillis: Number(sample.endTimeMillis),
-      weightKg,
+      weightKg: null,
       bodyFatPct,
     };
   });
+}
+
+/**
+ * Parse combined body composition samples from ghealth responses
+ */
+export function parseBodyCompositionSamples(
+  weightResponse: GHealthWeightListResponse,
+  bodyFatResponse: GHealthBodyFatListResponse
+): ParsedBodyCompositionSample[] {
+  const weightSamples = parseWeightSamples(weightResponse);
+  const bodyFatSamples = parseBodyFatSamples(bodyFatResponse);
+  return [...weightSamples, ...bodyFatSamples];
 }
 
 /**
@@ -70,20 +101,25 @@ export function crossReferenceWeightAndBodyFat(
     byDate.get(date)!.push(sample);
   }
 
-  // For each date, pick morning sample (earliest) for both weight and body fat
+  // For each date, pick morning sample (earliest) for weight AND body fat separately
   const paired: PairedBodyComp[] = [];
 
   for (const [date, daySamples] of byDate.entries()) {
     // Sort by time of day
     daySamples.sort((a, b) => a.startTimeMillis - b.startTimeMillis);
 
-    // Morning sample = first sample of day
-    const morningSample = daySamples[0];
-    if (!morningSample) continue;
-    const weightKg = morningSample.weightKg;
-    const bodyFatPct = morningSample.bodyFatPct;
+    // Find morning weight sample (first sample with weightKg)
+    const morningWeightSample = daySamples.find(s => s.weightKg !== null);
+    // Find morning body fat sample (first sample with bodyFatPct)
+    const morningBodyFatSample = daySamples.find(s => s.bodyFatPct !== null);
 
-    paired.push({ date, weightKg, bodyFatPct });
+    const weightKg = morningWeightSample?.weightKg ?? null;
+    const bodyFatPct = morningBodyFatSample?.bodyFatPct ?? null;
+
+    // Only add if we have at least weight
+    if (weightKg !== null) {
+      paired.push({ date, weightKg, bodyFatPct });
+    }
   }
 
   // Sort by date

@@ -10,16 +10,17 @@ import type {
   GHealthHrvListResponse,
   GHealthExerciseListResponse,
   GHealthHrListResponse,
-  GHealthExerciseEventsResponse,
-  GHealthBodyCompositionResponse,
+  GHealthWeightListResponse,
+  GHealthBodyFatListResponse,
 } from '@/etl/types';
 
 interface GHealthCliOptions {
   configDir: string;
-  startTime?: string; // RFC3339
-  endTime?: string;   // RFC3339
-  pageSize?: number;
+  from?: string;      // YYYY-MM-DD, ISO 8601, 'today', 'yesterday'
+  to?: string;        // YYYY-MM-DD, ISO 8601, 'today', 'yesterday'
+  limit?: number;
   pageToken?: string;
+  detail?: boolean;   // for sleep list --detail
 }
 
 interface CliResult<T> {
@@ -29,33 +30,42 @@ interface CliResult<T> {
 
 /**
  * Execute ghealth CLI command and parse JSON output
+ * Config dir is passed via GHEALTH_CONFIG_DIR env var (not a flag)
  */
 async function executeGHealth<T>(
   command: string[],
   options: GHealthCliOptions
 ): Promise<CliResult<T>> {
   const args = [
-    '--config', options.configDir,
     '--format', 'json',
     ...command,
   ];
 
-  if (options.startTime) {
-    args.push('--start-time', options.startTime);
+  if (options.from) {
+    args.push('--from', options.from);
   }
-  if (options.endTime) {
-    args.push('--end-time', options.endTime);
+  if (options.to) {
+    args.push('--to', options.to);
   }
-  if (options.pageSize) {
-    args.push('--page-size', String(options.pageSize));
+  if (options.limit) {
+    args.push('--limit', String(options.limit));
   }
   if (options.pageToken) {
     args.push('--page-token', options.pageToken);
   }
+  if (options.detail) {
+    args.push('--detail');
+  }
+
+  const env = {
+    ...process.env,
+    GHEALTH_CONFIG_DIR: options.configDir,
+  };
 
   return new Promise((resolve, reject) => {
     const proc = spawn('ghealth', args, {
       stdio: ['ignore', 'pipe', 'pipe'],
+      env,
     } as SpawnOptions);
 
     let stdout = '';
@@ -140,16 +150,16 @@ export class GHealthClient {
    * Fetch sleep sessions for date range
    */
   async getSleepSessions(
-    startTime: string,
-    endTime: string
-  ): Promise<GHealthSleepListResponse['sessions']> {
+    from: string,
+    to: string
+  ): Promise<GHealthSleepListResponse['dataPoints']> {
     const sessions = await fetchAllPages<
       GHealthSleepListResponse,
-      GHealthSleepListResponse['sessions'][0]
+      GHealthSleepListResponse['dataPoints'][0]
     >(
       ['data', 'sleep', 'list'],
-      { ...this.config, startTime, endTime, pageSize: 100 },
-      (data) => data.sessions ?? [],
+      { ...this.config, from, to, limit: 100, detail: true },
+      (data) => data.dataPoints ?? [],
       (data) => data.nextPageToken ?? null
     );
     return sessions;
@@ -159,16 +169,16 @@ export class GHealthClient {
    * Fetch HRV samples for date range
    */
   async getHrvSamples(
-    startTime: string,
-    endTime: string
-  ): Promise<GHealthHrvListResponse['samples']> {
+    from: string,
+    to: string
+  ): Promise<GHealthHrvListResponse['dataPoints']> {
     const samples = await fetchAllPages<
       GHealthHrvListResponse,
-      GHealthHrvListResponse['samples'][0]
+      GHealthHrvListResponse['dataPoints'][0]
     >(
       ['data', 'heart-rate-variability', 'list'],
-      { ...this.config, startTime, endTime, pageSize: 500 },
-      (data) => data.samples ?? [],
+      { ...this.config, from, to, limit: 500 },
+      (data) => data.dataPoints ?? [],
       (data) => data.nextPageToken ?? null
     );
     return samples;
@@ -178,16 +188,16 @@ export class GHealthClient {
    * Fetch exercise sessions for date range
    */
   async getExerciseSessions(
-    startTime: string,
-    endTime: string
-  ): Promise<GHealthExerciseListResponse['sessions']> {
+    from: string,
+    to: string
+  ): Promise<GHealthExerciseListResponse['dataPoints']> {
     const sessions = await fetchAllPages<
       GHealthExerciseListResponse,
-      GHealthExerciseListResponse['sessions'][0]
+      GHealthExerciseListResponse['dataPoints'][0]
     >(
       ['data', 'exercise', 'list'],
-      { ...this.config, startTime, endTime, pageSize: 100 },
-      (data) => data.sessions ?? [],
+      { ...this.config, from, to, limit: 100 },
+      (data) => data.dataPoints ?? [],
       (data) => data.nextPageToken ?? null
     );
     return sessions;
@@ -197,89 +207,120 @@ export class GHealthClient {
    * Fetch heart rate samples for date range
    */
   async getHeartRateSamples(
-    startTime: string,
-    endTime: string
-  ): Promise<GHealthHrListResponse['samples']> {
+    from: string,
+    to: string
+  ): Promise<GHealthHrListResponse['dataPoints']> {
     const samples = await fetchAllPages<
       GHealthHrListResponse,
-      GHealthHrListResponse['samples'][0]
+      GHealthHrListResponse['dataPoints'][0]
     >(
       ['data', 'heart-rate', 'list'],
-      { ...this.config, startTime, endTime, pageSize: 1000 },
-      (data) => data.samples ?? [],
+      { ...this.config, from, to, limit: 1000 },
+      (data) => data.dataPoints ?? [],
       (data) => data.nextPageToken ?? null
     );
     return samples;
   }
 
   /**
-   * Fetch exercise events (pause/resume) for date range
+   * Fetch weight samples for date range
    */
-  async getExerciseEvents(
-    startTime: string,
-    endTime: string
-  ): Promise<GHealthExerciseEventsResponse['events']> {
-    const events = await fetchAllPages<
-      GHealthExerciseEventsResponse,
-      GHealthExerciseEventsResponse['events'][0]
-    >(
-      ['data', 'exercise', 'events'],
-      { ...this.config, startTime, endTime, pageSize: 100 },
-      (data) => data.events ?? [],
-      (data) => data.nextPageToken ?? null
-    );
-    return events;
-  }
-
-  /**
-   * Fetch body composition samples for date range
-   */
-  async getBodyCompositionSamples(
-    startTime: string,
-    endTime: string
-  ): Promise<GHealthBodyCompositionResponse['samples']> {
+  async getWeightSamples(
+    from: string,
+    to: string
+  ): Promise<GHealthWeightListResponse['dataPoints']> {
     const samples = await fetchAllPages<
-      GHealthBodyCompositionResponse,
-      GHealthBodyCompositionResponse['samples'][0]
+      GHealthWeightListResponse,
+      GHealthWeightListResponse['dataPoints'][0]
     >(
       ['data', 'weight', 'list'],
-      { ...this.config, startTime, endTime, pageSize: 100 },
-      (data) => data.samples ?? [],
+      { ...this.config, from, to, limit: 100 },
+      (data) => data.dataPoints ?? [],
       (data) => data.nextPageToken ?? null
     );
     return samples;
+  }
+
+  /**
+   * Fetch body fat samples for date range
+   */
+  async getBodyFatSamples(
+    from: string,
+    to: string
+  ): Promise<GHealthBodyFatListResponse['dataPoints']> {
+    const samples = await fetchAllPages<
+      GHealthBodyFatListResponse,
+      GHealthBodyFatListResponse['dataPoints'][0]
+    >(
+      ['data', 'body-fat', 'list'],
+      { ...this.config, from, to, limit: 100 },
+      (data) => data.dataPoints ?? [],
+      (data) => data.nextPageToken ?? null
+    );
+    return samples;
+  }
+
+  /**
+   * Fetch exercise events for date range (pause/resume)
+   * Note: ghealth CLI doesn't have a separate events endpoint; events are embedded in sessions
+   * This method returns empty array for compatibility
+   */
+  async getExerciseEvents(
+    _from: string,
+    _to: string
+  ): Promise<Array<{ startTimeMillis: string; endTimeMillis: string; type: 'PAUSE' | 'RESUME' }>> {
+    // ghealth doesn't expose exercise events separately
+    return [];
+  }
+
+  /**
+   * Fetch combined body composition samples (weight + body fat)
+   * Fetches both and merges by timestamp
+   */
+  async getBodyCompositionSamples(
+    from: string,
+    to: string
+  ): Promise<{
+    weight: GHealthWeightListResponse['dataPoints'];
+    bodyFat: GHealthBodyFatListResponse['dataPoints'];
+  }> {
+    const [weight, bodyFat] = await Promise.all([
+      this.getWeightSamples(from, to),
+      this.getBodyFatSamples(from, to),
+    ]);
+    return { weight, bodyFat };
   }
 
   /**
    * Fetch all data types for a date range (for sync)
    */
   async fetchAllForSync(
-    startTime: string,
-    endTime: string
+    from: string,
+    to: string
   ): Promise<{
-    sleep: GHealthSleepListResponse['sessions'];
-    hrv: GHealthHrvListResponse['samples'];
-    exercise: GHealthExerciseListResponse['sessions'];
-    heartRate: GHealthHrListResponse['samples'];
-    exerciseEvents: GHealthExerciseEventsResponse['events'];
-    bodyComposition: GHealthBodyCompositionResponse['samples'];
+    sleep: GHealthSleepListResponse['dataPoints'];
+    hrv: GHealthHrvListResponse['dataPoints'];
+    exercise: GHealthExerciseListResponse['dataPoints'];
+    heartRate: GHealthHrListResponse['dataPoints'];
+    weight: GHealthWeightListResponse['dataPoints'];
+    bodyFat: GHealthBodyFatListResponse['dataPoints'];
   }> {
-    const [sleep, hrv, exercise, heartRate, exerciseEvents, bodyComposition] = await Promise.all([
-      this.getSleepSessions(startTime, endTime),
-      this.getHrvSamples(startTime, endTime),
-      this.getExerciseSessions(startTime, endTime),
-      this.getHeartRateSamples(startTime, endTime),
-      this.getExerciseEvents(startTime, endTime),
-      this.getBodyCompositionSamples(startTime, endTime),
+    const [sleep, hrv, exercise, heartRate, weight, bodyFat] = await Promise.all([
+      this.getSleepSessions(from, to),
+      this.getHrvSamples(from, to),
+      this.getExerciseSessions(from, to),
+      this.getHeartRateSamples(from, to),
+      this.getWeightSamples(from, to),
+      this.getBodyFatSamples(from, to),
     ]);
 
-    return { sleep, hrv, exercise, heartRate, exerciseEvents, bodyComposition };
+    return { sleep, hrv, exercise, heartRate, weight, bodyFat };
   }
 }
 
 /**
  * Create client from environment variables
- * Reads all credentials (client_secret.json, credentials.json) from GHEALTH_CONFIG_DIR
+ * Reads all credentials (client_secret.json, credentials.json, config.toml) from GHEALTH_CONFIG_DIR
  */
 export function createGHealthClient(): GHealthClient {
   const configDir = process.env.GHEALTH_CONFIG_DIR;

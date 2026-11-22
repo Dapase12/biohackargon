@@ -26,7 +26,7 @@ import {
 // ========================================================================
 
 const FIXTURE_EXERCISE_LIST_RESPONSE = {
-  sessions: [
+  dataPoints: [
     {
       // Session 1: Running 30 min
       startTimeMillis: "1732110000000", // 2024-11-20 10:00:00 -04:00
@@ -52,7 +52,7 @@ const FIXTURE_EXERCISE_LIST_RESPONSE = {
 };
 
 const FIXTURE_HR_LIST_RESPONSE = {
-  samples: [
+  dataPoints: [
     // Session 1 HR samples (10:00-10:30)
     { startTimeMillis: "1732110000000", endTimeMillis: "1732110060000", beatsPerMinute: "130" },
     { startTimeMillis: "1732110060000", endTimeMillis: "1732110120000", beatsPerMinute: "135" },
@@ -177,7 +177,7 @@ describe('ETL Transformers - Exercise + HR Zones', () => {
 
     it('handles missing optional fields', () => {
       const response = {
-        sessions: [{ startTimeMillis: "1000", endTimeMillis: "2000" }],
+        dataPoints: [{ startTimeMillis: "1000", endTimeMillis: "2000" }],
         nextPageToken: null,
       };
       const parsed = parseExerciseSessions(response);

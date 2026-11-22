@@ -104,8 +104,8 @@ async function transformSleepData(
   hrvSamples: any[],
   date: string
 ): Promise<SleepTransformerOutput | null> {
-  const parsedSleep = parseSleepSessions({ sessions: sleepSessions, nextPageToken: null });
-  const parsedHrv = parseHrvSamples({ samples: hrvSamples, nextPageToken: null });
+  const parsedSleep = parseSleepSessions({ dataPoints: sleepSessions, nextPageToken: null });
+  const parsedHrv = parseHrvSamples({ dataPoints: hrvSamples, nextPageToken: null });
 
   if (parsedSleep.length === 0) return null;
 
@@ -119,8 +119,8 @@ async function transformExerciseData(
   date: string,
   profile: UserEtlProfile
 ): Promise<ExerciseTransformerOutput[]> {
-  const parsedExercises = parseExerciseSessions({ sessions: exerciseSessions, nextPageToken: null });
-  const parsedHr = parseHrSamples({ samples: hrSamples, nextPageToken: null });
+  const parsedExercises = parseExerciseSessions({ dataPoints: exerciseSessions, nextPageToken: null });
+  const parsedHr = parseHrSamples({ dataPoints: hrSamples, nextPageToken: null });
   const parsedEvents = parseExerciseEvents({ events: exerciseEvents, nextPageToken: null });
 
   const results: ExerciseTransformerOutput[] = [];
@@ -136,11 +136,15 @@ async function transformExerciseData(
 }
 
 async function transformBodyCompositionData(
-  bodyCompSamples: any[],
+  weightSamples: any[],
+  bodyFatSamples: any[],
   date: string,
   profile: UserEtlProfile
 ): Promise<BodyCompositionTransformerOutput | null> {
-  const parsed = parseBodyCompositionSamples({ samples: bodyCompSamples, nextPageToken: null });
+  const parsed = parseBodyCompositionSamples(
+    { dataPoints: weightSamples, nextPageToken: null },
+    { dataPoints: bodyFatSamples, nextPageToken: null }
+  );
   const paired = crossReferenceWeightAndBodyFat(parsed);
 
   const dayData = paired.find((p: { date: string; weightKg: number | null; bodyFatPct: number | null }) => p.date === date);
@@ -451,7 +455,7 @@ async function syncDate(
     // Transform
     const sleepData = await transformSleepData(sleepSessions, hrvSamples, date);
     const exerciseData = await transformExerciseData(exerciseSessions, hrSamples, exerciseEvents, date, profile);
-    const bodyCompData = await transformBodyCompositionData(bodyCompSamples, date, profile);
+    const bodyCompData = await transformBodyCompositionData(bodyCompSamples.weight, bodyCompSamples.bodyFat, date, profile);
 
     // Build merged raw biometrics
     const rawParts: DailyRawBiometrics[] = [

@@ -21,7 +21,7 @@ export interface GHealthSleepSession {
 }
 
 export interface GHealthSleepListResponse {
-  sessions: GHealthSleepSession[];
+  dataPoints: GHealthSleepSession[];
   nextPageToken: string | null;
 }
 
@@ -32,7 +32,7 @@ export interface GHealthHrvSample {
 }
 
 export interface GHealthHrvListResponse {
-  samples: GHealthHrvSample[];
+  dataPoints: GHealthHrvSample[];
   nextPageToken: string | null;
 }
 
@@ -47,7 +47,7 @@ export interface GHealthExerciseSession {
 }
 
 export interface GHealthExerciseListResponse {
-  sessions: GHealthExerciseSession[];
+  dataPoints: GHealthExerciseSession[];
   nextPageToken: string | null;
 }
 
@@ -58,7 +58,7 @@ export interface GHealthHrSampleRaw {
 }
 
 export interface GHealthHrListResponse {
-  samples: GHealthHrSampleRaw[];
+  dataPoints: GHealthHrSampleRaw[];
   nextPageToken: string | null;
 }
 
@@ -75,15 +75,25 @@ export interface GHealthExerciseEventsResponse {
   nextPageToken: string | null;
 }
 
-export interface GHealthBodyCompositionSample {
+export interface GHealthWeightSample {
   startTimeMillis: string;
   endTimeMillis: string;
   weight: { value: string; unit: string };
+}
+
+export interface GHealthWeightListResponse {
+  dataPoints: GHealthWeightSample[];
+  nextPageToken: string | null;
+}
+
+export interface GHealthBodyFatSample {
+  startTimeMillis: string;
+  endTimeMillis: string;
   bodyFatPercentage: { value: string; unit: string };
 }
 
-export interface GHealthBodyCompositionResponse {
-  samples: GHealthBodyCompositionSample[];
+export interface GHealthBodyFatListResponse {
+  dataPoints: GHealthBodyFatSample[];
   nextPageToken: string | null;
 }
 

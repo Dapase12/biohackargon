@@ -7,13 +7,16 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import type {
-  GHealthBodyCompositionResponse,
+  GHealthWeightListResponse,
+  GHealthBodyFatListResponse,
   ParsedBodyCompositionSample,
   BodyCompositionTransformerOutput,
   UserEtlProfile,
 } from '@/etl/types';
 import {
   parseBodyCompositionSamples,
+  parseWeightSamples,
+  parseBodyFatSamples,
   crossReferenceWeightAndBodyFat,
   computeBodyCompositionMetrics,
   computeEwmaTrend,
@@ -25,27 +28,48 @@ import {
 // REAL GHEALTH PAYLOAD FIXTURES
 // ========================================================================
 
-const FIXTURE_BODY_COMP_RESPONSE = {
-  samples: [
+const FIXTURE_WEIGHT_RESPONSE: GHealthWeightListResponse = {
+  dataPoints: [
     // Morning weight
     {
       startTimeMillis: "1732104000000", // 2024-11-20 07:00:00 -04:00
       endTimeMillis: "1732104060000",
       weight: { value: "80.5", unit: "kg" },
-      bodyFatPercentage: { value: "20.2", unit: "%" },
     },
     // Evening weight
     {
       startTimeMillis: "1732136400000", // 2024-11-20 19:00:00 -04:00
       endTimeMillis: "1732136460000",
       weight: { value: "80.8", unit: "kg" },
-      bodyFatPercentage: { value: "20.0", unit: "%" },
     },
     // Next day morning
     {
       startTimeMillis: "1732190400000", // 2024-11-21 07:00:00 -04:00
       endTimeMillis: "1732190460000",
       weight: { value: "80.3", unit: "kg" },
+    },
+  ],
+  nextPageToken: null,
+};
+
+const FIXTURE_BODY_FAT_RESPONSE: GHealthBodyFatListResponse = {
+  dataPoints: [
+    // Morning body fat
+    {
+      startTimeMillis: "1732104000000", // 2024-11-20 07:00:00 -04:00
+      endTimeMillis: "1732104060000",
+      bodyFatPercentage: { value: "20.2", unit: "%" },
+    },
+    // Evening body fat
+    {
+      startTimeMillis: "1732136400000", // 2024-11-20 19:00:00 -04:00
+      endTimeMillis: "1732136460000",
+      bodyFatPercentage: { value: "20.0", unit: "%" },
+    },
+    // Next day morning
+    {
+      startTimeMillis: "1732190400000", // 2024-11-21 07:00:00 -04:00
+      endTimeMillis: "1732190460000",
       bodyFatPercentage: { value: "20.5", unit: "%" },
     },
   ],
@@ -61,62 +85,90 @@ const TEST_PROFILE: UserEtlProfile = {
 };
 
 describe('ETL Transformers - Body Composition', () => {
-  let samples: ParsedBodyCompositionSample[];
+  let weightSamples: ParsedBodyCompositionSample[];
+  let bodyFatSamples: ParsedBodyCompositionSample[];
+  let combinedSamples: ParsedBodyCompositionSample[];
 
   beforeEach(() => {
-    samples = parseBodyCompositionSamples(FIXTURE_BODY_COMP_RESPONSE);
+    weightSamples = parseWeightSamples(FIXTURE_WEIGHT_RESPONSE);
+    bodyFatSamples = parseBodyFatSamples(FIXTURE_BODY_FAT_RESPONSE);
+    combinedSamples = parseBodyCompositionSamples(FIXTURE_WEIGHT_RESPONSE, FIXTURE_BODY_FAT_RESPONSE);
   });
 
-  describe('parseBodyCompositionSamples', () => {
-    it('parses body composition samples from ghealth response', () => {
-      expect(samples).toHaveLength(3);
+  describe('parseWeightSamples', () => {
+    it('parses weight samples from ghealth response', () => {
+      expect(weightSamples).toHaveLength(3);
     });
 
     it('converts string numeric fields to numbers', () => {
-      expect(typeof samples[0].weightKg).toBe('number');
-      expect(samples[0].weightKg).toBe(80.5);
-      expect(typeof samples[0].bodyFatPct).toBe('number');
-      expect(samples[0].bodyFatPct).toBe(20.2);
+      expect(typeof weightSamples[0].weightKg).toBe('number');
+      expect(weightSamples[0].weightKg).toBe(80.5);
+      expect(weightSamples[0].bodyFatPct).toBeNull();
     });
 
     it('converts timestamps to numbers', () => {
-      expect(typeof samples[0].startTimeMillis).toBe('number');
-      expect(samples[0].startTimeMillis).toBe(1732104000000);
+      expect(typeof weightSamples[0].startTimeMillis).toBe('number');
+      expect(weightSamples[0].startTimeMillis).toBe(1732104000000);
     });
 
-    it('handles missing weight or body fat', () => {
+    it('handles missing weight', () => {
       const response = {
-        samples: [{ startTimeMillis: "1000", endTimeMillis: "2000" }],
+        dataPoints: [{ startTimeMillis: "1000", endTimeMillis: "2000" }],
         nextPageToken: null,
       };
-      const parsed = parseBodyCompositionSamples(response);
+      const parsed = parseWeightSamples(response);
       expect(parsed[0].weightKg).toBeNull();
       expect(parsed[0].bodyFatPct).toBeNull();
     });
 
     it('handles different units (kg, lb)', () => {
       const response = {
-        samples: [
-          { startTimeMillis: "1000", endTimeMillis: "2000", weight: { value: "177", unit: "lb" }, bodyFatPercentage: { value: "20", unit: "%" } },
+        dataPoints: [
+          { startTimeMillis: "1000", endTimeMillis: "2000", weight: { value: "177", unit: "lb" } },
         ],
         nextPageToken: null,
       };
-      const parsed = parseBodyCompositionSamples(response);
+      const parsed = parseWeightSamples(response);
       // Should convert lb to kg: 177 lb = 80.28 kg
       expect(parsed[0].weightKg).toBeCloseTo(80.3, 1);
     });
   });
 
+  describe('parseBodyFatSamples', () => {
+    it('parses body fat samples from ghealth response', () => {
+      expect(bodyFatSamples).toHaveLength(3);
+    });
+
+    it('converts string numeric fields to numbers', () => {
+      expect(typeof bodyFatSamples[0].bodyFatPct).toBe('number');
+      expect(bodyFatSamples[0].bodyFatPct).toBe(20.2);
+      expect(bodyFatSamples[0].weightKg).toBeNull();
+    });
+  });
+
+  describe('parseBodyCompositionSamples', () => {
+    it('parses combined body composition samples from ghealth responses', () => {
+      expect(combinedSamples).toHaveLength(6); // 3 weight + 3 body fat
+    });
+
+    it('converts string numeric fields to numbers', () => {
+      expect(typeof combinedSamples[0].weightKg).toBe('number');
+      expect(combinedSamples[0].weightKg).toBe(80.5);
+      expect(typeof combinedSamples[3].bodyFatPct).toBe('number');
+      expect(combinedSamples[3].bodyFatPct).toBe(20.2);
+    });
+  });
+
   describe('crossReferenceWeightAndBodyFat', () => {
     it('pairs weight and body fat samples by date (same day)', () => {
-      const paired = crossReferenceWeightAndBodyFat(samples);
+      const paired = crossReferenceWeightAndBodyFat(combinedSamples);
       // 3 samples across 2 days (Nov 20 has 2, Nov 21 has 1)
       // Should pair morning/evening for Nov 20
       expect(paired.length).toBeGreaterThan(0);
     });
 
     it('uses morning weight preference when multiple per day', () => {
-      const paired = crossReferenceWeightAndBodyFat(samples);
+      const paired = crossReferenceWeightAndBodyFat(combinedSamples);
       const nov20 = paired.find(p => p.date === '2024-11-20');
       expect(nov20).toBeDefined();
       // Morning weight (80.5) should be preferred over evening (80.8)
@@ -125,7 +177,7 @@ describe('ETL Transformers - Body Composition', () => {
 
     it('handles days with only weight or only body fat', () => {
       const samplesWithGaps = [
-        ...samples,
+        ...combinedSamples,
         { startTimeMillis: 1732276800000, endTimeMillis: 1732276860000, weightKg: 81.0, bodyFatPct: null }, // Nov 22 weight only
       ];
       const paired = crossReferenceWeightAndBodyFat(samplesWithGaps);
@@ -208,7 +260,7 @@ describe('ETL Transformers - Body Composition', () => {
 
   describe('computeBodyCompositionMetrics', () => {
     it('produces complete BodyCompositionTransformerOutput', () => {
-      const paired = crossReferenceWeightAndBodyFat(samples);
+      const paired = crossReferenceWeightAndBodyFat(combinedSamples);
       const output = computeBodyCompositionMetrics('2024-11-20', paired[0], TEST_PROFILE);
 
       expect(output.log_date).toBe('2024-11-20');
@@ -221,7 +273,7 @@ describe('ETL Transformers - Body Composition', () => {
     });
 
     it('computes fat mass and FFM correctly', () => {
-      const paired = crossReferenceWeightAndBodyFat(samples);
+      const paired = crossReferenceWeightAndBodyFat(combinedSamples);
       const output = computeBodyCompositionMetrics('2024-11-20', paired[0], TEST_PROFILE);
 
       const fatMass = output.weight_kg! * (output.body_fat_pct! / 100);
@@ -231,7 +283,7 @@ describe('ETL Transformers - Body Composition', () => {
     });
 
     it('estimates muscle mass as ~50% of FFM for males', () => {
-      const paired = crossReferenceWeightAndBodyFat(samples);
+      const paired = crossReferenceWeightAndBodyFat(combinedSamples);
       const output = computeBodyCompositionMetrics('2024-11-20', paired[0], TEST_PROFILE);
 
       // Male muscle mass ~50% of FFM
@@ -239,14 +291,14 @@ describe('ETL Transformers - Body Composition', () => {
     });
 
     it('estimates bone mass as ~15% of FFM', () => {
-      const paired = crossReferenceWeightAndBodyFat(samples);
+      const paired = crossReferenceWeightAndBodyFat(combinedSamples);
       const output = computeBodyCompositionMetrics('2024-11-20', paired[0], TEST_PROFILE);
 
       expect(output.bone_mass_kg).toBeCloseTo(output.ffm_kg! * 0.15, 1);
     });
 
     it('estimates water as ~73% of FFM', () => {
-      const paired = crossReferenceWeightAndBodyFat(samples);
+      const paired = crossReferenceWeightAndBodyFat(combinedSamples);
       const output = computeBodyCompositionMetrics('2024-11-20', paired[0], TEST_PROFILE);
 
       expect(output.water_kg).toBeCloseTo(output.ffm_kg! * 0.73, 1);
@@ -266,7 +318,7 @@ describe('ETL Transformers - Body Composition', () => {
 
   describe('Full body composition pipeline', () => {
     it('produces complete output for a date with paired data', () => {
-      const paired = crossReferenceWeightAndBodyFat(samples);
+      const paired = crossReferenceWeightAndBodyFat(combinedSamples);
       const nov20 = paired.find(p => p.date === '2024-11-20')!;
 
       const output: BodyCompositionTransformerOutput = computeBodyCompositionMetrics(
