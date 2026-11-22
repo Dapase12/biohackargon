@@ -62,8 +62,10 @@ jobs:
 
       - name: Install ghealth CLI
         run: |
-          go install github.com/Google-Health-API/google-health-cli@latest
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          git clone https://github.com/Google-Health-API/google-health-cli.git /tmp/ghealth-cli
+          cd /tmp/ghealth-cli
+          go build -o ghealth .
+          echo "/tmp/ghealth-cli" >> $GITHUB_PATH
           ghealth --version
 
       - name: Write ghealth client secret (client_secret.json)
