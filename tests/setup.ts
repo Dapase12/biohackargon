@@ -214,8 +214,6 @@ export function createMockRawBiometric(overrides: Partial<any> = {}) {
     night_awake_shift_hours: null,
     // Metadata
     raw_payload_hash: 'abc123',
-    source: 'health_connect',
-    created_at: '2025-01-15T10:00:00Z',
     updated_at: '2025-01-15T10:00:00Z',
     ...overrides
   }

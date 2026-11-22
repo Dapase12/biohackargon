@@ -321,8 +321,6 @@ interface DailyRawBiometrics {
   night_awake_shift_hours?: number | null;
   // Metadata
   raw_payload_hash?: string | null;
-  source?: string | null;
-  created_at?: string;
   updated_at?: string;
 }
 
@@ -450,13 +448,35 @@ async function upsertDailyRawBiometrics(
       'night_awake_shift_hours',
     ];
 
+    // Runtime whitelist: ONLY these 17 production columns may be sent to upsert
+    // Matches exact production schema from information_schema.columns
+    const ALLOWED_UPSERT_COLUMNS = new Set<string>([
+      'user_id',
+      'log_date',
+      'updated_at',
+      'rmssd_ms',
+      'time_in_bed_min',
+      'total_sleep_min',
+      'deep_sleep_min',
+      'rem_sleep_min',
+      'light_sleep_min',
+      'nap_sleep_min',
+      'sleep_onset_timestamp',
+      'wake_timestamp',
+      'pickleball_or_gym_minutes',
+      'active_calories_kcal',
+      'hr_zones_minutes',
+      'weight_kg',
+      'body_fat_pct',
+    ]);
+
     const payload: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
 
-    // Add non-manual fields from cleanData
+    // Add non-manual fields from cleanData, but ONLY if in ALLOWED_UPSERT_COLUMNS
     for (const [key, value] of Object.entries(cleanData)) {
-      if (!manualFields.includes(key as keyof ManualFieldsRow)) {
+      if (!manualFields.includes(key as keyof ManualFieldsRow) && ALLOWED_UPSERT_COLUMNS.has(key)) {
         payload[key] = value;
       }
     }
@@ -542,7 +562,6 @@ function buildRawBiometricsFromSleep(
     weight_kg: null,
     body_fat_pct: null,
     raw_payload_hash: null,
-    source: 'health_connect',
   };
 }
 
@@ -604,7 +623,6 @@ function buildRawBiometricsFromExercise(
     weight_kg: null,
     body_fat_pct: null,
     raw_payload_hash: null,
-    source: 'health_connect',
   };
 }
 
@@ -638,7 +656,6 @@ function buildRawBiometricsFromBodyComp(
     active_calories_kcal: null,
     hr_zones_minutes: null,
     raw_payload_hash: null,
-    source: 'health_connect',
   };
 }
 

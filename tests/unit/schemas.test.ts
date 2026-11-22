@@ -103,8 +103,6 @@ describe('Zod Validation Schemas', () => {
       night_awake_shift_hours: z.number().nullable(),
       // Metadata
       raw_payload_hash: z.string().nullable(),
-      source: z.string().nullable(),
-      created_at: z.string().datetime().nullable(),
       updated_at: z.string().datetime().nullable(),
     })
 
@@ -135,8 +133,6 @@ describe('Zod Validation Schemas', () => {
         is_hospital_shift: false,
         night_awake_shift_hours: null,
         raw_payload_hash: 'abc123',
-        source: 'health_connect',
-        created_at: '2025-01-15T10:00:00Z',
         updated_at: '2025-01-15T10:00:00Z',
       }
       expect(() => RawBiometricsSchema.parse(valid)).not.toThrow()
@@ -169,8 +165,6 @@ describe('Zod Validation Schemas', () => {
         is_hospital_shift: null,
         night_awake_shift_hours: null,
         raw_payload_hash: null,
-        source: null,
-        created_at: null,
         updated_at: null,
       }
       expect(() => RawBiometricsSchema.parse(minimal)).not.toThrow()
@@ -217,8 +211,6 @@ describe('Zod Validation Schemas', () => {
       is_hospital_shift: false,
       night_awake_shift_hours: null,
       raw_payload_hash: 'abc123',
-      source: 'health_connect',
-      created_at: '2025-01-15T10:00:00Z',
       updated_at: '2025-01-15T10:00:00Z',
     }
   })
