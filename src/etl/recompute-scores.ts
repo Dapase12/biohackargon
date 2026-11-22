@@ -235,6 +235,7 @@ function buildHistory(
   const history: HistoryDay[] = [];
   for (let i = targetIndex - 1; i >= 0; i--) {
     const raw = allRaw[i];
+    if (!raw) continue;
     const computed = allComputed.find(c => c.log_date === raw.log_date);
     history.push({
       ...raw,
@@ -256,6 +257,7 @@ function buildPrevComputed(
   if (targetIndex === 0) return null;
 
   const prevRaw = allRaw[targetIndex - 1];
+  if (!prevRaw) return null;
   const prevComputed = allComputed.find(c => c.log_date === prevRaw.log_date);
   if (!prevComputed) return null;
 
@@ -268,7 +270,7 @@ function buildPrevComputed(
     strain_score: prevComputed.strain_score ?? null,
     total_sleep_min: prevRaw.total_sleep_min ?? null,
     recovery_score: prevComputed.recovery_score ?? null,
-    dynamic_sleep_need_hours: prevComputed.dynamic_sleep_need_hours ?? prevComputed.dynamic_sleep_need_h ?? null,
+    dynamic_sleep_need_hours: prevComputed.dynamic_sleep_need_h ?? null,
     ln_rmssd: prevComputed.ln_rmssd ?? null,
     ln_rmssd_14d_mean: prevComputed.ln_rmssd_14d_mean ?? null,
     ln_rmssd_14d_sd: prevComputed.ln_rmssd_14d_sd ?? null,
@@ -276,7 +278,7 @@ function buildPrevComputed(
     rhr_z_score: prevComputed.rhr_z_score ?? null,
     sleep_regularity_pct: prevComputed.sleep_regularity_pct ?? null,
     cumulative_sleep_debt_hours: prevComputed.cumulative_sleep_debt_hours ?? null,
-    hrv_mode: null,
+    hrv_mode: undefined,
   };
 }
 
@@ -314,7 +316,7 @@ export async function recomputeDailyScores(options: RecomputeOptions): Promise<{
   console.log(`[RECOMPUTE] Profile: age=${profile.chronologicalAgeYears}, sex=${profile.biologicalSex}, height=${profile.height_m}m`);
 
   // We need 60 days before fromDate for rolling windows
-  const extendedFrom = formatDate(new Date(fromDate + 'T00:00:00Z').getTime() - 60 * 86400000);
+  const extendedFrom = formatDate(new Date(new Date(fromDate + 'T00:00:00Z').getTime() - 60 * 86400000));
 
   // Fetch all raw biometrics from extended range
   const allRaw = await fetchRawBiometrics(supabase, userId, extendedFrom, toDate);

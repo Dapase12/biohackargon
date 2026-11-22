@@ -160,8 +160,9 @@ export function crossReferenceHrvWithSleep(
  * Compute sleep metrics from parsed sessions
  */
 export function computeSleepMetrics(
-  sleepSessions: ParsedSleepSession[]
-): Partial<SleepTransformerOutput> {
+  sleepSessions: ParsedSleepSession[],
+  logDate: string
+): SleepTransformerOutput {
   const nocturnal = sleepSessions.filter(s => !s.isNap);
   const naps = sleepSessions.filter(s => s.isNap);
 
@@ -204,6 +205,7 @@ export function computeSleepMetrics(
   }, 0);
 
   return {
+    log_date: logDate,
     total_sleep_min: totalSleepMin || null,
     deep_sleep_min: deepSleepMin || null,
     rem_sleep_min: remSleepMin || null,
@@ -229,6 +231,8 @@ export function computeSleepMetrics(
     hrv_deep_sleep_median: null,
     hrv_nocturnal_count: 0,
     hrv_mode: 'night',
+    sleep_onset_timestamp: null,
+    wake_timestamp: null,
   };
 }
 
@@ -255,7 +259,7 @@ export function computeHrvMedian(samples: ParsedHrvSample[]): number | null {
     .filter(s => s.rmssd !== null)
     .map(s => s.rmssd!);
   if (values.length === 0) return null;
-  if (values.length === 1) return values[0]; // Single sample = that value is the median
+  if (values.length === 1) return values[0]!; // Single sample = that value is the median
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   const lower = sorted[mid - 1];
@@ -289,7 +293,7 @@ export function buildSleepTransformerOutput(
   hrvSamples: ParsedHrvSample[],
   options: { includeNaps: boolean } = { includeNaps: false }
 ): SleepTransformerOutput {
-  const metrics = computeSleepMetrics(sleepSessions);
+  const metrics = computeSleepMetrics(sleepSessions, logDate);
   const nocturnalHrv = crossReferenceHrvWithSleep(hrvSamples, sleepSessions, { includeNaps: false });
   const allHrv = crossReferenceHrvWithSleep(hrvSamples, sleepSessions, { includeNaps: true });
 
@@ -323,12 +327,11 @@ export function buildSleepTransformerOutput(
   }
 
   return {
-    log_date: logDate,
     ...metrics,
-    hrv_nocturnal_median: hrvNocturnalMedian,
-    hrv_deep_sleep_median: hrvDeepSleepMedian,
-    hrv_nocturnal_count: hrvNocturnalCount,
-    hrv_mode: hrvMode,
+    hrv_nocturnal_median: hrvNocturnalMedian ?? null,
+    hrv_deep_sleep_median: hrvDeepSleepMedian ?? null,
+    hrv_nocturnal_count: hrvNocturnalCount ?? 0,
+    hrv_mode: hrvMode ?? 'night',
     sleep_onset_timestamp: sleepOnsetTimestamp,
     wake_timestamp: wakeTimestamp,
   };

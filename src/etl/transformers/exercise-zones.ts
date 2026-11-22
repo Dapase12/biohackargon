@@ -201,17 +201,17 @@ export function classifyHrZonesKarvonen(
   const sortedSamples = [...hrSamples].sort((a, b) => a.startTimeMillis - b.startTimeMillis);
 
   for (let i = 0; i < sortedSamples.length; i++) {
-    const sample = sortedSamples[i];
+    const sample = sortedSamples[i]!;
     const hr = sample.bpm;
 
     // Calculate duration to next sample (or session end for last sample)
     let durationMs: number;
     if (i < sortedSamples.length - 1) {
-      durationMs = sortedSamples[i + 1].startTimeMillis - sample.startTimeMillis;
+      durationMs = sortedSamples[i + 1]!.startTimeMillis - sample.startTimeMillis;
     } else {
       // Last sample: assume same interval as previous, or 5 seconds default
       durationMs = i > 0
-        ? sample.startTimeMillis - sortedSamples[i - 1].startTimeMillis
+        ? sample.startTimeMillis - sortedSamples[i - 1]!.startTimeMillis
         : 5000; // 5 seconds default
     }
 
@@ -294,14 +294,14 @@ function buildWorkoutZones(
   const sortedSamples = [...filteredHr].sort((a, b) => a.startTimeMillis - b.startTimeMillis);
 
   for (let i = 0; i < sortedSamples.length; i++) {
-    const sample = sortedSamples[i];
+    const sample = sortedSamples[i]!;
     const hr = sample.bpm;
     let durationMs: number;
     if (i < sortedSamples.length - 1) {
-      durationMs = sortedSamples[i + 1].startTimeMillis - sample.startTimeMillis;
+      durationMs = sortedSamples[i + 1]!.startTimeMillis - sample.startTimeMillis;
     } else {
       durationMs = i > 0
-        ? sample.startTimeMillis - sortedSamples[i - 1].startTimeMillis
+        ? sample.startTimeMillis - sortedSamples[i - 1]!.startTimeMillis
         : 5000;
     }
     const durationMin = Math.min(durationMs / 60000, 1);

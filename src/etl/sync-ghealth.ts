@@ -918,9 +918,9 @@ async function runSync(options: SyncOptions): Promise<void> {
   if (failCount > 0) process.exit(1);
 
   // After successful sync, recompute scores for the same date range
-  if (successCount > 0 && !dryRun) {
-    const fromDate = dates[0];
-    const toDate = dates[dates.length - 1];
+  if (successCount > 0 && !dryRun && dates.length > 0) {
+    const fromDate = dates[0]!;
+    const toDate = dates[dates.length - 1]!;
     console.log(`\n[RECOMPUTE] Recomputing scores for ${fromDate} to ${toDate}...`);
 
     const recomputeResult = await recomputeDailyScores({
