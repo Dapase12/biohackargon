@@ -1,0 +1,154 @@
+name: Sync ghealth → Supabase
+
+on:
+  schedule:
+    # Run every 3 hours (at minute 0)
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+    inputs:
+      from:
+        description: 'Start date (YYYY-MM-DD)'
+        required: false
+        type: string
+      to:
+        description: 'End date (YYYY-MM-DD)'
+        required: false
+        type: string
+      backfill:
+        description: 'Backfill last 90 days'
+        required: false
+        type: boolean
+        default: false
+      dry-run:
+        description: 'Preview without writing to database'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+  GHEALTH_CONFIG_DIR: ${{ secrets.GHEALTH_CONFIG_DIR }}
+  USER_ID: ${{ secrets.ARGON_USER_ID }}
+
+jobs:
+  sync:
+    name: Sync biometric data
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Required for gh secret set
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install ghealth CLI
+        run: |
+          # ghealth is distributed as a Go binary
+          curl -fsSL https://github.com/google/ghealth/releases/latest/download/ghealth_linux_amd64.tar.gz | tar -xz
+          sudo mv ghealth /usr/local/bin/
+          ghealth --version
+
+      - name: Write ghealth client secret (client_secret.json)
+        run: |
+          mkdir -p "${GHEALTH_CONFIG_DIR}"
+          echo "${GHEALTH_CLIENT_SECRET_CONTENT}" > "${GHEALTH_CONFIG_DIR}/client_secret.json"
+          chmod 600 "${GHEALTH_CONFIG_DIR}/client_secret.json"
+        env:
+          GHEALTH_CLIENT_SECRET_CONTENT: ${{ secrets.GHEALTH_CLIENT_SECRET_CONTENT }}
+          GHEALTH_CONFIG_DIR: ${{ secrets.GHEALTH_CONFIG_DIR }}
+
+      - name: Write ghealth user tokens (credentials.json)
+        run: |
+          mkdir -p "${GHEALTH_CONFIG_DIR}"
+          echo "${GHEALTH_CREDENTIALS_CONTENT}" > "${GHEALTH_CONFIG_DIR}/credentials.json"
+          chmod 600 "${GHEALTH_CONFIG_DIR}/credentials.json"
+        env:
+          GHEALTH_CREDENTIALS_CONTENT: ${{ secrets.GHEALTH_CREDENTIALS_CONTENT }}
+          GHEALTH_CONFIG_DIR: ${{ secrets.GHEALTH_CONFIG_DIR }}
+
+      - name: Write ghealth config (config.toml)
+        run: |
+          mkdir -p "${GHEALTH_CONFIG_DIR}"
+          echo "${GHEALTH_CONFIG_TOML_CONTENT}" > "${GHEALTH_CONFIG_DIR}/config.toml"
+          chmod 644 "${GHEALTH_CONFIG_DIR}/config.toml"
+        env:
+          GHEALTH_CONFIG_TOML_CONTENT: ${{ secrets.GHEALTH_CONFIG_TOML_CONTENT }}
+          GHEALTH_CONFIG_DIR: ${{ secrets.GHEALTH_CONFIG_DIR }}
+
+      - name: Validate ghealth auth tokens
+        run: |
+          ghealth auth status --validate
+        env:
+          GHEALTH_CONFIG_DIR: ${{ secrets.GHEALTH_CONFIG_DIR }}
+
+      - name: Run sync (scheduled)
+        if: github.event_name == 'schedule'
+        run: |
+          npx tsx src/etl/sync-ghealth.ts \
+            --user-id "${USER_ID}"
+        env:
+          GHEALTH_CONFIG_DIR: ${{ secrets.GHEALTH_CONFIG_DIR }}
+
+      - name: Run sync (manual with options)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          CMD="npx tsx src/etl/sync-ghealth.ts --user-id \"${USER_ID}\""
+
+          if [ -n "${{ github.event.inputs.from }}" ]; then
+            CMD="$CMD --from \"${{ github.event.inputs.from }}\""
+          fi
+
+          if [ -n "${{ github.event.inputs.to }}" ]; then
+            CMD="$CMD --to \"${{ github.event.inputs.to }}\""
+          fi
+
+          if [ "${{ github.event.inputs.backfill }}" = "true" ]; then
+            CMD="$CMD --backfill"
+          fi
+
+          if [ "${{ github.event.inputs.dry-run }}" = "true" ]; then
+            CMD="$CMD --dry-run"
+          fi
+
+          eval $CMD
+        shell: bash
+        env:
+          GHEALTH_CONFIG_DIR: ${{ secrets.GHEALTH_CONFIG_DIR }}
+
+      - name: Persist refreshed tokens to GitHub secret
+        if: always()
+        run: |
+          if [ -f "${GHEALTH_CONFIG_DIR}/credentials.json" ]; then
+            echo "Updating GHEALTH_CREDENTIALS_CONTENT secret with refreshed tokens..."
+            gh secret set GHEALTH_CREDENTIALS_CONTENT \
+              --repo "${{ github.repository }}" \
+              --body "$(cat ${GHEALTH_CONFIG_DIR}/credentials.json)"
+            echo "Secret updated successfully"
+          else
+            echo "WARNING: credentials.json not found, skipping secret update"
+          fi
+        env:
+          GHEALTH_CONFIG_DIR: ${{ secrets.GHEALTH_CONFIG_DIR }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: Upload sync logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-logs-${{ github.run_id }}
+          path: |
+            *.log
+          retention-days: 7
