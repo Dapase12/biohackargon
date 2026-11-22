@@ -311,6 +311,17 @@ export function buildSleepTransformerOutput(
   const hrvNocturnalCount = nocturnalHrv.filter(s => s.rmssd !== null).length;
   const hrvMode = determineHrvMode(nocturnalHrv, deepSleepHrv);
 
+  // Find main nocturnal sleep session (longest non-nap session)
+  let sleepOnsetTimestamp: string | null = null;
+  let wakeTimestamp: string | null = null;
+  if (nocturnalSessions.length > 0) {
+    const mainSession = nocturnalSessions.reduce((max, s) =>
+      s.durationMin > max.durationMin ? s : max
+    );
+    sleepOnsetTimestamp = new Date(mainSession.startTimeMillis).toISOString();
+    wakeTimestamp = new Date(mainSession.endTimeMillis).toISOString();
+  }
+
   return {
     log_date: logDate,
     ...metrics,
@@ -318,5 +329,7 @@ export function buildSleepTransformerOutput(
     hrv_deep_sleep_median: hrvDeepSleepMedian,
     hrv_nocturnal_count: hrvNocturnalCount,
     hrv_mode: hrvMode,
-  } as SleepTransformerOutput;
+    sleep_onset_timestamp: sleepOnsetTimestamp,
+    wake_timestamp: wakeTimestamp,
+  };
 }

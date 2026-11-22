@@ -92,46 +92,70 @@ function formatError(err: unknown): string {
 
 /**
  * Fetch user profile from profiles table, fallback to DEFAULT_PROFILE
- * profiles table has: birth_date, height_m, biological_sex, timezone, etc.
- * resting_hr and max_hr are computed from age if not present
+ * profiles table has: user_id, birth_date, height_m, timezone, basal_sleep_need_h,
+ * habitual_wake, goal_weight_kg, goal_date, daily_deficit_kcal, biological_sex
+ * restingHR is fetched from latest daily_raw_biometrics.rhr_bpm
+ * maxHR is calculated from Tanaka formula: 208 - 0.7 * age
  */
 async function fetchUserProfile(userId: string): Promise<UserEtlProfile> {
   try {
-    const { data, error } = await supabase
+    const { data: profileRow, error: profileError } = await supabase
       .from('profiles')
-      .select('birth_date, height_m, biological_sex, resting_hr, max_hr')
+      .select('birth_date, height_m, biological_sex')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
-    if (error) {
+    if (profileError) {
       // Query error (schema, column, permission) - log full error details
-      console.warn(`[PROFILE] Query error for ${userId}: ${formatError(error)}, using DEFAULT_PROFILE`);
+      console.warn(`[PROFILE] Query error for ${userId}: ${formatError(profileError)}, using DEFAULT_PROFILE`);
       return DEFAULT_PROFILE;
     }
-    if (!data) {
+    if (!profileRow) {
       // Row not found - expected for new users
       console.warn(`[PROFILE] profiles not found for ${userId}, using DEFAULT_PROFILE`);
       return DEFAULT_PROFILE;
     }
 
     // Compute age from birth_date
-    const birthDate = new Date(data.birth_date);
+    const birthDate = new Date(profileRow.birth_date);
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
       age--;
     }
+    const finalAge = age || DEFAULT_PROFILE.age;
 
-    // Compute maxHR from Tanaka formula if not stored
-    const maxHR = data.max_hr ?? Math.round(208 - 0.7 * age);
+    // Compute maxHR from Tanaka formula
+    const maxHR = Math.round(208 - 0.7 * finalAge);
+
+    // Fetch restingHR from latest daily_raw_biometrics.rhr_bpm
+    let restingHR = DEFAULT_PROFILE.restingHR;
+    try {
+      const { data: rhrRow } = await supabase
+        .from('daily_raw_biometrics')
+        .select('rhr_bpm')
+        .eq('user_id', userId)
+        .not('rhr_bpm', 'is', null)
+        .order('log_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (rhrRow?.rhr_bpm !== null && rhrRow?.rhr_bpm !== undefined) {
+        restingHR = rhrRow.rhr_bpm;
+      }
+    } catch {
+      // Ignore, use default
+    }
+
+    const heightM = Number(profileRow.height_m) || DEFAULT_PROFILE.heightM;
+    const biologicalSex = profileRow.biological_sex === 'female' ? 'female' : 'male';
 
     return {
-      age,
-      restingHR: data.resting_hr ?? DEFAULT_PROFILE.restingHR,
+      age: finalAge,
+      restingHR,
       maxHR,
-      biologicalSex: data.biological_sex,
-      heightM: data.height_m,
+      biologicalSex,
+      heightM,
     };
   } catch (error) {
     console.warn(`[PROFILE] Error fetching profile for ${userId}:`, formatError(error));
@@ -275,7 +299,7 @@ interface DailyRawBiometrics {
   hrv_pnn50_pct?: number | null;
   // RHR
   rhr_bpm?: number | null;
-  // Sleep
+  // Sleep (from Health Connect)
   sleep_score?: number | null;
   total_sleep_min?: number | null;
   deep_sleep_min?: number | null;
@@ -287,38 +311,40 @@ interface DailyRawBiometrics {
   sleep_onset_latency_min?: number | null;
   naps_count?: number;
   naps_total_min?: number;
-  // Activity
+  bedtime_start?: string | null;  // time type stored as HH:MM:SS
+  bedtime_end?: string | null;    // time type stored as HH:MM:SS
+  // Activity (from Zepp/Health Connect)
   steps?: number | null;
   active_calories?: number | null;
   exercise_min?: number | null;
   exercise_type?: string | null;
   exercise_intensity?: string | null;
-  // Body Composition
+  // Body Composition (from scale via Health Connect)
   weight_kg?: number | null;
   body_fat_pct?: number | null;
   muscle_mass_kg?: number | null;
   hydration_ml?: number | null;
-  // Nutrition
+  // Nutrition (from meal logging)
   intake_kcal?: number | null;
   intake_protein_g?: number | null;
   intake_carbs_g?: number | null;
   intake_fat_g?: number | null;
   meals_log_json?: any;
-  // HR zones (individual columns + jsonb)
+  // HR zones (from Zepp exercise)
   z1_minutes?: number | null;
   z2_minutes?: number | null;
   z3_minutes?: number | null;
   z4_minutes?: number | null;
   z5_minutes?: number | null;
   hr_zones_minutes?: any;
-  // Respiratory rate
+  // Respiratory rate (from sleep)
   resp_rate_brpm?: number | null;
-  // SpO2
+  // SpO2 (from sleep)
   spo2_pct?: number | null;
-  // Hospital shift
+  // Hospital shift tracking
   is_hospital_shift?: boolean | null;
   night_awake_shift_hours?: number | null;
-  // Subjective
+  // Subjective / manual
   session_rpe?: number | null;
   pickleball_or_gym_minutes?: number | null;
   // Metadata
@@ -400,27 +426,78 @@ interface ComputedDailyScores {
 }
 
 /**
- * Atomic upsert for daily_raw_biometrics preserving meals_log_json and session_rpe
+ * Atomic upsert for daily_raw_biometrics preserving manual fields
+ * Strips undefined/null keys and excludes manual fields from payload
+ * Manual fields (preserved from existing row): meals_log_json, session_rpe,
+ * intake_kcal, intake_protein_g, intake_carbs_g, intake_fat_g,
+ * is_hospital_shift, night_awake_shift_hours
  */
 async function upsertDailyRawBiometrics(
   client: SupabaseClient,
   data: DailyRawBiometrics
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // First, try to get existing row to preserve meals_log_json and session_rpe
+    // First, get existing row to preserve manual fields
+    type ManualFieldsRow = {
+      meals_log_json: unknown;
+      session_rpe: number | null;
+      intake_kcal: number | null;
+      intake_protein_g: number | null;
+      intake_carbs_g: number | null;
+      intake_fat_g: number | null;
+      is_hospital_shift: boolean | null;
+      night_awake_shift_hours: number | null;
+    };
     const { data: existing } = await client
       .from('daily_raw_biometrics')
-      .select('meals_log_json, session_rpe')
+      .select('meals_log_json, session_rpe, intake_kcal, intake_protein_g, intake_carbs_g, intake_fat_g, is_hospital_shift, night_awake_shift_hours')
       .eq('user_id', data.user_id)
       .eq('log_date', data.log_date)
       .single();
 
-    const payload = {
-      ...data,
-      meals_log_json: existing?.meals_log_json ?? data.meals_log_json ?? null,
-      session_rpe: existing?.session_rpe ?? data.session_rpe ?? null,
+    const existingRow = existing as ManualFieldsRow | null;
+
+    // Strip undefined and null keys from data (defense-in-depth)
+    const cleanData: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== undefined && value !== null) {
+        cleanData[key] = value;
+      }
+    }
+
+    // Build payload: only include non-manual fields from cleanData
+    // Manual fields are preserved from existing row (not overwritten)
+    const manualFields: (keyof ManualFieldsRow)[] = [
+      'meals_log_json',
+      'session_rpe',
+      'intake_kcal',
+      'intake_protein_g',
+      'intake_carbs_g',
+      'intake_fat_g',
+      'is_hospital_shift',
+      'night_awake_shift_hours',
+    ];
+
+    const payload: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
+
+    // Add non-manual fields from cleanData
+    for (const [key, value] of Object.entries(cleanData)) {
+      if (!manualFields.includes(key as keyof ManualFieldsRow)) {
+        payload[key] = value;
+      }
+    }
+
+    // Preserve manual fields from existing row (don't overwrite with null)
+    if (existingRow) {
+      for (const field of manualFields) {
+        const value = existingRow[field];
+        if (value !== null && value !== undefined) {
+          payload[field] = value;
+        }
+      }
+    }
 
     const { error } = await client
       .from('daily_raw_biometrics')
@@ -463,20 +540,29 @@ async function upsertComputedDailyScores(
 /**
  * Build daily_raw_biometrics from sleep transformer output
  * Maps SleepTransformerOutput fields to daily_raw_biometrics schema columns
+ * Outputs ONLY columns that exist in daily_raw_biometrics and are populated from sleep data
  */
 function buildRawBiometricsFromSleep(
   userId: string,
   date: string,
   sleep: SleepTransformerOutput
 ): DailyRawBiometrics {
+  // Extract time portion from sleep_onset_timestamp and wake_timestamp for bedtime_start/end
+  const bedtimeStart = sleep.sleep_onset_timestamp
+    ? new Date(sleep.sleep_onset_timestamp).toTimeString().slice(0, 8)
+    : null;
+  const bedtimeEnd = sleep.wake_timestamp
+    ? new Date(sleep.wake_timestamp).toTimeString().slice(0, 8)
+    : null;
+
   return {
     user_id: userId,
     log_date: date,
-    // HRV: use nocturnal median as rmssd
+    // HRV: use nocturnal median as rmssd (numeric(6,2))
     hrv_rmssd_ms: sleep.hrv_nocturnal_median ? Math.round(sleep.hrv_nocturnal_median * 100) / 100 : null,
     // RHR: not available from sleep alone
     rhr_bpm: null,
-    // Sleep
+    // Sleep (from Health Connect) - only columns that exist in daily_raw_biometrics
     sleep_score: null, // computed elsewhere
     total_sleep_min: sleep.total_sleep_min ? Math.round(sleep.total_sleep_min) : null,
     deep_sleep_min: sleep.deep_sleep_min ? Math.round(sleep.deep_sleep_min) : null,
@@ -488,6 +574,8 @@ function buildRawBiometricsFromSleep(
     sleep_onset_latency_min: sleep.sleep_onset_latency_min ? Math.round(sleep.sleep_onset_latency_min) : null,
     naps_count: sleep.naps_count ?? 0,
     naps_total_min: sleep.naps_total_min ?? 0,
+    bedtime_start: bedtimeStart,
+    bedtime_end: bedtimeEnd,
     // Activity: not from sleep
     steps: null,
     active_calories: null,
@@ -529,6 +617,8 @@ function buildRawBiometricsFromSleep(
 
 /**
  * Build daily_raw_biometrics from exercise transformer outputs
+ * Outputs ONLY columns that exist in daily_raw_biometrics and are populated from exercise data
+ * Per audit: pickleball_or_gym_minutes, active_calories, hr_zones_minutes (jsonb)
  */
 function buildRawBiometricsFromExercise(
   userId: string,
@@ -571,9 +661,9 @@ function buildRawBiometricsFromExercise(
   return {
     user_id: userId,
     log_date: date,
-    // Activity
-    steps: null, // not from exercise sessions
-    active_calories: Math.round(totalKcal),
+    // Activity - only columns populated from exercise
+    steps: null,
+    active_calories: Math.round(totalKcal),  // maps to active_calories_kcal
     exercise_min: Math.round(totalDuration),
     exercise_type: primaryType,
     exercise_intensity: maxHr > 0 && avgHr > 0 ? (avgHr / maxHr > 0.8 ? 'vigorous' : avgHr / maxHr > 0.6 ? 'moderate' : 'light') : null,
@@ -583,10 +673,10 @@ function buildRawBiometricsFromExercise(
     z3_minutes: Math.round(combinedZones.z3_minutes),
     z4_minutes: Math.round(combinedZones.z4_minutes),
     z5_minutes: Math.round(combinedZones.z5_minutes),
-    hr_zones_minutes: combinedZones,
-    // Subjective
+    hr_zones_minutes: combinedZones,  // jsonb
+    // Subjective - pickleball_or_gym_minutes
     pickleball_or_gym_minutes: Math.round(totalDuration),
-    // Other fields not from exercise
+    // Other fields not from exercise - set to null to be filtered out by upsert
     hrv_rmssd_ms: null,
     hrv_sdnn_ms: null,
     hrv_pnn50_pct: null,
@@ -602,6 +692,8 @@ function buildRawBiometricsFromExercise(
     sleep_onset_latency_min: null,
     naps_count: 0,
     naps_total_min: 0,
+    bedtime_start: null,
+    bedtime_end: null,
     weight_kg: null,
     body_fat_pct: null,
     muscle_mass_kg: null,
@@ -623,6 +715,8 @@ function buildRawBiometricsFromExercise(
 
 /**
  * Build daily_raw_biometrics from body composition transformer output
+ * Outputs ONLY columns that exist in daily_raw_biometrics and are populated from body comp data
+ * Per audit: weight_kg, body_fat_pct (both numeric)
  */
 function buildRawBiometricsFromBodyComp(
   userId: string,
@@ -634,14 +728,67 @@ function buildRawBiometricsFromBodyComp(
     log_date: date,
     weight_kg: bodyComp.weight_kg,
     body_fat_pct: bodyComp.body_fat_pct,
+    // Other fields not from body comp - set to null to be filtered out by upsert
+    hrv_rmssd_ms: null,
+    hrv_sdnn_ms: null,
+    hrv_pnn50_pct: null,
+    rhr_bpm: null,
+    sleep_score: null,
+    total_sleep_min: null,
+    deep_sleep_min: null,
+    rem_sleep_min: null,
+    light_sleep_min: null,
+    awake_sleep_min: null,
+    sleep_efficiency_pct: null,
+    time_in_bed_min: null,
+    sleep_onset_latency_min: null,
+    naps_count: 0,
+    naps_total_min: 0,
+    bedtime_start: null,
+    bedtime_end: null,
+    steps: null,
+    active_calories: null,
+    exercise_min: null,
+    exercise_type: null,
+    exercise_intensity: null,
+    muscle_mass_kg: null,
+    hydration_ml: null,
+    intake_kcal: null,
+    intake_protein_g: null,
+    intake_carbs_g: null,
+    intake_fat_g: null,
+    meals_log_json: null,
+    z1_minutes: null,
+    z2_minutes: null,
+    z3_minutes: null,
+    z4_minutes: null,
+    z5_minutes: null,
+    hr_zones_minutes: null,
+    resp_rate_brpm: null,
+    spo2_pct: null,
+    is_hospital_shift: false,
+    night_awake_shift_hours: null,
+    session_rpe: null,
+    pickleball_or_gym_minutes: null,
+    raw_payload_hash: null,
+    source: 'health_connect',
   };
 }
 
 /**
- * Merge multiple raw biometrics objects (later properties win)
+ * Merge multiple raw biometrics objects (later non-null/undefined properties win)
+ * Skips null and undefined values to preserve data from earlier sources
  */
 function mergeRawBiometrics(...objects: DailyRawBiometrics[]): DailyRawBiometrics {
-  return Object.assign({}, ...objects);
+  const result: DailyRawBiometrics = { user_id: '', log_date: '' };
+  for (const obj of objects) {
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined && value !== null) {
+        (result as any)[key] = value;
+      }
+    }
+  }
+  return result;
 }
 
 // ========================================================================

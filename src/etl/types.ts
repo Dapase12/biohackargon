@@ -224,6 +224,9 @@ export interface SleepTransformerOutput {
   hrv_deep_sleep_median: number | null;
   hrv_nocturnal_count: number;
   hrv_mode: 'night' | 'nap' | 'deep' | 'fallback';
+  // Main nocturnal sleep session timestamps (ISO 8601 with offset)
+  sleep_onset_timestamp: string | null;
+  wake_timestamp: string | null;
 }
 
 export interface ExerciseTransformerOutput {
