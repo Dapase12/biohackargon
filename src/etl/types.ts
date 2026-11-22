@@ -15,10 +15,13 @@ export interface GHealthSimplifiedDataPoint {
   id: string;
 }
 
-// Heart Rate: dataPoints with time, beatsPerMinute
+// Heart Rate Variability: dataPoints with time, rootMeanSquareOfSuccessiveDifferencesMilliseconds
+// ghealth simplified JSON uses the full field name from the API
 export interface GHealthHrvSimplifiedSample extends GHealthSimplifiedDataPoint {
   time: string; // ISO 8601 with offset, e.g. "2026-03-29T17:05:00+01:00"
-  rmssd: number; // rootMeanSquareOfSuccessiveDifferencesMilliseconds
+  rootMeanSquareOfSuccessiveDifferencesMilliseconds: number;
+  // Alias for convenience (some sources may use rmssd)
+  rmssd?: number;
 }
 
 export interface GHealthHrSimplifiedSample extends GHealthSimplifiedDataPoint {

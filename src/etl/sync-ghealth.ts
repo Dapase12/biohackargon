@@ -64,6 +64,38 @@ const DEFAULT_PROFILE: UserEtlProfile = {
   heightM: 1.75,
 };
 
+/**
+ * Fetch user profile from user_profiles table, fallback to DEFAULT_PROFILE
+ */
+async function fetchUserProfile(userId: string): Promise<UserEtlProfile> {
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('age, resting_hr, max_hr, biological_sex, height_m')
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !data) {
+      console.warn(`[PROFILE] user_profiles not found for ${userId}, using DEFAULT_PROFILE`);
+      return DEFAULT_PROFILE;
+    }
+
+    // Compute maxHR from Tanaka formula if not stored
+    const maxHR = data.max_hr ?? Math.round(208 - 0.7 * data.age);
+
+    return {
+      age: data.age,
+      restingHR: data.resting_hr,
+      maxHR,
+      biologicalSex: data.biological_sex,
+      heightM: data.height_m,
+    };
+  } catch (error) {
+    console.warn(`[PROFILE] Error fetching profile for ${userId}:`, error);
+    return DEFAULT_PROFILE;
+  }
+}
+
 // ========================================================================
 // DATE UTILITIES
 // ========================================================================
@@ -99,18 +131,17 @@ function formatGHealthDate(date: Date): string {
 
 /**
  * Get date range for ghealth CLI.
- * Returns { from: YYYY-MM-DD, to: YYYY-MM-DD (exclusive, so D+1 for inclusive end) }
+ * ghealth CLI --to is INCLUSIVE of the named day (it advances to next day internally).
+ * Returns { from: YYYY-MM-DD, to: YYYY-MM-DD (inclusive, same as end date) }
  */
 function getDateRange(from: string | undefined, to: string | undefined): { from: string; to: string } {
   const end = to ? parseDateArg(to) : new Date();
-  // ghealth --to is exclusive, so add 1 day to include the end date
-  const toDate = new Date(end.getTime() + 86400000);
 
   const start = from ? parseDateArg(from) : new Date(end.getTime() - 30 * 86400000);
 
   return {
     from: formatGHealthDate(start),
-    to: formatGHealthDate(toDate),
+    to: formatGHealthDate(end), // CLI handles --to as inclusive
   };
 }
 
@@ -126,9 +157,19 @@ async function transformSleepData(
   const parsedSleep = parseSleepSessions({ dataPoints: sleepSessions, nextPageToken: null });
   const parsedHrv = parseHrvSamples({ dataPoints: hrvSamples, nextPageToken: null });
 
-  if (parsedSleep.length === 0) return null;
+  // Defense-in-depth: filter sleep sessions to only those ending on the target date (local time)
+  const sleepOnDate = parsedSleep.filter(s => {
+    const endDate = new Date(s.endTimeMillis).toISOString().slice(0, 10);
+    return endDate === date;
+  });
 
-  return buildSleepTransformerOutput(date, parsedSleep, parsedHrv, { includeNaps: false });
+  if (sleepOnDate.length === 0) return null;
+
+  // For HRV cross-reference, we need HRV samples that could fall in sleep sessions
+  // that END on this date. Sleep starting D-1 23:00 ending D 07:00 should include
+  // HRV from D-1 night. Fetch HRV from D-1 to D+1 would be ideal, but for now
+  // we rely on the CLI query window and cross-reference strictly against sleep windows.
+  return buildSleepTransformerOutput(date, sleepOnDate, parsedHrv, { includeNaps: false });
 }
 
 async function transformExerciseData(
@@ -142,12 +183,18 @@ async function transformExerciseData(
   const parsedHr = parseHrSamples({ dataPoints: hrSamples, nextPageToken: null });
   const parsedEvents = parseExerciseEvents({ rollupDataPoints: exerciseEvents, nextPageToken: null });
 
+  // Defense-in-depth: filter exercise sessions to only those starting on the target date (local time)
+  const exercisesOnDate = parsedExercises.filter(s => {
+    const startDate = new Date(s.startTimeMillis).toISOString().slice(0, 10);
+    return startDate === date;
+  });
+
   const results: ExerciseTransformerOutput[] = [];
 
-  for (const session of parsedExercises) {
+  for (const session of exercisesOnDate) {
     const filteredHr = filterHrDuringExercise(parsedHr, session, parsedEvents);
     const zones = classifyHrZonesKarvonen(filteredHr, profile);
-    const output = buildExerciseTransformerOutput(date, session, filteredHr, zones);
+    const output = buildExerciseTransformerOutput(date, session, filteredHr, zones, profile);
     results.push(output);
   }
 
@@ -454,12 +501,12 @@ async function syncDate(
   profile: UserEtlProfile,
   dryRun: boolean
 ): Promise<SyncResult> {
-  // ghealth expects YYYY-MM-DD for --from/--to, with --to being exclusive (D+1)
+  // ghealth CLI --to is INCLUSIVE of the named day (it advances to next day internally).
+  // For a single day, pass SAME date for --from and --to.
   // Parse date as UTC to match formatDate() output
   const startDate = new Date(date + 'T00:00:00Z');
-  const endDate = new Date(startDate.getTime() + 86400000); // D+1 for exclusive --to
   const fromGHealth = formatGHealthDate(startDate);
-  const toGHealth = formatGHealthDate(endDate);
+  const toGHealth = fromGHealth; // CLI handles --to as inclusive (advances to D+1 internally)
 
   try {
     // Fetch all data for this date using YYYY-MM-DD format
@@ -476,6 +523,8 @@ async function syncDate(
     // Diagnostic logging before transformers (dry-run only)
     if (dryRun) {
       const getFirstEl = (arr: any[]) => arr.length > 0 ? arr[0] : null;
+      const firstSleep = getFirstEl(sleepSessions);
+      const firstHrv = getFirstEl(hrvSamples);
       console.log(`[DRY RUN] ${date} - RAW RESPONSES:`, {
         rawCounts: {
           sleepSessions: sleepSessions.length,
@@ -487,8 +536,16 @@ async function syncDate(
           bodyCompBodyFat: bodyCompSamples.bodyFat.length,
         },
         firstElements: {
-          sleepSessions: getFirstEl(sleepSessions),
-          hrvSamples: getFirstEl(hrvSamples),
+          sleepSessions: firstSleep ? {
+            start: firstSleep.start,
+            end: firstSleep.end,
+            isNap: firstSleep.isNap,
+          } : null,
+          hrvSample0: firstHrv ? {
+            time: firstHrv.time,
+            rootMeanSquareOfSuccessiveDifferencesMilliseconds: (firstHrv as any).rootMeanSquareOfSuccessiveDifferencesMilliseconds,
+            rmssd: firstHrv.rmssd,
+          } : null,
           exerciseSessions: getFirstEl(exerciseSessions),
           hrSamples: getFirstEl(hrSamples),
           exerciseEvents: getFirstEl(exerciseEvents),
@@ -594,7 +651,7 @@ async function syncDate(
 
 async function runSync(options: SyncOptions): Promise<void> {
   const ghealthClient = createGHealthClient();
-  const profile = DEFAULT_PROFILE; // TODO: fetch from user_profiles table
+  const profile = await fetchUserProfile(options.userId);
 
   const backfill = options.backfill ?? false;
   const dryRun = options.dryRun ?? false;

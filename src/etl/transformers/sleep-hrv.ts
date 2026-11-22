@@ -115,13 +115,16 @@ export function parseSleepSessions(response: GHealthSleepListResponse): ParsedSl
 
 /**
  * Parse HRV samples from ghealth SIMPLIFIED JSON response
- * Fields: time, rmssd
+ * Fields: time, rootMeanSquareOfSuccessiveDifferencesMilliseconds (or rmssd alias)
  */
 export function parseHrvSamples(response: GHealthHrvListResponse): ParsedHrvSample[] {
   return (response.dataPoints ?? []).map((sample) => ({
     startTimeMillis: parseIsoToMillis(sample.time!),
     endTimeMillis: parseIsoToMillis(sample.time!), // HRV samples are point-in-time
-    rmssd: parseNumber(sample.rmssd),
+    // ghealth CLI simplified JSON uses the full API field name
+    rmssd: parseNumber(
+      (sample as any).rootMeanSquareOfSuccessiveDifferencesMilliseconds ?? sample.rmssd
+    ),
   }));
 }
 

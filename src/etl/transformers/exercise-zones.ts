@@ -277,15 +277,76 @@ export function computeExerciseMetrics(
 }
 
 /**
+ * Build per-workout zone breakdown for a session
+ */
+function buildWorkoutZones(
+  filteredHr: ParsedHrSample[],
+  profile: UserEtlProfile
+): { z1: number; z2: number; z3: number; z4: number; z5: number } {
+  const hrr = profile.maxHR - profile.restingHR;
+  const z1Min = profile.restingHR + 0.50 * hrr;
+  const z2Min = profile.restingHR + 0.60 * hrr;
+  const z3Min = profile.restingHR + 0.70 * hrr;
+  const z4Min = profile.restingHR + 0.80 * hrr;
+  const z5Min = profile.restingHR + 0.90 * hrr;
+
+  const workoutZones = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
+  const sortedSamples = [...filteredHr].sort((a, b) => a.startTimeMillis - b.startTimeMillis);
+
+  for (let i = 0; i < sortedSamples.length; i++) {
+    const sample = sortedSamples[i];
+    const hr = sample.bpm;
+    let durationMs: number;
+    if (i < sortedSamples.length - 1) {
+      durationMs = sortedSamples[i + 1].startTimeMillis - sample.startTimeMillis;
+    } else {
+      durationMs = i > 0
+        ? sample.startTimeMillis - sortedSamples[i - 1].startTimeMillis
+        : 5000;
+    }
+    const durationMin = Math.min(durationMs / 60000, 1);
+
+    let zone: keyof typeof workoutZones;
+    if (hr < z2Min) zone = 'z1';
+    else if (hr < z3Min) zone = 'z2';
+    else if (hr < z4Min) zone = 'z3';
+    else if (hr < z5Min) zone = 'z4';
+    else zone = 'z5';
+
+    workoutZones[zone] += durationMin;
+  }
+  (['z1', 'z2', 'z3', 'z4', 'z5'] as const).forEach(z => {
+    workoutZones[z] = Math.round(workoutZones[z] * 10) / 10;
+  });
+
+  return workoutZones;
+}
+
+/**
  * Build complete ExerciseTransformerOutput for a date
  */
 export function buildExerciseTransformerOutput(
   logDate: string,
   session: ParsedExerciseSession,
   filteredHr: ParsedHrSample[],
-  zones: HrZoneMinutes
+  zones: HrZoneMinutes,
+  profile: UserEtlProfile
 ): ExerciseTransformerOutput {
   const metrics = computeExerciseMetrics(session, filteredHr, zones);
+
+  // Build per-workout zone breakdown for this session
+  const workoutZones = buildWorkoutZones(filteredHr, profile);
+
+  const zonesWithWorkout: HrZoneMinutes = {
+    ...zones,
+    workouts: [{
+      startTimeMillis: session.startTimeMillis,
+      endTimeMillis: session.endTimeMillis,
+      name: session.name,
+      type: session.type,
+      zones: workoutZones,
+    }],
+  };
 
   return {
     log_date: logDate,
@@ -293,6 +354,6 @@ export function buildExerciseTransformerOutput(
     kcal: metrics.kcal ?? 0,
     avg_hr: metrics.avg_hr ?? null,
     max_hr: metrics.max_hr ?? null,
-    zones,
+    zones: zonesWithWorkout,
   };
 }
