@@ -65,7 +65,7 @@ jobs:
           git clone https://github.com/Google-Health-API/google-health-cli.git /tmp/ghealth-cli
           cd /tmp/ghealth-cli
           go build -o ghealth .
-          echo "/tmp/ghealth-cli" >> $GITHUB_PATH
+          sudo mv ghealth /usr/local/bin/ghealth
           ghealth --version
 
       - name: Write ghealth client secret (client_secret.json)
