@@ -18,21 +18,27 @@ import type {
 } from '@/etl/types';
 
 /**
+ * Safely parse a string to number, returning null if invalid.
+ * ghealth CLI returns int64 fields as strings in protobuf JSON encoding.
+ */
+function parseNumber(value: string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * Parse exercise sessions from ghealth response
  */
 export function parseExerciseSessions(response: GHealthExerciseListResponse): ParsedExerciseSession[] {
   return (response.dataPoints ?? []).map((session: GHealthExerciseListResponse['dataPoints'][0]) => ({
-    startTimeMillis: Number(session.startTimeMillis),
-    endTimeMillis: Number(session.endTimeMillis),
+    startTimeMillis: parseNumber(session.startTimeMillis) ?? 0,
+    endTimeMillis: parseNumber(session.endTimeMillis) ?? 0,
     name: session.name ?? '',
     type: session.type ?? '',
-    averageHeartRateBeatsPerMinute: session.averageHeartRateBeatsPerMinute
-      ? Number(session.averageHeartRateBeatsPerMinute)
-      : null,
-    maxHeartRateBeatsPerMinute: session.maxHeartRateBeatsPerMinute
-      ? Number(session.maxHeartRateBeatsPerMinute)
-      : null,
-    caloriesBurned: session.caloriesBurned ? Number(session.caloriesBurned) : null,
+    averageHeartRateBeatsPerMinute: parseNumber(session.averageHeartRateBeatsPerMinute),
+    maxHeartRateBeatsPerMinute: parseNumber(session.maxHeartRateBeatsPerMinute),
+    caloriesBurned: parseNumber(session.caloriesBurned),
     durationMin: Math.round((Number(session.endTimeMillis) - Number(session.startTimeMillis)) / 60000),
   }));
 }
@@ -42,9 +48,9 @@ export function parseExerciseSessions(response: GHealthExerciseListResponse): Pa
  */
 export function parseHrSamples(response: GHealthHrListResponse): ParsedHrSample[] {
   return (response.dataPoints ?? []).map((sample: GHealthHrListResponse['dataPoints'][0]) => ({
-    startTimeMillis: Number(sample.startTimeMillis),
-    endTimeMillis: Number(sample.endTimeMillis),
-    bpm: Number(sample.beatsPerMinute),
+    startTimeMillis: parseNumber(sample.startTimeMillis) ?? 0,
+    endTimeMillis: parseNumber(sample.endTimeMillis) ?? 0,
+    bpm: parseNumber(sample.beatsPerMinute) ?? 0,
   }));
 }
 

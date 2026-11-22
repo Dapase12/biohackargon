@@ -22,6 +22,18 @@ interface PairedBodyComp {
 }
 
 /**
+ * Safely parse a string to number, returning null if invalid.
+ * ghealth CLI returns int64 fields as strings in protobuf JSON encoding.
+ * weight.value and bodyFatPercentage.value are int64 (strings).
+ * weight.unit and bodyFatPercentage.unit are strings.
+ */
+function parseNumber(value: string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * Parse weight samples from ghealth response
  */
 export function parseWeightSamples(
@@ -30,18 +42,18 @@ export function parseWeightSamples(
   return (response.dataPoints ?? []).map((sample: GHealthWeightListResponse['dataPoints'][0]) => {
     let weightKg: number | null = null;
     if (sample.weight?.value) {
-      const value = Number(sample.weight.value);
+      const value = parseNumber(sample.weight.value);
       // Convert lb to kg if needed
-      if (sample.weight.unit === 'lb' || sample.weight.unit === 'lbs') {
+      if (value !== null && (sample.weight.unit === 'lb' || sample.weight.unit === 'lbs')) {
         weightKg = value * 0.453592;
-      } else {
+      } else if (value !== null) {
         weightKg = value;
       }
     }
 
     return {
-      startTimeMillis: Number(sample.startTimeMillis),
-      endTimeMillis: Number(sample.endTimeMillis),
+      startTimeMillis: parseNumber(sample.startTimeMillis) ?? 0,
+      endTimeMillis: parseNumber(sample.endTimeMillis) ?? 0,
       weightKg,
       bodyFatPct: null,
     };
@@ -57,12 +69,12 @@ export function parseBodyFatSamples(
   return (response.dataPoints ?? []).map((sample: GHealthBodyFatListResponse['dataPoints'][0]) => {
     let bodyFatPct: number | null = null;
     if (sample.bodyFatPercentage?.value) {
-      bodyFatPct = Number(sample.bodyFatPercentage.value);
+      bodyFatPct = parseNumber(sample.bodyFatPercentage.value);
     }
 
     return {
-      startTimeMillis: Number(sample.startTimeMillis),
-      endTimeMillis: Number(sample.endTimeMillis),
+      startTimeMillis: parseNumber(sample.startTimeMillis) ?? 0,
+      endTimeMillis: parseNumber(sample.endTimeMillis) ?? 0,
       weightKg: null,
       bodyFatPct,
     };

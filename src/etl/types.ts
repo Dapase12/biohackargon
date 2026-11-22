@@ -1,6 +1,7 @@
 /**
  * ARGON v7.0 — ETL Type Definitions
  * Types for ghealth CLI data structures and transformer outputs.
+ * Matches actual ghealth CLI JSON output (Google Health API v4).
  */
 
 // ========================================================================
@@ -28,6 +29,7 @@ export interface GHealthSleepListResponse {
 export interface GHealthHrvSample {
   startTimeMillis: string;
   endTimeMillis: string;
+  // int64 fields are strings in protobuf JSON encoding
   rootMeanSquareOfSuccessiveDifferencesMilliseconds: string;
 }
 
@@ -41,8 +43,10 @@ export interface GHealthExerciseSession {
   endTimeMillis: string;
   name: string;
   type: string;
+  // int64 fields are strings
   averageHeartRateBeatsPerMinute: string | null;
   maxHeartRateBeatsPerMinute: string | null;
+  // int64 fields are strings
   caloriesBurned: string | null;
 }
 
@@ -54,6 +58,7 @@ export interface GHealthExerciseListResponse {
 export interface GHealthHrSampleRaw {
   startTimeMillis: string;
   endTimeMillis: string;
+  // int64 fields are strings
   beatsPerMinute: string;
 }
 
@@ -78,6 +83,7 @@ export interface GHealthExerciseEventsResponse {
 export interface GHealthWeightSample {
   startTimeMillis: string;
   endTimeMillis: string;
+  // weight.value is string for int64, weight.unit is string
   weight: { value: string; unit: string };
 }
 
@@ -89,6 +95,7 @@ export interface GHealthWeightListResponse {
 export interface GHealthBodyFatSample {
   startTimeMillis: string;
   endTimeMillis: string;
+  // bodyFatPercentage.value is string for int64, bodyFatPercentage.unit is string
   bodyFatPercentage: { value: string; unit: string };
 }
 

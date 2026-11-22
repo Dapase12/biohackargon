@@ -13,16 +13,26 @@ import type {
 } from '@/etl/types';
 
 /**
+ * Safely parse a string to number, returning null if invalid.
+ * ghealth CLI returns int64 fields as strings in protobuf JSON encoding.
+ */
+function parseNumber(value: string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * Parse sleep sessions from ghealth response
  */
 export function parseSleepSessions(response: GHealthSleepListResponse): ParsedSleepSession[] {
   return (response.dataPoints ?? []).map((session: GHealthSleepListResponse['dataPoints'][0]) => ({
-    startTimeMillis: Number(session.startTimeMillis),
-    endTimeMillis: Number(session.endTimeMillis),
+    startTimeMillis: parseNumber(session.startTimeMillis) ?? 0,
+    endTimeMillis: parseNumber(session.endTimeMillis) ?? 0,
     isNap: session.isNap ?? false,
     sleepQuality: session.sleepQuality ?? 'UNKNOWN',
     stageMinutes: Object.fromEntries(
-      Object.entries(session.stageMinutes ?? {}).map(([k, v]: [string, unknown]) => [k, Number(v)])
+      Object.entries(session.stageMinutes ?? {}).map(([k, v]: [string, unknown]) => [k, parseNumber(String(v)) ?? 0])
     ),
     stages: (session.stages ?? []).map((s: { start: number; end: number; type: string }) => ({
       start: Number(s.start),
@@ -38,11 +48,9 @@ export function parseSleepSessions(response: GHealthSleepListResponse): ParsedSl
  */
 export function parseHrvSamples(response: GHealthHrvListResponse): ParsedHrvSample[] {
   return (response.dataPoints ?? []).map((sample: GHealthHrvListResponse['dataPoints'][0]) => ({
-    startTimeMillis: Number(sample.startTimeMillis),
-    endTimeMillis: Number(sample.endTimeMillis),
-    rmssd: sample.rootMeanSquareOfSuccessiveDifferencesMilliseconds
-      ? Number(sample.rootMeanSquareOfSuccessiveDifferencesMilliseconds)
-      : null,
+    startTimeMillis: parseNumber(sample.startTimeMillis) ?? 0,
+    endTimeMillis: parseNumber(sample.endTimeMillis) ?? 0,
+    rmssd: parseNumber(sample.rootMeanSquareOfSuccessiveDifferencesMilliseconds),
   }));
 }
 

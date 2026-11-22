@@ -95,6 +95,12 @@ jobs:
           GHEALTH_CONFIG_TOML_CONTENT: ${{ secrets.GHEALTH_CONFIG_TOML_CONTENT }}
           GHEALTH_CONFIG_DIR: ${{ secrets.GHEALTH_CONFIG_DIR }}
 
+      - name: Set ghealth timezone (America/Caracas)
+        run: |
+          ghealth config set timezone America/Caracas
+        env:
+          GHEALTH_CONFIG_DIR: ${{ secrets.GHEALTH_CONFIG_DIR }}
+
       - name: Validate ghealth auth tokens
         run: |
           ghealth auth status --validate
