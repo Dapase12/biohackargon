@@ -87,56 +87,244 @@ function enqueuePayload_(payload) {
 }
 
 function dequeueNext_() {
-  const queue = getQueue_();
-  const idx = queue.items.findIndex(i => i.status === 'pending');
-  if (idx === -1) return null;
-  queue.items[idx].status = 'processing';
-  queue.items[idx].startedAt = Date.now();
-  saveQueue_(queue);
-  return queue.items[idx];
+  const lock = LockService.getScriptLock();
+  try {
+    // Wait up to 10 seconds for lock (other trigger may be processing)
+    if (!lock.waitLock(10000)) {
+      Logger.log('dequeueNext_: Could not acquire lock within 10s');
+      return null;
+    }
+    const queue = getQueue_();
+    const idx = queue.items.findIndex(i => i.status === 'pending');
+    if (idx === -1) return null;
+    queue.items[idx].status = 'processing';
+    queue.items[idx].startedAt = Date.now();
+    saveQueue_(queue);
+    return queue.items[idx];
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function markQueueItemDone_(itemId, success, error) {
-  const queue = getQueue_();
-  const idx = queue.items.findIndex(i => i.id === itemId);
-  if (idx === -1) return;
-  if (success) {
-    queue.items.splice(idx, 1); // Remove on success
-  } else {
-    queue.items[idx].status = 'pending';
-    queue.items[idx].retryCount = (queue.items[idx].retryCount || 0) + 1;
-    queue.items[idx].error = error;
-    if (queue.items[idx].retryCount >= QUEUE_CONFIG.MAX_RETRIES) {
-      queue.items[idx].status = 'dead';
-      Logger.log('Item ' + itemId + ' moved to dead queue after ' + QUEUE_CONFIG.MAX_RETRIES + ' retries');
+  const lock = LockService.getScriptLock();
+  try {
+    if (!lock.waitLock(10000)) {
+      Logger.log('markQueueItemDone_: Could not acquire lock within 10s for ' + itemId);
+      return;
     }
+    const queue = getQueue_();
+    const idx = queue.items.findIndex(i => i.id === itemId);
+    if (idx === -1) return;
+    if (success) {
+      queue.items.splice(idx, 1); // Remove on success
+    } else {
+      queue.items[idx].status = 'pending';
+      queue.items[idx].retryCount = (queue.items[idx].retryCount || 0) + 1;
+      queue.items[idx].error = error;
+      if (queue.items[idx].retryCount >= QUEUE_CONFIG.MAX_RETRIES) {
+        queue.items[idx].status = 'dead';
+        Logger.log('Item ' + itemId + ' moved to dead queue after ' + QUEUE_CONFIG.MAX_RETRIES + ' retries');
+      }
+    }
+    saveQueue_(queue);
+  } finally {
+    lock.releaseLock();
   }
-  saveQueue_(queue);
 }
 
 function requeueDeadItems_() {
-  const queue = getQueue_();
-  let requeued = 0;
-  queue.items.forEach(item => {
-    if (item.status === 'dead' && item.retryCount < QUEUE_CONFIG.MAX_RETRIES) {
-      item.status = 'pending';
-      item.error = null;
-      requeued++;
+  const lock = LockService.getScriptLock();
+  try {
+    if (!lock.waitLock(10000)) {
+      Logger.log('requeueDeadItems_: Could not acquire lock');
+      return 0;
     }
-  });
-  if (requeued) saveQueue_(queue);
-  return requeued;
+    const queue = getQueue_();
+    let requeued = 0;
+    queue.items.forEach(item => {
+      if (item.status === 'dead' && item.retryCount < QUEUE_CONFIG.MAX_RETRIES) {
+        item.status = 'pending';
+        item.error = null;
+        requeued++;
+      }
+    });
+    if (requeued) saveQueue_(queue);
+    return requeued;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function getQueueStats_() {
   const queue = getQueue_();
+  const pendingItems = queue.items.filter(i => i.status === 'pending');
   return {
     total: queue.items.length,
-    pending: queue.items.filter(i => i.status === 'pending').length,
+    pending: pendingItems.length,
     processing: queue.items.filter(i => i.status === 'processing').length,
     dead: queue.items.filter(i => i.status === 'dead').length,
-    processingSince: queue.items.find(i => i.status === 'processing')?.startedAt || null
+    processingSince: queue.items.find(i => i.status === 'processing')?.startedAt || null,
+    oldestPendingAgeMs: pendingItems.length > 0 ? Date.now() - Math.min(...pendingItems.map(i => i.receivedAt)) : null,
+    totalRetries: queue.items.reduce((sum, i) => sum + (i.retryCount || 0), 0)
   };
+}
+
+/**
+ * Requeue dead items manually (for recovery after fixing root cause)
+ * Unlike requeueDeadItems_, this ignores retryCount limit
+ */
+function requeueDeadItemsManual_() {
+  const lock = LockService.getScriptLock();
+  try {
+    if (!lock.waitLock(10000)) {
+      Logger.log('requeueDeadItemsManual_: Could not acquire lock');
+      return 0;
+    }
+    const queue = getQueue_();
+    let requeued = 0;
+    queue.items.forEach(item => {
+      if (item.status === 'dead') {
+        item.status = 'pending';
+        item.error = null;
+        item.retryCount = 0;
+        requeued++;
+      }
+    });
+    if (requeued) saveQueue_(queue);
+    Logger.log('Manual requeue: ' + requeued + ' dead items moved to pending');
+    return requeued;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * ============================================================================
+ * SHARED: Payload Extraction (used by doPost and doPostInner_)
+ * ============================================================================
+ */
+/**
+ * Extracts payload from GAS doPost event (e) handling multiple formats:
+ * 1. JSON body (e.postData.contents)
+ * 2. Form data (e.parameter) - Tasker/Health Connect
+ * 3. Query string (e.queryString)
+ * 4. Pre-parsed object (e.postData.contents as object)
+ * @param {Object} e - GAS event object
+ * @returns {Object|null} Parsed payload or null if not found
+ */
+function extractPayload_(e) {
+  const requestId = 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+
+  // 1. Standard JSON body (e.postData.contents) - most common
+  if (e && e.postData && e.postData.contents) {
+    try {
+      const parsed = JSON.parse(e.postData.contents);
+      Logger.log(requestId + ': Parsed JSON body, keys: ' + Object.keys(parsed).join(', '));
+      return parsed;
+    } catch (_) {
+      Logger.log(requestId + ': Failed to parse e.postData.contents as JSON');
+    }
+  }
+
+  // 2. Form data (e.parameter) - Health Connect/Tasker may send as form
+  if (e && e.parameter) {
+    const param = e.parameter;
+    const keys = Object.keys(param);
+
+    // 2a. Check for common payload keys in form data
+    for (const key of ['payload', 'data', 'json', 'body', 'content', 'message', 'request']) {
+      if (param[key]) {
+        try {
+          const parsed = JSON.parse(param[key]);
+          Logger.log(requestId + ': Parsed form field "' + key + '" as JSON, keys: ' + Object.keys(parsed).join(', '));
+          return parsed;
+        } catch (_) {}
+      }
+    }
+
+    // 2b. If only one parameter and it looks like JSON, try it
+    if (keys.length === 1) {
+      try {
+        const parsed = JSON.parse(param[keys[0]]);
+        Logger.log(requestId + ': Parsed single form param "' + keys[0] + '" as JSON');
+        return parsed;
+      } catch (_) {}
+    }
+
+    // 2c. Try each parameter value as potential JSON (most permissive)
+    for (const key of keys) {
+      try {
+        const parsed = JSON.parse(param[key]);
+        Logger.log(requestId + ': Parsed form param "' + key + '" as JSON');
+        return parsed;
+      } catch (_) {}
+    }
+
+    // 2d. ENTIRE parameter object might BE the payload (Tasker sends this way sometimes)
+    // Check if it looks like our HC payload structure (has known top-level keys)
+    const knownKeys = ['steps', 'heart_rate', 'sleep', 'nutrition', 'weight', 'body_fat',
+                       'hrv', 'heart_rate_variability', 'resting_heart_rate', 'respiratory_rate',
+                       'oxygen_saturation', 'exercise', 'active_calories', 'distance'];
+    const hasKnownKey = keys.some(k => knownKeys.some(nk => k.toLowerCase().includes(nk)));
+    if (hasKnownKey || keys.length > 3) {
+      Logger.log(requestId + ': Using entire e.parameter as payload (hasKnownKey=' + hasKnownKey + ', keys=' + keys.length + ')');
+      return param;
+    }
+  }
+
+  // 3. Check query string (GET with JSON in query param)
+  if (e && e.queryString) {
+    try {
+      const qs = e.queryString;
+      // Try to parse as JSON directly
+      try {
+        const parsed = JSON.parse(qs);
+        Logger.log(requestId + ': Parsed query string as JSON');
+        return parsed;
+      } catch (_) {}
+      // Try to extract from query params like ?data=...
+      const params = new URLSearchParams(qs);
+      for (const [key, val] of params) {
+        if (['data', 'payload', 'json', 'body'].includes(key)) {
+          try {
+            const parsed = JSON.parse(val);
+            Logger.log(requestId + ': Parsed query param "' + key + '" as JSON');
+            return parsed;
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 4. postData might have contents as already-parsed object (rare)
+  if (e && e.postData && typeof e.postData.contents === 'object' && e.postData.contents !== null) {
+    Logger.log(requestId + ': Using e.postData.contents as pre-parsed object');
+    return e.postData.contents;
+  }
+
+  Logger.log(requestId + ': No payload found in request');
+  return null;
+}
+
+/**
+ * Validate Health Connect payload structure - logs unknown top-level keys
+ * @param {Object} payload - Parsed payload
+ * @returns {Object} { valid: boolean, unknownKeys: string[] }
+ */
+function validateHcPayload_(payload) {
+  const expectedTopKeys = [
+    'steps', 'heart_rate', 'sleep', 'nutrition', 'weight', 'body_fat',
+    'hrv', 'heart_rate_variability', 'resting_heart_rate', 'respiratory_rate',
+    'oxygen_saturation', 'exercise', 'active_calories', 'distance',
+    'timestamp', 'app_version', 'device'
+  ];
+  const keys = payload && typeof payload === 'object' ? Object.keys(payload) : [];
+  const unknownKeys = keys.filter(k => !expectedTopKeys.includes(k));
+  if (unknownKeys.length > 0) {
+    Logger.log('HC Payload: Unknown top-level keys: ' + unknownKeys.join(', '));
+  }
+  return { valid: true, unknownKeys };
 }
 
 /**
@@ -162,70 +350,6 @@ function doPost(e) {
     }));
   } catch (_) { Logger.log('doPost: could not log request'); }
 
-  // Helper to extract payload from various GAS request formats
-  function extractPayload_(e) {
-    // 1. Standard JSON body (e.postData.contents) - most common
-    if (e && e.postData && e.postData.contents) {
-      try { return JSON.parse(e.postData.contents); } catch (_) {}
-    }
-    // 2. Form data (e.parameter) - Health Connect/Tasker may send as form
-    if (e && e.parameter) {
-      const param = e.parameter;
-      const keys = Object.keys(param);
-
-      // 2a. Check for common payload keys in form data
-      for (const key of ['payload', 'data', 'json', 'body', 'content', 'message', 'request']) {
-        if (param[key]) {
-          try { return JSON.parse(param[key]); } catch (_) {}
-        }
-      }
-
-      // 2b. If only one parameter and it looks like JSON, try it
-      if (keys.length === 1) {
-        try { return JSON.parse(param[keys[0]]); } catch (_) {}
-      }
-
-      // 2c. Try each parameter value as potential JSON (most permissive)
-      for (const key of keys) {
-        try { return JSON.parse(param[key]); } catch (_) {}
-      }
-
-      // 2d. ENTIRE parameter object might BE the payload (Tasker sends this way sometimes)
-      // Check if it looks like our HC payload structure (has known top-level keys)
-      const knownKeys = ['steps', 'heart_rate', 'sleep', 'nutrition', 'weight', 'body_fat',
-                         'hrv', 'heart_rate_variability', 'resting_heart_rate', 'respiratory_rate',
-                         'oxygen_saturation', 'exercise', 'active_calories', 'distance'];
-      const hasKnownKey = keys.some(k => knownKeys.some(nk => k.toLowerCase().includes(nk)));
-      if (hasKnownKey || keys.length > 3) {
-        // The parameter object itself is likely the payload
-        return param;
-      }
-    }
-
-    // 3. Check query string (GET with JSON in query param)
-    if (e && e.queryString) {
-      try {
-        const qs = e.queryString;
-        // Try to parse as JSON directly
-        try { return JSON.parse(qs); } catch (_) {}
-        // Try to extract from query params like ?data=...
-        const params = new URLSearchParams(qs);
-        for (const [key, val] of params) {
-          if (['data', 'payload', 'json', 'body'].includes(key)) {
-            try { return JSON.parse(val); } catch (_) {}
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 4. postData might have contents as already-parsed object (rare)
-    if (e && e.postData && typeof e.postData.contents === 'object' && e.postData.contents !== null) {
-      return e.postData.contents;
-    }
-
-    return null;
-  }
-
   // Detectar si es petición de coach (no Health Connect)
   let isCoach = false;
   const coachPayload = extractPayload_(e);
@@ -248,6 +372,9 @@ function doPost(e) {
       Logger.log('HC Webhook: No payload found in request');
       return jsonResponse_({ status: 'accepted', message: 'Payload no encontrado, revisar formato' });
     }
+
+    // Validate HC payload structure (logs unknown keys)
+    validateHcPayload_(payload);
 
     const payloadStr = JSON.stringify(payload);
     const payloadBytes = Utilities.newBlob(payloadStr).getBytes().length;
@@ -283,66 +410,7 @@ function doPost(e) {
 
 function doPostInner_(e) {
   try {
-    // Use same payload extraction as doPost
-    function extractPayload_(e) {
-      // 1. Standard JSON body (e.postData.contents) - most common
-      if (e && e.postData && e.postData.contents) {
-        try { return JSON.parse(e.postData.contents); } catch (_) {}
-      }
-      // 2. Form data (e.parameter) - Health Connect/Tasker may send as form
-      if (e && e.parameter) {
-        const param = e.parameter;
-        const keys = Object.keys(param);
-
-        // 2a. Check for common payload keys in form data
-        for (const key of ['payload', 'data', 'json', 'body', 'content', 'message', 'request']) {
-          if (param[key]) {
-            try { return JSON.parse(param[key]); } catch (_) {}
-          }
-        }
-
-        // 2b. If only one parameter and it looks like JSON, try it
-        if (keys.length === 1) {
-          try { return JSON.parse(param[keys[0]]); } catch (_) {}
-        }
-
-        // 2c. Try each parameter value as potential JSON (most permissive)
-        for (const key of keys) {
-          try { return JSON.parse(param[key]); } catch (_) {}
-        }
-
-        // 2d. ENTIRE parameter object might BE the payload (Tasker sends this way sometimes)
-        const knownKeys = ['steps', 'heart_rate', 'sleep', 'nutrition', 'weight', 'body_fat',
-                           'hrv', 'heart_rate_variability', 'resting_heart_rate', 'respiratory_rate',
-                           'oxygen_saturation', 'exercise', 'active_calories', 'distance'];
-        const hasKnownKey = keys.some(k => knownKeys.some(nk => k.toLowerCase().includes(nk)));
-        if (hasKnownKey || keys.length > 3) {
-          return param;
-        }
-      }
-
-      // 3. Check query string (GET with JSON in query param)
-      if (e && e.queryString) {
-        try {
-          const qs = e.queryString;
-          try { return JSON.parse(qs); } catch (_) {}
-          const params = new URLSearchParams(qs);
-          for (const [key, val] of params) {
-            if (['data', 'payload', 'json', 'body'].includes(key)) {
-              try { return JSON.parse(val); } catch (_) {}
-            }
-          }
-        } catch (_) {}
-      }
-
-      // 4. postData might have contents as already-parsed object (rare)
-      if (e && e.postData && typeof e.postData.contents === 'object' && e.postData.contents !== null) {
-        return e.postData.contents;
-      }
-
-      return null;
-    }
-
+    // Use shared extractPayload_ function (defined at top level)
     const payload = extractPayload_(e);
     if (!payload) {
       return jsonResponse_({ status: 'error', message: 'Payload vacío' });
@@ -412,15 +480,22 @@ function processWebhookQueue_() {
 
   Logger.log('=== Queue processor started ===');
 
-  const queue = getQueue_();
-  if (queue.processing) {
-    Logger.log('Queue already processing, skipping');
+  // Use LockService to prevent concurrent queue processors
+  const lock = LockService.getScriptLock();
+  if (!lock.waitLock(10000)) {
+    Logger.log('processWebhookQueue_: Could not acquire lock within 10s, another instance may be running');
     return;
   }
-  queue.processing = true;
-  saveQueue_(queue);
 
   try {
+    const queue = getQueue_();
+    if (queue.processing) {
+      Logger.log('Queue already processing, skipping');
+      return;
+    }
+    queue.processing = true;
+    saveQueue_(queue);
+
     while (true) {
       // Check runtime budget
       if (Date.now() - startTime > maxRuntime) {
@@ -449,18 +524,19 @@ function processWebhookQueue_() {
       // Pequeña pausa para no saturar quotas
       Utilities.sleep(100);
     }
+
+    const totalTime = Date.now() - startTime;
+    Logger.log('=== Queue processor done: ' + processed + ' processed, ' + errors + ' errors in ' + totalTime + 'ms ===');
+
+    // Reintentar items dead si hay espacio
+    if (errors > 0) {
+      const requeued = requeueDeadItems_();
+      if (requeued) Logger.log('Requeued ' + requeued + ' dead items');
+    }
   } finally {
     queue.processing = false;
     saveQueue_(queue);
-  }
-
-  const totalTime = Date.now() - startTime;
-  Logger.log('=== Queue processor done: ' + processed + ' processed, ' + errors + ' errors in ' + totalTime + 'ms ===');
-
-  // Reintentar items dead si hay espacio
-  if (errors > 0) {
-    const requeued = requeueDeadItems_();
-    if (requeued) Logger.log('Requeued ' + requeued + ' dead items');
+    lock.releaseLock();
   }
 }
 
@@ -1045,7 +1121,8 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
                            String(m.id || '').startsWith('manual_') ||
                            String(m.id || '').startsWith(dateStr);
       if (belongsToday) {
-        const dedupKey = m.id || `${m.name}_${m.kcal}_${m.time_caracas || 'manual'}`;
+        // Use m.id if available, otherwise create stable key with epochMs from m.timestamp or fallback
+        const dedupKey = m.id || `${m.name}_${m.kcal}_${m.time_caracas || m.timestamp || 'manual'}_${m.epochMs || Date.now()}`;
         mergedMealsMap[dedupKey] = m;
       }
     });
@@ -1054,7 +1131,9 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
   Object.keys(extractedDay.meals_map).forEach(mId => {
     const mealObj = extractedDay.meals_map[mId];
     if (!mealObj.date_caracas || mealObj.date_caracas === dateStr) {
-      const dedupKey = mealObj.id || `${mealObj.name}_${mealObj.kcal}_${mealObj.time_caracas || ''}`;
+      // mealObj.id already contains epochMs from extractHealthConnectByDate_ (line 804: mealId = `${dateStr}_${recUid}_${cleanName}_${finalKcal}`)
+      // But add extra safety with timestamp/epochMs
+      const dedupKey = mealObj.id || `${mealObj.name}_${mealObj.kcal}_${mealObj.time_caracas || ''}_${mealObj.epochMs || Date.now()}`;
       mergedMealsMap[dedupKey] = mealObj;
     }
   });
@@ -1075,7 +1154,11 @@ function upsertAndComputeDayInSupabase_(dateStr, extractedDay) {
 
   const prevSleepTotal = parseInt(existing.total_sleep_min, 10) || 0;
   const newSleepTotal = parseInt(extractedDay.sleep_total_min, 10) || 0;
-  const useNewSleep = newSleepTotal >= prevSleepTotal && newSleepTotal >= 120;
+  const hasHypno = extractedDay.hypno && extractedDay.hypno.seg && extractedDay.hypno.seg.length > 0;
+  // Accept new sleep if: has hypno (stages) OR new total >= 120 min (full night)
+  // This allows fragments < 120 to accumulate until a full night arrives
+  // But never downgrade a valid night (>=120) to a fragment
+  const useNewSleep = hasHypno || (newSleepTotal >= 120 && newSleepTotal >= prevSleepTotal);
   const napNew = Object.keys(extractedDay.nap_map || {}).reduce((a, k) => a + extractedDay.nap_map[k], 0);
   const napTotal = Math.max(parseInt(existing.nap_sleep_min, 10) || 0, napNew);
 
@@ -1634,28 +1717,101 @@ function sbHeaders_(extra) {
   return Object.assign({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, extra || {});
 }
 
+/**
+ * Supabase GET with exponential backoff retry (3 attempts)
+ * Retries on 5xx errors and network timeouts
+ */
 function supabaseGet_(path) {
-  const res = UrlFetchApp.fetch(`${ARGON_CONFIG.SUPABASE_URL}/rest/v1/${path}`, {
-    method: 'get', headers: sbHeaders_(), muteHttpExceptions: true
-  });
-  const body = JSON.parse(res.getContentText() || '[]');
-  if (res.getResponseCode() >= 300 || !Array.isArray(body)) {
-    throw new Error(`Supabase GET ${res.getResponseCode()}: ${res.getContentText().slice(0, 200)}`);
+  const maxRetries = 3;
+  const baseDelayMs = 500;
+  let lastError;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = UrlFetchApp.fetch(`${ARGON_CONFIG.SUPABASE_URL}/rest/v1/${path}`, {
+        method: 'get', headers: sbHeaders_(), muteHttpExceptions: true
+      });
+      const code = res.getResponseCode();
+      const body = JSON.parse(res.getContentText() || '[]');
+
+      // Success (2xx)
+      if (code < 300) {
+        if (!Array.isArray(body)) {
+          throw new Error(`Supabase GET ${code}: Expected array, got ${typeof body}`);
+        }
+        return body;
+      }
+
+      // Client error (4xx) - don't retry
+      if (code < 500) {
+        throw new Error(`Supabase GET ${code}: ${res.getContentText().slice(0, 200)}`);
+      }
+
+      // Server error (5xx) - retry
+      lastError = new Error(`Supabase GET ${code}: ${res.getContentText().slice(0, 200)}`);
+    } catch (err) {
+      // Network error or timeout - retry on last attempt
+      if (attempt === maxRetries) throw err;
+      lastError = err;
+    }
+
+    // Exponential backoff: 500ms, 1000ms, 2000ms
+    if (attempt < maxRetries) {
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      Logger.log(`supabaseGet_ retry ${attempt + 1}/${maxRetries} after ${delay}ms: ${lastError.message}`);
+      Utilities.sleep(delay);
+    }
   }
-  return body;
+  throw lastError;
 }
 
+/**
+ * Supabase WRITE (upsert/insert) with exponential backoff retry (3 attempts)
+ * Retries on 5xx errors and network timeouts
+ */
 function sbWrite_(table, obj, merge) {
-  const res = UrlFetchApp.fetch(`${ARGON_CONFIG.SUPABASE_URL}/rest/v1/${table}`, {
-    method: 'post',
-    headers: sbHeaders_({ Prefer: (merge ? 'resolution=merge-duplicates,' : '') + 'return=minimal' }),
-    payload: JSON.stringify(obj),
-    muteHttpExceptions: true
-  });
-  if (res.getResponseCode() >= 300) {
-    throw new Error(`Supabase ${table} ${res.getResponseCode()}: ${res.getContentText().slice(0, 200)}`);
+  const maxRetries = 3;
+  const baseDelayMs = 500;
+  let lastError;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = UrlFetchApp.fetch(`${ARGON_CONFIG.SUPABASE_URL}/rest/v1/${table}`, {
+        method: 'post',
+        headers: sbHeaders_({ Prefer: (merge ? 'resolution=merge-duplicates,' : '') + 'return=minimal' }),
+        payload: JSON.stringify(obj),
+        muteHttpExceptions: true
+      });
+      const code = res.getResponseCode();
+
+      // Success (2xx)
+      if (code < 300) {
+        return;
+      }
+
+      // Client error (4xx) - don't retry
+      if (code < 500) {
+        throw new Error(`Supabase ${table} ${code}: ${res.getContentText().slice(0, 200)}`);
+      }
+
+      // Server error (5xx) - retry
+      lastError = new Error(`Supabase ${table} ${code}: ${res.getContentText().slice(0, 200)}`);
+    } catch (err) {
+      // Network error or timeout - retry on last attempt
+      if (attempt === maxRetries) throw err;
+      lastError = err;
+    }
+
+    // Exponential backoff: 500ms, 1000ms, 2000ms
+    if (attempt < maxRetries) {
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      Logger.log(`sbWrite_ retry ${attempt + 1}/${maxRetries} after ${delay}ms: ${lastError.message}`);
+      Utilities.sleep(delay);
+    }
   }
+  throw lastError;
 }
+
 const supabaseUpsert_ = (t, o) => sbWrite_(t, o, true);
 const supabaseInsert_ = (t, o) => sbWrite_(t, o, false);
 

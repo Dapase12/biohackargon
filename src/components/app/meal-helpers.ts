@@ -90,7 +90,6 @@ function getLocalStore(): Record<string, any> {
 
 function showToast(msg: string): void {
   if (typeof window !== 'undefined' && window.showToast) window.showToast(msg);
-  else console.log('Toast:', msg);
 }
 
 function mfTypeLabel(t: string): string {

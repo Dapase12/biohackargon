@@ -19,8 +19,6 @@ function setLocalStore(data: Record<string, any>): void {
 function showToast(msg: string): void {
   if (typeof window !== 'undefined' && window.showToast) {
     window.showToast(msg);
-  } else {
-    console.log('Toast:', msg);
   }
 }
 

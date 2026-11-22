@@ -304,7 +304,7 @@
   <header class="sticky top-0 z-30 bg-[#05080F]/85 backdrop-blur-xl border-b border-white/[0.06] px-3.5 pb-2" style="padding-top:max(10px,env(safe-area-inset-top))">
     <div class="max-w-lg mx-auto flex items-center justify-between gap-2">
       <div class="flex items-center gap-2.5 min-w-0">
-        <button onclick="openDrawer()" aria-label="Abrir menú" class="w-9 h-9 shrink-0 rounded-xl bg-slate-900 border border-slate-800 text-slate-200 flex items-center justify-center active:scale-90 transition">
+        <button onclick="openDrawer()" aria-label="Abrir menú" class="w-9 h-9 shrink-0 rounded-xl bg-slate-900 border border-slate-800 text-slate-200 flex items-center justify-center active:scale-90 transition" data-testid="menu-btn">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h10M4 17h16"/></svg>
         </button>
         <div class="min-w-0">
@@ -321,7 +321,7 @@
           <span id="goal-date-label" class="text-[8px] uppercase tracking-widest text-slate-400 font-semibold">Meta 7 Dic</span>
           <span id="countdown-timer" class="text-[11px] font-mono font-bold text-cyan-400">--d --h</span>
         </div>
-        <button id="sync-btn" onclick="syncFromSupabase()" aria-label="Sincronizar" class="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 flex items-center justify-center active:scale-90 transition">
+        <button id="sync-btn" onclick="syncFromSupabase()" aria-label="Sincronizar" class="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 flex items-center justify-center active:scale-90 transition" data-testid="sync-btn">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
         </button>
       </div>
@@ -329,10 +329,10 @@
     <div class="max-w-lg mx-auto mt-2 flex items-center justify-center gap-2">
       <div class="flex items-center bg-slate-900/90 border border-slate-800 rounded-xl px-1 py-0.5 min-w-0">
         <button onclick="stepArgonDate(-1)" aria-label="Día anterior" class="icon-btn px-2 text-slate-400 hover:text-white text-xs font-bold">◀</button>
-        <input id="selected-date" type="date" onchange="loadDayData(this.value)" class="bg-transparent text-white text-xs font-semibold focus:outline-none text-center w-[112px] min-w-0" />
+        <input id="selected-date" type="date" onchange="loadDayData(this.value)" class="bg-transparent text-white text-xs font-semibold focus:outline-none text-center w-[112px] min-w-0" data-testid="date-picker" />
         <button onclick="stepArgonDate(1)" aria-label="Día siguiente" class="icon-btn px-2 text-slate-400 hover:text-white text-xs font-bold">▶</button>
       </div>
-      <button id="btn-today" onclick="loadDayData(getLocalTodayIso())" class="hidden jchip on">Hoy</button>
+      <button id="btn-today" onclick="loadDayData(getLocalTodayIso())" class="hidden jchip on" data-testid="today-btn">Hoy</button>
     </div>
   </header>
 
@@ -372,7 +372,7 @@
                     <circle id="ring-recovery" class="ring-fg" cx="50" cy="50" r="40" stroke="#10B981"></circle>
                   </svg>
                   <div class="absolute inset-0 flex flex-col items-center justify-center">
-                    <span id="val-recovery" class="text-xl font-black text-white leading-none">--%</span>
+                    <span id="val-recovery" class="text-xl font-black text-white leading-none" data-testid="recovery-score">--%</span>
                     <span id="badge-recovery" class="text-[8px] font-extrabold uppercase tracking-wider text-emerald-400 mt-1">--</span>
                   </div>
                 </div>
@@ -388,7 +388,7 @@
                     <circle id="ring-strain" class="ring-fg" cx="50" cy="50" r="40" stroke="#06B6D4"></circle>
                   </svg>
                   <div class="absolute inset-0 flex flex-col items-center justify-center">
-                    <span id="val-strain" class="text-xl font-black text-white leading-none">--</span>
+                    <span id="val-strain" class="text-xl font-black text-white leading-none" data-testid="strain-score">--</span>
                     <span id="badge-strain-target" class="text-[8px] font-extrabold uppercase tracking-wider text-cyan-400 mt-1">Meta: --</span>
                   </div>
                 </div>
@@ -404,7 +404,7 @@
                     <circle id="ring-sleep" class="ring-fg" cx="50" cy="50" r="40" stroke="#8B5CF6"></circle>
                   </svg>
                   <div class="absolute inset-0 flex flex-col items-center justify-center">
-                    <span id="val-sleep" class="text-xl font-black text-white leading-none">--%</span>
+                    <span id="val-sleep" class="text-xl font-black text-white leading-none" data-testid="sleep-score">--%</span>
                     <span id="badge-sleep-eff" class="text-[8px] font-extrabold uppercase tracking-wider text-purple-400 mt-1">Efic: --%</span>
                   </div>
                 </div>
@@ -961,11 +961,11 @@
        ======================================================================== -->
   <nav id="argon-nav-dock" class="fixed bottom-0 inset-x-0 z-40 bg-[#05080F]/90 backdrop-blur-2xl border-t border-white/[0.08] px-2 py-1.5" style="padding-bottom:max(6px,env(safe-area-inset-bottom))">
     <div class="max-w-lg mx-auto grid grid-cols-5 items-center text-center">
-      <button onclick="goToArgonTab(0)" id="nav-btn-0" class="flex flex-col items-center justify-center py-1 text-cyan-400 transition"><span class="text-base leading-none">🏠</span><span class="text-[10px] font-bold mt-1">Hoy</span></button>
-      <button onclick="goToArgonTab(1)" id="nav-btn-1" class="flex flex-col items-center justify-center py-1 text-slate-400 transition"><span class="text-base leading-none">🌙</span><span class="text-[10px] font-semibold mt-1">Sueño</span></button>
-      <button onclick="goToArgonTab(2)" id="nav-btn-2" class="flex flex-col items-center justify-center py-1 text-slate-400 transition"><span class="text-base leading-none">⚖️</span><span class="text-[10px] font-semibold mt-1">Cuerpo</span></button>
-      <button onclick="goToArgonTab(3)" id="nav-btn-3" class="flex flex-col items-center justify-center py-1 text-slate-400 transition"><span class="text-base leading-none">🥩</span><span class="text-[10px] font-semibold mt-1">Macros</span></button>
-      <button onclick="goToArgonTab(4)" id="nav-btn-4" class="flex flex-col items-center justify-center py-1 text-slate-400 transition"><span class="text-base leading-none">📈</span><span class="text-[10px] font-semibold mt-1">Tendencias</span></button>
+      <button onclick="goToArgonTab(0)" id="nav-btn-0" class="flex flex-col items-center justify-center py-1 text-cyan-400 transition" data-testid="nav-today"><span class="text-base leading-none">🏠</span><span class="text-[10px] font-bold mt-1">Hoy</span></button>
+      <button onclick="goToArgonTab(1)" id="nav-btn-1" class="flex flex-col items-center justify-center py-1 text-slate-400 transition" data-testid="nav-sleep"><span class="text-base leading-none">🌙</span><span class="text-[10px] font-semibold mt-1">Sueño</span></button>
+      <button onclick="goToArgonTab(2)" id="nav-btn-2" class="flex flex-col items-center justify-center py-1 text-slate-400 transition" data-testid="nav-body"><span class="text-base leading-none">⚖️</span><span class="text-[10px] font-semibold mt-1">Cuerpo</span></button>
+      <button onclick="goToArgonTab(3)" id="nav-btn-3" class="flex flex-col items-center justify-center py-1 text-slate-400 transition" data-testid="nav-macros"><span class="text-base leading-none">🥩</span><span class="text-[10px] font-semibold mt-1">Macros</span></button>
+      <button onclick="goToArgonTab(4)" id="nav-btn-4" class="flex flex-col items-center justify-center py-1 text-slate-400 transition" data-testid="nav-trends"><span class="text-base leading-none">📈</span><span class="text-[10px] font-semibold mt-1">Tendencias</span></button>
     </div>
   </nav>
   <div id="drawer-backdrop" class="fixed inset-0 z-[55] bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-200" onclick="closeDrawer()"></div>
@@ -995,10 +995,10 @@
       <button class="drawer-item" onclick="drawerGo('export')"><span>📤</span><div><b>Exportar copia (JSON)</b><small>Historial + diario</small></div></button>
       <button class="drawer-item" onclick="drawerGo('demo')"><span>🧪</span><div><b>Datos demo</b><small>Solo en días vacíos (local)</small></div></button>
       <div class="drawer-sec">Sistema</div>
-      <button class="drawer-item" onclick="closeDrawer();openMbe()"><span>🧪</span><div><b>Panel MBE+</b><small>Hipnograma, VFC, entrenos, pasos, lactato</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('coach')"><span>🧠</span><div><b>Coach IA</b><small>Gemini · MBE</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('profile')"><span>👤</span><div><b>Perfil y metas</b><small>Nacimiento, altura, meta de peso, déficit</small></div></button>
-      <button class="drawer-item" onclick="drawerGo('settings')"><span>⚙️</span><div><b>Ajustes y conexiones</b><small>Supabase, peso meta, despertar</small></div></button>
+      <button class="drawer-item" onclick="closeDrawer();openMbe()" data-testid="drawer-mbe"><span>🧪</span><div><b>Panel MBE+</b><small>Hipnograma, VFC, entrenos, pasos, lactato</small></div></button>
+      <button class="drawer-item" onclick="drawerGo('coach')" data-testid="drawer-coach"><span>🧠</span><div><b>Coach IA</b><small>Gemini · MBE</small></div></button>
+      <button class="drawer-item" onclick="drawerGo('profile')" data-testid="drawer-profile"><span>👤</span><div><b>Perfil y metas</b><small>Nacimiento, altura, meta de peso, déficit</small></div></button>
+      <button class="drawer-item" onclick="drawerGo('settings')" data-testid="drawer-settings"><span>⚙️</span><div><b>Ajustes y conexiones</b><small>Supabase, peso meta, despertar</small></div></button>
       <button class="drawer-item" onclick="drawerGo('qa')"><span>✅</span><div><b>Auditoría QA</b><small>Integridad del motor y webhook</small></div></button>
       <button class="drawer-item" onclick="drawerGo('install')"><span>📲</span><div><b>Instalar app</b><small>Pantalla de inicio, modo offline</small></div></button>
       <button class="drawer-item" onclick="drawerGo('about')"><span>ℹ️</span><div><b>Acerca de</b><small>ARGON v6.0 PRO</small></div></button>

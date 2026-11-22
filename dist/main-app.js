@@ -20450,8 +20450,6 @@ async function saveProfile2(recomputeFn) {
 function showToast(msg) {
   if (typeof window !== "undefined" && window.showToast) {
     window.showToast(msg);
-  } else {
-    console.log("Toast:", msg);
   }
 }
 
@@ -20631,8 +20629,6 @@ function getLocalStore() {
 function showToast2(msg) {
   if (typeof window !== "undefined" && window.showToast) {
     window.showToast(msg);
-  } else {
-    console.log("Toast:", msg);
   }
 }
 function renderWorkoutCard() {
@@ -20718,7 +20714,6 @@ function getLocalStore2() {
 }
 function showToast3(msg) {
   if (typeof window !== "undefined" && window.showToast) window.showToast(msg);
-  else console.log("Toast:", msg);
 }
 function mfTypeLabel(t) {
   return t.charAt(0).toUpperCase() + t.slice(1);
@@ -20939,8 +20934,6 @@ function setLocalStore(data) {
 function showToast4(msg) {
   if (typeof window !== "undefined" && window.showToast) {
     window.showToast(msg);
-  } else {
-    console.log("Toast:", msg);
   }
 }
 function getSbConfig2() {

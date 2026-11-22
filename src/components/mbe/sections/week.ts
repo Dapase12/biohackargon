@@ -64,5 +64,4 @@ export function renderWeek(options: WeekOptions): string {
 export async function mbeShare(): Promise<void> {
   const w = weekStats({ raw: [], comp: [] } as any); // Will be called with actual state from window
   // This is a placeholder - the actual implementation will be in the main module
-  console.log('mbeShare called from component');
 }
