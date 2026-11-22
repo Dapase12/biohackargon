@@ -11,9 +11,9 @@
  *   npx tsx src/etl/recompute-scores.ts --from 2024-11-20 --dry-run --user-id <uuid>
  */
 
-import { program } from 'commander';
+import { Command } from 'commander';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { computeEngine, validateComputedOutput, createEmptyComputed, ENGINE_VERSION, COMPUTATION_VERSION } from '@/engine/compute-engine';
+import { computeEngine, validateComputedOutput, createEmptyComputed } from '@/engine/compute-engine';
 import type {
   RawBiometricDay,
   HistoryDay,
@@ -23,17 +23,7 @@ import type {
   PrevComputed,
 } from '@/engine/types';
 
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('ERROR: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
-  process.exit(1);
-}
-
-const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false },
-});
+const program = new Command();
 
 // ========================================================================
 // DATE UTILITIES
@@ -44,18 +34,6 @@ function formatDate(date: Date): string {
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-function parseDateArg(dateStr: string): Date {
-  const regex = /^(\d{4})-(\d{2})-(\d{2})$/;
-  const match = dateStr.match(regex);
-  if (!match) {
-    throw new Error(`Invalid date format: ${dateStr}. Use YYYY-MM-DD`);
-  }
-  const year = parseInt(match[1]!, 10);
-  const month = parseInt(match[2]!, 10) - 1;
-  const day = parseInt(match[3]!, 10);
-  return new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
 }
 
 // ========================================================================
@@ -164,7 +142,7 @@ function filterAllowedColumns(payload: Record<string, unknown>): Record<string, 
 /**
  * Fetch user profile from profiles table
  */
-async function fetchUserProfile(userId: string): Promise<UserProfile> {
+async function fetchUserProfile(supabase: SupabaseClient, userId: string): Promise<UserProfile> {
   const { data, error } = await supabase
     .from('profiles')
     .select('birth_date, height_m, timezone, basal_sleep_need_h, habitual_wake, goal_weight_kg, goal_date, daily_deficit_kcal, biological_sex')
@@ -202,6 +180,7 @@ async function fetchUserProfile(userId: string): Promise<UserProfile> {
  * Fetch daily_raw_biometrics for date range
  */
 async function fetchRawBiometrics(
+  supabase: SupabaseClient,
   userId: string,
   fromDate: string,
   toDate: string
@@ -222,6 +201,7 @@ async function fetchRawBiometrics(
  * Fetch computed_daily_scores for date range (for prevComputed)
  */
 async function fetchComputedScores(
+  supabase: SupabaseClient,
   userId: string,
   fromDate: string,
   toDate: string
@@ -312,21 +292,34 @@ export interface RecomputeOptions {
 export async function recomputeDailyScores(options: RecomputeOptions): Promise<{ success: number; failed: number; errors: string[] }> {
   const { userId, fromDate, toDate, dryRun } = options;
 
+  // Validate environment variables at runtime
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('ERROR: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
+    return { success: 0, failed: 1, errors: ['Missing environment variables'] };
+  }
+
+  const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  });
+
   console.log(`[RECOMPUTE] User: ${userId}, Range: ${fromDate} to ${toDate}, DryRun: ${dryRun}`);
 
   // Fetch user profile
-  const profile = await fetchUserProfile(userId);
+  const profile = await fetchUserProfile(supabase, userId);
   console.log(`[RECOMPUTE] Profile: age=${profile.chronologicalAgeYears}, sex=${profile.biologicalSex}, height=${profile.height_m}m`);
 
   // We need 60 days before fromDate for rolling windows
   const extendedFrom = formatDate(new Date(fromDate + 'T00:00:00Z').getTime() - 60 * 86400000);
 
   // Fetch all raw biometrics from extended range
-  const allRaw = await fetchRawBiometrics(userId, extendedFrom, toDate);
+  const allRaw = await fetchRawBiometrics(supabase, userId, extendedFrom, toDate);
   console.log(`[RECOMPUTE] Fetched ${allRaw.length} raw biometric days (${extendedFrom} to ${toDate})`);
 
   // Fetch existing computed scores for the same range
-  const allComputed = await fetchComputedScores(userId, extendedFrom, toDate);
+  const allComputed = await fetchComputedScores(supabase, userId, extendedFrom, toDate);
   console.log(`[RECOMPUTE] Fetched ${allComputed.length} existing computed scores`);
 
   // Filter to only dates within [fromDate, toDate] that have raw data
@@ -451,4 +444,18 @@ program
     }
   });
 
-program.parse(process.argv);
+// Only parse CLI args when run directly (not when imported)
+function isMainModule(): boolean {
+  const importUrl = import.meta.url;
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  // Normalize both paths for comparison
+  const importPath = importUrl.startsWith('file://') ? importUrl.slice(7) : importUrl;
+  const normalizedImport = importPath.replace(/%20/g, ' ').replace(/^\//, '').replace(/\//g, '\\');
+  const normalizedArgv = argv1.replace(/\//g, '\\');
+  return normalizedImport === normalizedArgv;
+}
+
+if (isMainModule()) {
+  program.parse(process.argv);
+}

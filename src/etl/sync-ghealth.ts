@@ -12,7 +12,7 @@
  *   npx tsx src/etl/sync-ghealth.ts --from 2024-11-20 --dry-run --user-id <uuid>
  */
 
-import { program } from 'commander';
+import { Command } from 'commander';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createGHealthClient } from './ghealth-client';
 import { recomputeDailyScores } from './recompute-scores';
@@ -40,21 +40,30 @@ import type {
   SyncResult,
 } from './types';
 
+const program = new Command();
+
 // ========================================================================
-// CONFIGURATION
+// CONFIGURATION (lazy-initialized in runSync)
 // ========================================================================
 
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+let supabase: SupabaseClient | null = null;
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('ERROR: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
-  process.exit(1);
+function getSupabaseClient(): SupabaseClient {
+  if (!supabase) {
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('ERROR: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
+      process.exit(1);
+    }
+
+    supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
+    });
+  }
+  return supabase;
 }
-
-const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false },
-});
 
 // Default user profile (fallback if profiles table not found)
 const DEFAULT_PROFILE: UserEtlProfile = {
@@ -100,7 +109,8 @@ function formatError(err: unknown): string {
  */
 async function fetchUserProfile(userId: string): Promise<UserEtlProfile> {
   try {
-    const { data: profileRow, error: profileError } = await supabase
+    const client = getSupabaseClient();
+    const { data: profileRow, error: profileError } = await client
       .from('profiles')
       .select('birth_date, height_m, biological_sex')
       .eq('user_id', userId)
@@ -134,7 +144,8 @@ async function fetchUserProfile(userId: string): Promise<UserEtlProfile> {
     // Strict physiological filter: only accept 30 < rhr_bpm < 110 to avoid bad data (e.g., 0 from legacy rows)
     let restingHR = DEFAULT_PROFILE.restingHR;
     try {
-      const { data: rhrRow } = await supabase
+      const client = getSupabaseClient();
+      const { data: rhrRow } = await client
         .from('daily_raw_biometrics')
         .select('rhr_bpm')
         .eq('user_id', userId)
@@ -808,7 +819,8 @@ async function syncDate(
     }
 
     // Upsert to Supabase - ONLY daily_raw_biometrics (computed_daily_scores disabled per audit)
-    const rawResult = await upsertDailyRawBiometrics(supabase, mergedRaw);
+    const client = getSupabaseClient();
+    const rawResult = await upsertDailyRawBiometrics(client, mergedRaw);
     // upsertComputedDailyScores DISABLED - no placeholder scores written during ETL sync
     // computed_daily_scores is populated by a separate server-side computation job
 
@@ -951,4 +963,18 @@ program
     });
   });
 
-program.parse(process.argv);
+// Only parse CLI args when run directly (not when imported)
+function isMainModule(): boolean {
+  const importUrl = import.meta.url;
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  // Normalize both paths for comparison
+  const importPath = importUrl.startsWith('file://') ? importUrl.slice(7) : importUrl;
+  const normalizedImport = importPath.replace(/%20/g, ' ').replace(/^\//, '').replace(/\//g, '\\');
+  const normalizedArgv = argv1.replace(/\//g, '\\');
+  return normalizedImport === normalizedArgv;
+}
+
+if (isMainModule()) {
+  program.parse(process.argv);
+}
