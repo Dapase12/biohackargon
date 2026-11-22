@@ -15,7 +15,6 @@ import type {
 } from '@/etl/types';
 
 interface GHealthCliOptions {
-  credentialsFile: string;
   configDir: string;
   startTime?: string; // RFC3339
   endTime?: string;   // RFC3339
@@ -36,7 +35,6 @@ async function executeGHealth<T>(
   options: GHealthCliOptions
 ): Promise<CliResult<T>> {
   const args = [
-    '--credentials', options.credentialsFile,
     '--config', options.configDir,
     '--format', 'json',
     ...command,
@@ -128,7 +126,6 @@ async function fetchAllPages<T, R>(
 // ========================================================================
 
 export interface GHealthClientConfig {
-  credentialsFile: string;
   configDir: string;
 }
 
@@ -282,22 +279,14 @@ export class GHealthClient {
 
 /**
  * Create client from environment variables
- * Supports two modes:
- * 1. Explicit GHEALTH_CREDENTIALS_FILE + GHEALTH_CONFIG_DIR
- * 2. Only GHEALTH_CONFIG_DIR (falls back to ${configDir}/credentials.json)
+ * Reads all credentials (client_secret.json, credentials.json) from GHEALTH_CONFIG_DIR
  */
 export function createGHealthClient(): GHealthClient {
   const configDir = process.env.GHEALTH_CONFIG_DIR;
-  let credentialsFile = process.env.GHEALTH_CREDENTIALS_FILE;
 
   if (!configDir) {
     throw new Error('GHEALTH_CONFIG_DIR must be set');
   }
 
-  // Fallback: if credentials file not explicitly set, use default location in config dir
-  if (!credentialsFile) {
-    credentialsFile = `${configDir}/credentials.json`;
-  }
-
-  return new GHealthClient({ credentialsFile, configDir });
+  return new GHealthClient({ configDir });
 }
