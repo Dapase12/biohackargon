@@ -293,60 +293,32 @@ async function transformBodyCompositionData(
 interface DailyRawBiometrics {
   user_id: string;
   log_date: string;
-  // HRV
-  hrv_rmssd_ms?: number | null;
-  hrv_sdnn_ms?: number | null;
-  hrv_pnn50_pct?: number | null;
-  // RHR
-  rhr_bpm?: number | null;
-  // Sleep (from Health Connect)
-  sleep_score?: number | null;
+  // Sleep (from Health Connect) - PRODUCTION COLUMNS ONLY
+  rmssd_ms?: number | null;
+  time_in_bed_min?: number | null;
   total_sleep_min?: number | null;
   deep_sleep_min?: number | null;
   rem_sleep_min?: number | null;
   light_sleep_min?: number | null;
-  awake_sleep_min?: number | null;
-  sleep_efficiency_pct?: number | null;
-  time_in_bed_min?: number | null;
-  sleep_onset_latency_min?: number | null;
-  naps_count?: number;
-  naps_total_min?: number;
-  bedtime_start?: string | null;  // time type stored as HH:MM:SS
-  bedtime_end?: string | null;    // time type stored as HH:MM:SS
-  // Activity (from Zepp/Health Connect)
-  steps?: number | null;
-  active_calories?: number | null;
-  exercise_min?: number | null;
-  exercise_type?: string | null;
-  exercise_intensity?: string | null;
-  // Body Composition (from scale via Health Connect)
+  nap_sleep_min?: number | null;
+  sleep_onset_timestamp?: string | null;  // timestamptz ISO string
+  wake_timestamp?: string | null;         // timestamptz ISO string
+  // Exercise - PRODUCTION COLUMNS ONLY
+  pickleball_or_gym_minutes?: number | null;
+  active_calories_kcal?: number | null;
+  hr_zones_minutes?: any;
+  // Body Composition - PRODUCTION COLUMNS ONLY
   weight_kg?: number | null;
   body_fat_pct?: number | null;
-  muscle_mass_kg?: number | null;
-  hydration_ml?: number | null;
-  // Nutrition (from meal logging)
+  // Manual fields (preserved from existing row, never overwritten by ETL)
+  meals_log_json?: any;
+  session_rpe?: number | null;
   intake_kcal?: number | null;
   intake_protein_g?: number | null;
   intake_carbs_g?: number | null;
   intake_fat_g?: number | null;
-  meals_log_json?: any;
-  // HR zones (from Zepp exercise)
-  z1_minutes?: number | null;
-  z2_minutes?: number | null;
-  z3_minutes?: number | null;
-  z4_minutes?: number | null;
-  z5_minutes?: number | null;
-  hr_zones_minutes?: any;
-  // Respiratory rate (from sleep)
-  resp_rate_brpm?: number | null;
-  // SpO2 (from sleep)
-  spo2_pct?: number | null;
-  // Hospital shift tracking
   is_hospital_shift?: boolean | null;
   night_awake_shift_hours?: number | null;
-  // Subjective / manual
-  session_rpe?: number | null;
-  pickleball_or_gym_minutes?: number | null;
   // Metadata
   raw_payload_hash?: string | null;
   source?: string | null;
@@ -539,77 +511,36 @@ async function upsertComputedDailyScores(
 
 /**
  * Build daily_raw_biometrics from sleep transformer output
- * Maps SleepTransformerOutput fields to daily_raw_biometrics schema columns
- * Outputs ONLY columns that exist in daily_raw_biometrics and are populated from sleep data
+ * Outputs ONLY production columns from daily_raw_biometrics:
+ * rmssd_ms, time_in_bed_min, total_sleep_min, deep_sleep_min, rem_sleep_min,
+ * light_sleep_min, nap_sleep_min, sleep_onset_timestamp, wake_timestamp
  */
 function buildRawBiometricsFromSleep(
   userId: string,
   date: string,
   sleep: SleepTransformerOutput
 ): DailyRawBiometrics {
-  // Extract time portion from sleep_onset_timestamp and wake_timestamp for bedtime_start/end
-  const bedtimeStart = sleep.sleep_onset_timestamp
-    ? new Date(sleep.sleep_onset_timestamp).toTimeString().slice(0, 8)
-    : null;
-  const bedtimeEnd = sleep.wake_timestamp
-    ? new Date(sleep.wake_timestamp).toTimeString().slice(0, 8)
-    : null;
-
   return {
     user_id: userId,
     log_date: date,
-    // HRV: use nocturnal median as rmssd (numeric(6,2))
-    hrv_rmssd_ms: sleep.hrv_nocturnal_median ? Math.round(sleep.hrv_nocturnal_median * 100) / 100 : null,
-    // RHR: not available from sleep alone
-    rhr_bpm: null,
-    // Sleep (from Health Connect) - only columns that exist in daily_raw_biometrics
-    sleep_score: null, // computed elsewhere
+    // HRV: nocturnal median RMSSD
+    rmssd_ms: sleep.hrv_nocturnal_median ? Math.round(sleep.hrv_nocturnal_median * 100) / 100 : null,
+    // Sleep - only production columns
+    time_in_bed_min: sleep.time_in_bed_min ? Math.round(sleep.time_in_bed_min) : null,
     total_sleep_min: sleep.total_sleep_min ? Math.round(sleep.total_sleep_min) : null,
     deep_sleep_min: sleep.deep_sleep_min ? Math.round(sleep.deep_sleep_min) : null,
     rem_sleep_min: sleep.rem_sleep_min ? Math.round(sleep.rem_sleep_min) : null,
     light_sleep_min: sleep.light_sleep_min ? Math.round(sleep.light_sleep_min) : null,
-    awake_sleep_min: sleep.awake_sleep_min ? Math.round(sleep.awake_sleep_min) : null,
-    sleep_efficiency_pct: sleep.sleep_efficiency_pct ? Math.round(sleep.sleep_efficiency_pct * 10) / 10 : null,
-    time_in_bed_min: sleep.time_in_bed_min ? Math.round(sleep.time_in_bed_min) : null,
-    sleep_onset_latency_min: sleep.sleep_onset_latency_min ? Math.round(sleep.sleep_onset_latency_min) : null,
-    naps_count: sleep.naps_count ?? 0,
-    naps_total_min: sleep.naps_total_min ?? 0,
-    bedtime_start: bedtimeStart,
-    bedtime_end: bedtimeEnd,
-    // Activity: not from sleep
-    steps: null,
-    active_calories: null,
-    exercise_min: null,
-    exercise_type: null,
-    exercise_intensity: null,
-    // Body composition: not from sleep
+    nap_sleep_min: sleep.nap_sleep_min ? Math.round(sleep.nap_sleep_min) : null,
+    // Timestamps as ISO strings (timestamptz)
+    sleep_onset_timestamp: sleep.sleep_onset_timestamp ?? null,
+    wake_timestamp: sleep.wake_timestamp ?? null,
+    // Other fields not from sleep - set to null to be filtered out by upsert
+    pickleball_or_gym_minutes: null,
+    active_calories_kcal: null,
+    hr_zones_minutes: null,
     weight_kg: null,
     body_fat_pct: null,
-    muscle_mass_kg: null,
-    hydration_ml: null,
-    // Nutrition: not from sleep
-    intake_kcal: null,
-    intake_protein_g: null,
-    intake_carbs_g: null,
-    intake_fat_g: null,
-    meals_log_json: null,
-    // HR zones: not from sleep
-    z1_minutes: null,
-    z2_minutes: null,
-    z3_minutes: null,
-    z4_minutes: null,
-    z5_minutes: null,
-    hr_zones_minutes: null,
-    // Respiratory rate / SpO2: not available
-    resp_rate_brpm: null,
-    spo2_pct: null,
-    // Hospital shift
-    is_hospital_shift: false,
-    night_awake_shift_hours: null,
-    // Subjective
-    session_rpe: null,
-    pickleball_or_gym_minutes: null,
-    // Metadata
     raw_payload_hash: null,
     source: 'health_connect',
   };
@@ -617,8 +548,8 @@ function buildRawBiometricsFromSleep(
 
 /**
  * Build daily_raw_biometrics from exercise transformer outputs
- * Outputs ONLY columns that exist in daily_raw_biometrics and are populated from exercise data
- * Per audit: pickleball_or_gym_minutes, active_calories, hr_zones_minutes (jsonb)
+ * Outputs ONLY production columns from daily_raw_biometrics:
+ * pickleball_or_gym_minutes, active_calories_kcal, hr_zones_minutes (jsonb)
  */
 function buildRawBiometricsFromExercise(
   userId: string,
@@ -632,8 +563,6 @@ function buildRawBiometricsFromExercise(
   // Aggregate multiple workouts
   const totalDuration = exercises.reduce((sum, e) => sum + e.duration_min, 0);
   const totalKcal = exercises.reduce((sum, e) => sum + e.kcal, 0);
-  const maxHr = Math.max(...exercises.map(e => e.max_hr ?? 0).filter(h => h > 0));
-  const avgHr = exercises.reduce((sum, e) => sum + (e.avg_hr ?? 0), 0) / exercises.length;
 
   // Combine HR zones (sum minutes across workouts)
   const combinedZones = exercises.reduce((acc, e) => {
@@ -655,59 +584,25 @@ function buildRawBiometricsFromExercise(
     workouts: [] as any[],
   });
 
-  // Determine primary exercise type from first workout
-  const primaryType = exercises[0]?.zones.workouts[0]?.type ?? null;
-
   return {
     user_id: userId,
     log_date: date,
-    // Activity - only columns populated from exercise
-    steps: null,
-    active_calories: Math.round(totalKcal),  // maps to active_calories_kcal
-    exercise_min: Math.round(totalDuration),
-    exercise_type: primaryType,
-    exercise_intensity: maxHr > 0 && avgHr > 0 ? (avgHr / maxHr > 0.8 ? 'vigorous' : avgHr / maxHr > 0.6 ? 'moderate' : 'light') : null,
-    // HR zones (individual columns - rounded integers)
-    z1_minutes: Math.round(combinedZones.z1_minutes),
-    z2_minutes: Math.round(combinedZones.z2_minutes),
-    z3_minutes: Math.round(combinedZones.z3_minutes),
-    z4_minutes: Math.round(combinedZones.z4_minutes),
-    z5_minutes: Math.round(combinedZones.z5_minutes),
-    hr_zones_minutes: combinedZones,  // jsonb
-    // Subjective - pickleball_or_gym_minutes
+    // Exercise - only production columns
     pickleball_or_gym_minutes: Math.round(totalDuration),
+    active_calories_kcal: Math.round(totalKcal),
+    hr_zones_minutes: combinedZones,
     // Other fields not from exercise - set to null to be filtered out by upsert
-    hrv_rmssd_ms: null,
-    hrv_sdnn_ms: null,
-    hrv_pnn50_pct: null,
-    rhr_bpm: null,
-    sleep_score: null,
+    rmssd_ms: null,
+    time_in_bed_min: null,
     total_sleep_min: null,
     deep_sleep_min: null,
     rem_sleep_min: null,
     light_sleep_min: null,
-    awake_sleep_min: null,
-    sleep_efficiency_pct: null,
-    time_in_bed_min: null,
-    sleep_onset_latency_min: null,
-    naps_count: 0,
-    naps_total_min: 0,
-    bedtime_start: null,
-    bedtime_end: null,
+    nap_sleep_min: null,
+    sleep_onset_timestamp: null,
+    wake_timestamp: null,
     weight_kg: null,
     body_fat_pct: null,
-    muscle_mass_kg: null,
-    hydration_ml: null,
-    intake_kcal: null,
-    intake_protein_g: null,
-    intake_carbs_g: null,
-    intake_fat_g: null,
-    meals_log_json: null,
-    resp_rate_brpm: null,
-    spo2_pct: null,
-    is_hospital_shift: false,
-    night_awake_shift_hours: null,
-    session_rpe: null,
     raw_payload_hash: null,
     source: 'health_connect',
   };
@@ -715,8 +610,8 @@ function buildRawBiometricsFromExercise(
 
 /**
  * Build daily_raw_biometrics from body composition transformer output
- * Outputs ONLY columns that exist in daily_raw_biometrics and are populated from body comp data
- * Per audit: weight_kg, body_fat_pct (both numeric)
+ * Outputs ONLY production columns from daily_raw_biometrics:
+ * weight_kg, body_fat_pct (both numeric)
  */
 function buildRawBiometricsFromBodyComp(
   userId: string,
@@ -726,50 +621,22 @@ function buildRawBiometricsFromBodyComp(
   return {
     user_id: userId,
     log_date: date,
+    // Body composition - only production columns
     weight_kg: bodyComp.weight_kg,
     body_fat_pct: bodyComp.body_fat_pct,
     // Other fields not from body comp - set to null to be filtered out by upsert
-    hrv_rmssd_ms: null,
-    hrv_sdnn_ms: null,
-    hrv_pnn50_pct: null,
-    rhr_bpm: null,
-    sleep_score: null,
+    rmssd_ms: null,
+    time_in_bed_min: null,
     total_sleep_min: null,
     deep_sleep_min: null,
     rem_sleep_min: null,
     light_sleep_min: null,
-    awake_sleep_min: null,
-    sleep_efficiency_pct: null,
-    time_in_bed_min: null,
-    sleep_onset_latency_min: null,
-    naps_count: 0,
-    naps_total_min: 0,
-    bedtime_start: null,
-    bedtime_end: null,
-    steps: null,
-    active_calories: null,
-    exercise_min: null,
-    exercise_type: null,
-    exercise_intensity: null,
-    muscle_mass_kg: null,
-    hydration_ml: null,
-    intake_kcal: null,
-    intake_protein_g: null,
-    intake_carbs_g: null,
-    intake_fat_g: null,
-    meals_log_json: null,
-    z1_minutes: null,
-    z2_minutes: null,
-    z3_minutes: null,
-    z4_minutes: null,
-    z5_minutes: null,
-    hr_zones_minutes: null,
-    resp_rate_brpm: null,
-    spo2_pct: null,
-    is_hospital_shift: false,
-    night_awake_shift_hours: null,
-    session_rpe: null,
+    nap_sleep_min: null,
+    sleep_onset_timestamp: null,
+    wake_timestamp: null,
     pickleball_or_gym_minutes: null,
+    active_calories_kcal: null,
+    hr_zones_minutes: null,
     raw_payload_hash: null,
     source: 'health_connect',
   };

@@ -180,41 +180,43 @@ export function mockGASResponse<T>(data: T, success = true) {
 }
 
 /**
- * Create mock raw biometric data
+ * Create mock raw biometric data (PRODUCTION SCHEMA)
  */
 export function createMockRawBiometric(overrides: Partial<any> = {}) {
   return {
     user_id: 'test-user',
     log_date: new Date().toISOString().split('T')[0],
-    hrv_rmssd_ms: 45,
-    rhr_bpm: 58,
-    sleep_score: 85,
+    // Sleep - PRODUCTION COLUMNS
+    rmssd_ms: 45,
+    time_in_bed_min: 540,
     total_sleep_min: 480,
     deep_sleep_min: 90,
     rem_sleep_min: 100,
     light_sleep_min: 250,
-    awake_sleep_min: 40,
-    sleep_onset_latency_min: 15,
-    sleep_efficiency_pct: 92,
-    bedtime_start: '22:30',
-    bedtime_end: '06:30',
-    naps_count: 0,
-    naps_total_min: 0,
-    steps: 8500,
-    active_calories: 450,
-    exercise_min: 45,
-    exercise_type: 'running',
-    exercise_intensity: 'moderate',
+    nap_sleep_min: 20,
+    sleep_onset_timestamp: '2025-01-14T22:30:00-04:00',
+    wake_timestamp: '2025-01-15T06:30:00-04:00',
+    // Exercise - PRODUCTION COLUMNS
+    pickleball_or_gym_minutes: 60,
+    active_calories_kcal: 450,
+    hr_zones_minutes: { z1: 10, z2: 20, z3: 15, z4: 10, z5: 5 },
+    // Body Composition - PRODUCTION COLUMNS
     weight_kg: 75.5,
     body_fat_pct: 18,
-    muscle_mass_kg: 58,
-    hydration_ml: 2500,
-    hrv_cv_pct: 5,
-    hrv_samples_count: 30,
-    rr_mean_ms: 1050,
-    rr_sdnn_ms: 50,
-    spo2_avg_pct: 98,
-    temp_delta_c: 0.1,
+    // Manual fields (preserved)
+    meals_log_json: [],
+    session_rpe: null,
+    intake_kcal: null,
+    intake_protein_g: null,
+    intake_carbs_g: null,
+    intake_fat_g: null,
+    is_hospital_shift: false,
+    night_awake_shift_hours: null,
+    // Metadata
+    raw_payload_hash: 'abc123',
+    source: 'health_connect',
+    created_at: '2025-01-15T10:00:00Z',
+    updated_at: '2025-01-15T10:00:00Z',
     ...overrides
   }
 }
@@ -248,7 +250,7 @@ export function createMockComputedScores(overrides: Partial<any> = {}) {
 }
 
 /**
- * Create mock webhook payload
+ * Create mock webhook payload (matches GAS output format - may differ from DB)
  */
 export function createMockWebhookPayload(overrides: Partial<any> = {}) {
   return {
