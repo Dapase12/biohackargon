@@ -106,8 +106,37 @@ const ALLOWED_SCORES_COLUMNS = new Set<string>([
 // UTILITIES
 // ========================================================================
 
+// Integer columns in computed_daily_scores that must be rounded (not truncated)
+const INTEGER_COLUMNS = new Set<string>([
+  'recovery_score',
+  'dynamic_tdee_kcal',
+  'target_kcal',
+  'target_protein_g',
+  'target_carbs_g',
+  'target_fat_g',
+  'tmb_kcal',
+  'sleep_hours_vs_needed_pct',
+  'sleep_regularity_pct',
+  'high_sleep_stress_pct',
+  'intake_kcal',
+  'nap_sleep_min',
+  'time_in_bed_min',
+  'total_sleep_min',
+  'deep_sleep_min',
+  'rem_sleep_min',
+  'light_sleep_min',
+  'steps_net',
+  'z13_minutes',
+  'z45_minutes',
+  'tef_kcal',
+  'empirical_tdee_kcal',
+  'pickleball_or_gym_minutes',
+  'steps_count',
+]);
+
 /**
  * Convert NaN/Infinity to null in an object recursively
+ * Also rounds integer columns to avoid PostgreSQL 22P02 errors
  */
 function sanitizeForDb(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -123,6 +152,12 @@ function sanitizeForDb(obj: Record<string, unknown>): Record<string, unknown> {
       );
     } else {
       result[key] = value;
+    }
+  }
+  // Round integer columns if they have decimals
+  for (const [key, value] of Object.entries(result)) {
+    if (INTEGER_COLUMNS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
+      result[key] = Math.round(value);
     }
   }
   return result;
@@ -370,13 +405,20 @@ export async function recomputeDailyScores(options: RecomputeOptions): Promise<{
       console.warn(`[RECOMPUTE] Missing columns for ${logDate}: ${validation.missing.join(', ')}`);
     }
 
-    // Sanitize NaN/Infinity
+    // Sanitize NaN/Infinity and round integer columns
     const sanitized = sanitizeForDb(computed as unknown as Record<string, unknown>);
 
-    // Filter to allowed columns
-    const payload = filterAllowedColumns(sanitized);
-    payload.user_id = userId;
-    payload.updated_at = new Date().toISOString();
+    // Map engine output field names to production column names
+    if (sanitized.dynamic_sleep_need_h !== undefined && sanitized.dynamic_sleep_need_h !== null) {
+      sanitized.dynamic_sleep_need_hours = sanitized.dynamic_sleep_need_h;
+    }
+
+    // Build payload: add user_id and computed_at, then filter to allowed columns LAST
+    const payload = filterAllowedColumns({
+      ...sanitized,
+      user_id: userId,
+      computed_at: new Date().toISOString(),
+    });
 
     if (dryRun) {
       console.log(`[DRY RUN] ${logDate}: OK (${Object.keys(payload).length} columns)`);

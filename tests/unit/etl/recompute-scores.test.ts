@@ -472,4 +472,208 @@ describe('recompute-scores utilities', () => {
       expect(result.c).toBe(42)
     })
   })
+
+  describe('integer column rounding', () => {
+    const INTEGER_COLUMNS = new Set<string>([
+      'recovery_score',
+      'dynamic_tdee_kcal',
+      'target_kcal',
+      'target_protein_g',
+      'target_carbs_g',
+      'target_fat_g',
+      'tmb_kcal',
+      'sleep_hours_vs_needed_pct',
+      'sleep_regularity_pct',
+      'high_sleep_stress_pct',
+      'intake_kcal',
+      'nap_sleep_min',
+      'time_in_bed_min',
+      'total_sleep_min',
+      'deep_sleep_min',
+      'rem_sleep_min',
+      'light_sleep_min',
+      'steps_net',
+      'z13_minutes',
+      'z45_minutes',
+      'tef_kcal',
+      'empirical_tdee_kcal',
+      'pickleball_or_gym_minutes',
+      'steps_count',
+    ])
+
+    function sanitizeForDbWithRounding(obj: Record<string, unknown>): Record<string, unknown> {
+      const result: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === 'number' && (Number.isNaN(value) || !Number.isFinite(value))) {
+          result[key] = null
+        } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+          result[key] = sanitizeForDbWithRounding(value as Record<string, unknown>)
+        } else if (Array.isArray(value)) {
+          result[key] = value.map(v =>
+            typeof v === 'number' && (Number.isNaN(v) || !Number.isFinite(v)) ? null :
+            v && typeof v === 'object' ? sanitizeForDbWithRounding(v as Record<string, unknown>) : v
+          )
+        } else {
+          result[key] = value
+        }
+      }
+      // Round integer columns if they have decimals
+      for (const [key, value] of Object.entries(result)) {
+        if (INTEGER_COLUMNS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
+          result[key] = Math.round(value)
+        }
+      }
+      return result
+    }
+
+    it('should round z13_minutes from 91.2 to 91', () => {
+      const input = { z13_minutes: 91.2, recovery_score: 80 }
+      const result = sanitizeForDbWithRounding(input)
+      expect(result.z13_minutes).toBe(91)
+      expect(result.recovery_score).toBe(80)
+    })
+
+    it('should round recovery_score from 85.7 to 86', () => {
+      const input = { recovery_score: 85.7 }
+      const result = sanitizeForDbWithRounding(input)
+      expect(result.recovery_score).toBe(86)
+    })
+
+    it('should round multiple integer columns', () => {
+      const input = {
+        recovery_score: 85.7,
+        z13_minutes: 91.2,
+        z45_minutes: 45.9,
+        target_kcal: 2345.6,
+        target_protein_g: 150.3,
+        target_carbs_g: 250.8,
+        target_fat_g: 80.1,
+        dynamic_tdee_kcal: 2500.4,
+        tmb_kcal: 1650.5,
+        sleep_hours_vs_needed_pct: 95.6,
+        sleep_regularity_pct: 87.3,
+        high_sleep_stress_pct: 12.7,
+        intake_kcal: 2100.9,
+        nap_sleep_min: 30.5,
+        time_in_bed_min: 480.2,
+        total_sleep_min: 420.8,
+        deep_sleep_min: 90.4,
+        rem_sleep_min: 100.6,
+        light_sleep_min: 230.1,
+        steps_net: 8500.7,
+        tef_kcal: 210.3,
+        empirical_tdee_kcal: 2700.8,
+        pickleball_or_gym_minutes: 60.4,
+        steps_count: 9200.1,
+      }
+      const result = sanitizeForDbWithRounding(input)
+      expect(result.recovery_score).toBe(86)
+      expect(result.z13_minutes).toBe(91)
+      expect(result.z45_minutes).toBe(46)
+      expect(result.target_kcal).toBe(2346)
+      expect(result.target_protein_g).toBe(150)
+      expect(result.target_carbs_g).toBe(251)
+      expect(result.target_fat_g).toBe(80)
+      expect(result.dynamic_tdee_kcal).toBe(2500)
+      expect(result.tmb_kcal).toBe(1651)
+      expect(result.sleep_hours_vs_needed_pct).toBe(96)
+      expect(result.sleep_regularity_pct).toBe(87)
+      expect(result.high_sleep_stress_pct).toBe(13)
+      expect(result.intake_kcal).toBe(2101)
+      expect(result.nap_sleep_min).toBe(31)
+      expect(result.time_in_bed_min).toBe(480)
+      expect(result.total_sleep_min).toBe(421)
+      expect(result.deep_sleep_min).toBe(90)
+      expect(result.rem_sleep_min).toBe(101)
+      expect(result.light_sleep_min).toBe(230)
+      expect(result.steps_net).toBe(8501)
+      expect(result.tef_kcal).toBe(210)
+      expect(result.empirical_tdee_kcal).toBe(2701)
+      expect(result.pickleball_or_gym_minutes).toBe(60)
+      expect(result.steps_count).toBe(9200)
+    })
+
+    it('should not round non-integer columns', () => {
+      const input = {
+        ln_rmssd: 4.123,
+        hrv_z_score: 0.567,
+        rhr_z_score: -0.234,
+        ln_rmssd_14d_mean: 4.1,
+        ln_rmssd_14d_sd: 0.3,
+        cv_lnrmssd_7d_pct: 5.5,
+        weight_kg: 75.5,
+        body_fat_pct: 18.2,
+        rmssd_ms: 45.8,
+        rhr_bpm: 58.3,
+      }
+      const result = sanitizeForDbWithRounding(input)
+      expect(result.ln_rmssd).toBe(4.123)
+      expect(result.hrv_z_score).toBe(0.567)
+      expect(result.rhr_z_score).toBe(-0.234)
+      expect(result.ln_rmssd_14d_mean).toBe(4.1)
+      expect(result.ln_rmssd_14d_sd).toBe(0.3)
+      expect(result.cv_lnrmssd_7d_pct).toBe(5.5)
+      expect(result.weight_kg).toBe(75.5)
+      expect(result.body_fat_pct).toBe(18.2)
+      expect(result.rmssd_ms).toBe(45.8)
+      expect(result.rhr_bpm).toBe(58.3)
+    })
+
+    it('should handle NaN in integer columns (convert to null)', () => {
+      const input = { recovery_score: NaN, z13_minutes: NaN }
+      const result = sanitizeForDbWithRounding(input)
+      expect(result.recovery_score).toBeNull()
+      expect(result.z13_minutes).toBeNull()
+    })
+  })
+
+  describe('payload final validation (production schema)', () => {
+    it('should not contain updated_at in final payload', () => {
+      const sanitized = {
+        log_date: '2025-01-15',
+        recovery_score: 80,
+        strain_score: 65,
+        dynamic_sleep_need_h: 7.5,
+        computed_at: '2025-01-15T12:00:00.000Z',
+        user_id: 'test-user',
+      }
+
+      // Simulate the production payload building
+      if (sanitized.dynamic_sleep_need_h !== undefined && sanitized.dynamic_sleep_need_h !== null) {
+        sanitized.dynamic_sleep_need_hours = sanitized.dynamic_sleep_need_h
+      }
+
+      const payload = filterAllowedColumns({
+        ...sanitized,
+        user_id: 'test-user',
+        computed_at: new Date().toISOString(),
+      }, ALLOWED_SCORES_COLUMNS)
+
+      expect(payload).not.toHaveProperty('updated_at')
+      expect(payload).toHaveProperty('computed_at')
+      expect(payload).toHaveProperty('dynamic_sleep_need_hours', 7.5)
+      expect(payload).not.toHaveProperty('dynamic_sleep_need_h')
+    })
+
+    it('should filter out any non-allowed columns', () => {
+      const sanitized = {
+        log_date: '2025-01-15',
+        recovery_score: 80,
+        invalid_column: 'should be removed',
+        updated_at: '2025-01-15T12:00:00.000Z', // This should be filtered out
+      }
+
+      const payload = filterAllowedColumns({
+        ...sanitized,
+        user_id: 'test-user',
+        computed_at: new Date().toISOString(),
+      }, ALLOWED_SCORES_COLUMNS)
+
+      expect(payload).not.toHaveProperty('invalid_column')
+      expect(payload).not.toHaveProperty('updated_at')
+      expect(payload).toHaveProperty('computed_at')
+      expect(payload).toHaveProperty('recovery_score', 80)
+      expect(payload).toHaveProperty('user_id', 'test-user')
+    })
+  })
 })
