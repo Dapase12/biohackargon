@@ -150,7 +150,7 @@ export class GHealthClient {
       GHealthSleepListResponse,
       GHealthSleepListResponse['sessions'][0]
     >(
-      ['sleep', 'list'],
+      ['data', 'sleep', 'list'],
       { ...this.config, startTime, endTime, pageSize: 100 },
       (data) => data.sessions ?? [],
       (data) => data.nextPageToken ?? null
@@ -169,7 +169,7 @@ export class GHealthClient {
       GHealthHrvListResponse,
       GHealthHrvListResponse['samples'][0]
     >(
-      ['hrv', 'list'],
+      ['data', 'heart-rate-variability', 'list'],
       { ...this.config, startTime, endTime, pageSize: 500 },
       (data) => data.samples ?? [],
       (data) => data.nextPageToken ?? null
@@ -188,7 +188,7 @@ export class GHealthClient {
       GHealthExerciseListResponse,
       GHealthExerciseListResponse['sessions'][0]
     >(
-      ['exercise', 'list'],
+      ['data', 'exercise', 'list'],
       { ...this.config, startTime, endTime, pageSize: 100 },
       (data) => data.sessions ?? [],
       (data) => data.nextPageToken ?? null
@@ -207,7 +207,7 @@ export class GHealthClient {
       GHealthHrListResponse,
       GHealthHrListResponse['samples'][0]
     >(
-      ['heart-rate', 'list'],
+      ['data', 'heart-rate', 'list'],
       { ...this.config, startTime, endTime, pageSize: 1000 },
       (data) => data.samples ?? [],
       (data) => data.nextPageToken ?? null
@@ -226,7 +226,7 @@ export class GHealthClient {
       GHealthExerciseEventsResponse,
       GHealthExerciseEventsResponse['events'][0]
     >(
-      ['exercise', 'events'],
+      ['data', 'exercise', 'events'],
       { ...this.config, startTime, endTime, pageSize: 100 },
       (data) => data.events ?? [],
       (data) => data.nextPageToken ?? null
@@ -245,7 +245,7 @@ export class GHealthClient {
       GHealthBodyCompositionResponse,
       GHealthBodyCompositionResponse['samples'][0]
     >(
-      ['body-composition', 'list'],
+      ['data', 'weight', 'list'],
       { ...this.config, startTime, endTime, pageSize: 100 },
       (data) => data.samples ?? [],
       (data) => data.nextPageToken ?? null
