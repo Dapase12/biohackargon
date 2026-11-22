@@ -103,7 +103,13 @@ async function fetchUserProfile(userId: string): Promise<UserEtlProfile> {
       .eq('user_id', userId)
       .single();
 
-    if (error || !data) {
+    if (error) {
+      // Query error (schema, column, permission) - log full error details
+      console.warn(`[PROFILE] Query error for ${userId}: ${formatError(error)}, using DEFAULT_PROFILE`);
+      return DEFAULT_PROFILE;
+    }
+    if (!data) {
+      // Row not found - expected for new users
       console.warn(`[PROFILE] profiles not found for ${userId}, using DEFAULT_PROFILE`);
       return DEFAULT_PROFILE;
     }
@@ -787,15 +793,19 @@ async function runSync(options: SyncOptions): Promise<void> {
     }
   } else {
     const range = getDateRange(options.from, options.to);
-    // Generate dates from range.from to range.to (exclusive)
+    // getDateRange returns inclusive dates (both from and to are actual dates to sync)
+    // Generate dates from range.from to range.to (both inclusive)
     const start = parseDateArg(range.from);
     const end = parseDateArg(range.to);
-    // end is already D+1 exclusive, so subtract 1 day to get the last inclusive date
-    const lastInclusive = new Date(end.getTime() - 86400000);
     dates = [];
-    for (let d = new Date(start); d <= lastInclusive; d.setDate(d.getDate() + 1)) {
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       dates.push(formatDate(d));
     }
+  }
+
+  if (dates.length === 0) {
+    console.error(`[ERROR] No dates to sync. Check --from/--to or --backfill.`);
+    process.exit(1);
   }
 
   console.log(`Syncing ${dates.length} day(s) for user ${options.userId}...`);
