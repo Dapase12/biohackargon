@@ -282,13 +282,21 @@ export class GHealthClient {
 
 /**
  * Create client from environment variables
+ * Supports two modes:
+ * 1. Explicit GHEALTH_CREDENTIALS_FILE + GHEALTH_CONFIG_DIR
+ * 2. Only GHEALTH_CONFIG_DIR (falls back to ${configDir}/credentials.json)
  */
 export function createGHealthClient(): GHealthClient {
-  const credentialsFile = process.env.GHEALTH_CREDENTIALS_FILE;
   const configDir = process.env.GHEALTH_CONFIG_DIR;
+  let credentialsFile = process.env.GHEALTH_CREDENTIALS_FILE;
 
-  if (!credentialsFile || !configDir) {
-    throw new Error('GHEALTH_CREDENTIALS_FILE and GHEALTH_CONFIG_DIR must be set');
+  if (!configDir) {
+    throw new Error('GHEALTH_CONFIG_DIR must be set');
+  }
+
+  // Fallback: if credentials file not explicitly set, use default location in config dir
+  if (!credentialsFile) {
+    credentialsFile = `${configDir}/credentials.json`;
   }
 
   return new GHealthClient({ credentialsFile, configDir });
