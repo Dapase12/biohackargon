@@ -15,6 +15,7 @@
 import { program } from 'commander';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createGHealthClient } from './ghealth-client';
+import { recomputeDailyScores } from './recompute-scores';
 import {
   parseSleepSessions,
   parseHrvSamples,
@@ -593,6 +594,12 @@ function buildRawBiometricsFromExercise(
     acc.z3_minutes += e.zones.z3;
     acc.z4_minutes += e.zones.z4;
     acc.z5_minutes += e.zones.z5;
+    // Also populate z1..z5 for computed_daily_scores compatibility
+    acc.z1 += e.zones.z1;
+    acc.z2 += e.zones.z2;
+    acc.z3 += e.zones.z3;
+    acc.z4 += e.zones.z4;
+    acc.z5 += e.zones.z5;
     acc.real = acc.real || e.zones.real;
     acc.workouts.push(...e.zones.workouts);
     return acc;
@@ -602,6 +609,11 @@ function buildRawBiometricsFromExercise(
     z3_minutes: 0,
     z4_minutes: 0,
     z5_minutes: 0,
+    z1: 0,
+    z2: 0,
+    z3: 0,
+    z4: 0,
+    z5: 0,
     real: false,
     workouts: [] as any[],
   });
@@ -817,6 +829,32 @@ async function runSync(options: SyncOptions): Promise<void> {
 
   const backfill = options.backfill ?? false;
   const dryRun = options.dryRun ?? false;
+  const recomputeOnly = options.recomputeOnly ?? false;
+
+  // If --recompute-only is set, skip ETL sync and only recompute scores
+  if (recomputeOnly) {
+    const fromDate = options.from ?? formatDate(new Date());
+    const toDate = options.to ?? fromDate;
+
+    console.log(`[RECOMPUTE ONLY] Recomputing scores for ${fromDate} to ${toDate}`);
+
+    const result = await recomputeDailyScores({
+      userId: options.userId,
+      fromDate,
+      toDate,
+      dryRun,
+    });
+
+    console.log(`\n[RECOMPUTE] Complete: ${result.success} succeeded, ${result.failed} failed`);
+    if (result.errors.length > 0) {
+      console.error('Errors:');
+      for (const err of result.errors) {
+        console.error(`  ${err}`);
+      }
+      process.exit(1);
+    }
+    return;
+  }
 
   let dates: string[];
 
@@ -864,6 +902,29 @@ async function runSync(options: SyncOptions): Promise<void> {
 
   console.log(`\nComplete: ${successCount} succeeded, ${failCount} failed`);
   if (failCount > 0) process.exit(1);
+
+  // After successful sync, recompute scores for the same date range
+  if (successCount > 0 && !dryRun) {
+    const fromDate = dates[0];
+    const toDate = dates[dates.length - 1];
+    console.log(`\n[RECOMPUTE] Recomputing scores for ${fromDate} to ${toDate}...`);
+
+    const recomputeResult = await recomputeDailyScores({
+      userId: options.userId,
+      fromDate,
+      toDate,
+      dryRun: false,
+    });
+
+    console.log(`[RECOMPUTE] Complete: ${recomputeResult.success} succeeded, ${recomputeResult.failed} failed`);
+    if (recomputeResult.errors.length > 0) {
+      console.error('Recompute errors:');
+      for (const err of recomputeResult.errors) {
+        console.error(`  ${err}`);
+      }
+      // Don't exit with error - sync succeeded, just recompute had issues
+    }
+  }
 }
 
 // ========================================================================
@@ -877,13 +938,15 @@ program
   .option('--to <date>', 'End date (YYYY-MM-DD)')
   .option('--backfill', 'Backfill last 90 days')
   .option('--dry-run', 'Preview without writing to database')
+  .option('--recompute-only', 'Skip ETL sync, only recompute computed_daily_scores from existing daily_raw_biometrics')
   .requiredOption('--user-id <uuid>', 'User ID to sync')
-  .action(async (options: { from?: string; to?: string; backfill?: boolean; dryRun?: boolean; userId: string }) => {
+  .action(async (options: { from?: string; to?: string; backfill?: boolean; dryRun?: boolean; recomputeOnly?: boolean; userId: string }) => {
     await runSync({
       from: options.from,
       to: options.to,
       backfill: options.backfill,
       dryRun: options.dryRun,
+      recomputeOnly: options.recomputeOnly,
       userId: options.userId,
     });
   });

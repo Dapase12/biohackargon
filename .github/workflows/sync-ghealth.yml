@@ -24,6 +24,11 @@ on:
         required: false
         type: boolean
         default: false
+      recompute-only:
+        description: 'Skip ETL sync, only recompute computed_daily_scores from existing daily_raw_biometrics'
+        required: false
+        type: boolean
+        default: false
 
 env:
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -138,6 +143,10 @@ jobs:
 
           if [ "${{ github.event.inputs.dry-run }}" = "true" ]; then
             CMD="$CMD --dry-run"
+          fi
+
+          if [ "${{ github.event.inputs.recompute-only }}" = "true" ]; then
+            CMD="$CMD --recompute-only"
           fi
 
           eval $CMD

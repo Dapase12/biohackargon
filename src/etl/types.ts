@@ -272,6 +272,7 @@ export interface SyncOptions {
   to?: string;   // YYYY-MM-DD
   dryRun?: boolean;
   backfill?: boolean;
+  recomputeOnly?: boolean;
   userId: string;
 }
 

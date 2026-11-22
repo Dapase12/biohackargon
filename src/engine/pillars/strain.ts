@@ -65,13 +65,13 @@ export function computeHRZones(
   let stepsNet = 0;
 
   if (zonesReal && hrZonesData) {
-    // Use real HR zones from exercise HR data
+    // Use real HR zones from exercise HR data - support both formats (z1_minutes and z1)
     zones = {
-      z1: hrZonesData.z1_minutes ?? 0,
-      z2: hrZonesData.z2_minutes ?? 0,
-      z3: hrZonesData.z3_minutes ?? 0,
-      z4: hrZonesData.z4_minutes ?? 0,
-      z5: hrZonesData.z5_minutes ?? 0,
+      z1: (hrZonesData.z1 ?? hrZonesData.z1_minutes ?? 0),
+      z2: (hrZonesData.z2 ?? hrZonesData.z2_minutes ?? 0),
+      z3: (hrZonesData.z3 ?? hrZonesData.z3_minutes ?? 0),
+      z4: (hrZonesData.z4 ?? hrZonesData.z4_minutes ?? 0),
+      z5: (hrZonesData.z5 ?? hrZonesData.z5_minutes ?? 0),
       real: true,
     };
     stepsNet = Math.max(0, (todayRaw.steps ?? 0) - (hrZonesData.walking_steps ?? 2000));
