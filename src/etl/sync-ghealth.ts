@@ -130,18 +130,21 @@ async function fetchUserProfile(userId: string): Promise<UserEtlProfile> {
     const maxHR = Math.round(208 - 0.7 * finalAge);
 
     // Fetch restingHR from latest daily_raw_biometrics.rhr_bpm
+    // Strict physiological filter: only accept 30 < rhr_bpm < 110 to avoid bad data (e.g., 0 from legacy rows)
     let restingHR = DEFAULT_PROFILE.restingHR;
     try {
       const { data: rhrRow } = await supabase
         .from('daily_raw_biometrics')
         .select('rhr_bpm')
         .eq('user_id', userId)
-        .not('rhr_bpm', 'is', null)
+        .gt('rhr_bpm', 30)
+        .lt('rhr_bpm', 110)
         .order('log_date', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (rhrRow?.rhr_bpm !== null && rhrRow?.rhr_bpm !== undefined) {
-        restingHR = rhrRow.rhr_bpm;
+      const rhr = rhrRow?.rhr_bpm;
+      if (typeof rhr === 'number' && rhr > 30 && rhr < 110) {
+        restingHR = rhr;
       }
     } catch {
       // Ignore, use default
@@ -808,6 +811,9 @@ async function syncDate(
 async function runSync(options: SyncOptions): Promise<void> {
   const ghealthClient = createGHealthClient();
   const profile = await fetchUserProfile(options.userId);
+
+  // Log resolved profile for debugging Karvonen zone calculations
+  console.log(`[PROFILE] Resolved: age=${profile.age}, restingHR=${profile.restingHR}, maxHR=${profile.maxHR}, heightM=${profile.heightM}, sex=${profile.biologicalSex}`);
 
   const backfill = options.backfill ?? false;
   const dryRun = options.dryRun ?? false;
