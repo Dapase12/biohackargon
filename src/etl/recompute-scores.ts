@@ -22,6 +22,8 @@ import type {
   ComputedDailyScore,
   PrevComputed,
 } from '@/engine/types';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 const program = new Command();
 
@@ -445,17 +447,15 @@ program
   });
 
 // Only parse CLI args when run directly (not when imported)
-function isMainModule(): boolean {
-  const importUrl = import.meta.url;
-  const argv1 = process.argv[1];
+function isMainModule(metaUrl: string, argv1 = process.argv[1]): boolean {
   if (!argv1) return false;
-  // Normalize both paths for comparison
-  const importPath = importUrl.startsWith('file://') ? importUrl.slice(7) : importUrl;
-  const normalizedImport = importPath.replace(/%20/g, ' ').replace(/^\//, '').replace(/\//g, '\\');
-  const normalizedArgv = argv1.replace(/\//g, '\\');
-  return normalizedImport === normalizedArgv;
+  const currentFile = path.resolve(fileURLToPath(metaUrl));
+  const entryFile = path.resolve(argv1);
+  return process.platform === 'win32'
+    ? currentFile.toLowerCase() === entryFile.toLowerCase()
+    : currentFile === entryFile;
 }
 
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   program.parse(process.argv);
 }
