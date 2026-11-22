@@ -1,61 +1,46 @@
-# CI Pipeline for Argon Biohacking Platform
-# Runs on every push and PR
+# CI Pipeline for Argon Biohacking PWA (v7.0)
+# Runs on every push and PR to master
 
 name: CI Pipeline
 
 on:
   push:
-    branches: [main, master]
+    branches: [master]
   pull_request:
-    branches: [main, master]
-
-env:
-  PYTHON_VERSION: '3.11'
+    branches: [master]
 
 jobs:
-  # Python package tests
-  python-tests:
-    name: Python Tests
+  # Node.js build & tests (Vitest)
+  node-build-test:
+    name: Node Build & Tests
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: python
+        working-directory: ./biohackargon-main
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-          cache-dependency-path: pyproject.toml
+          node-version: '20'
+          cache: 'npm'
 
       - name: Install dependencies
-        run: |
-          pip install -e .[dev]
-          pip install pytest pytest-cov pytest-asyncio
+        run: npm ci
 
-      - name: Run linting (ruff)
-        run: ruff check argon_algorithms tests validation
+      - name: TypeScript type check
+        run: npx tsc --noEmit
 
-      - name: Run type checking (mypy)
-        run: mypy argon_algorithms
+      - name: Run tests (Vitest)
+        run: npm test
 
-      - name: Run tests with coverage
-        run: |
-          pytest tests/ -v --cov=argon_algorithms --cov-report=xml --cov-fail-under=80
-          pytest validation/ -v
+      - name: Build CSS & JS (esbuild)
+        run: npm run build
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./python/coverage.xml
-          flags: python
-          name: python-coverage
-
-  # Edge Functions linting
+  # Edge Functions linting (Deno)
   edge-functions-lint:
     name: Edge Functions Lint
     runs-on: ubuntu-latest
@@ -79,11 +64,11 @@ jobs:
           deno fmt --check supabase/functions/sleep-webhook/index.ts
           deno fmt --check supabase/functions/strain-webhook/index.ts
 
-  # Deploy Edge Functions (on main branch only)
+  # Deploy Edge Functions (on master branch only)
   deploy-edge-functions:
     name: Deploy Edge Functions
-    needs: [python-tests, edge-functions-lint]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    needs: [node-build-test, edge-functions-lint]
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -112,10 +97,10 @@ jobs:
         run: |
           supabase secrets set PYTHON_PIPELINE_URL="${{ secrets.PYTHON_PIPELINE_URL }}" --project-ref $SUPABASE_PROJECT_REF
 
-  # Deploy to GitHub Pages (existing workflow, kept for reference)
+  # Deploy to GitHub Pages (on master branch only)
   deploy-pages:
     name: Deploy to GitHub Pages
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -133,20 +118,20 @@ jobs:
 
       - name: Validate syntax
         run: |
-          node --check argon-mbe.js
-          node --check simulate-recovery.js
-          node -e "JSON.parse(require('fs').readFileSync('manifest.json'))"
+          node --check biohackargon-main/argon-mbe.js
+          node --check biohackargon-main/simulate-recovery.js
+          node -e "JSON.parse(require('fs').readFileSync('biohackargon-main/manifest.json'))"
           echo "✅ All syntax checks passed"
 
       - name: Run recovery simulation (smoke test)
         run: |
-          node simulate-recovery.js 2>&1 | tail -30
+          node biohackargon-main/simulate-recovery.js 2>&1 | tail -30
           echo "✅ Simulation completed"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: biohackargon-main
 
       - name: Deploy to GitHub Pages
         id: deployment
