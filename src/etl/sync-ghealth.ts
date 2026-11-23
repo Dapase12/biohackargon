@@ -42,6 +42,58 @@ import type {
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
+// ========================================================================
+// PHYSIOLOGICAL FILTERS FOR NEW TELEMETRY (Fase 2)
+// ========================================================================
+
+/**
+ * Validates and filters resting heart rate.
+ * Physiological range: 30-130 bpm (expanded from 30-110 for raw data ingestion)
+ */
+function filterRhrBpm(rhr: unknown): number | null {
+  if (typeof rhr === 'number' && !isNaN(rhr) && rhr >= 30 && rhr <= 130) {
+    return Math.round(rhr);
+  }
+  return null;
+}
+
+/**
+ * Validates and filters respiratory rate.
+ * Physiological range: 6-40 breaths per minute
+ */
+function filterRespRateBrpm(resp: unknown): number | null {
+  if (typeof resp === 'number' && !isNaN(resp) && resp >= 6 && resp <= 40) {
+    return Math.round(resp * 10) / 10; // Keep 1 decimal place
+  }
+  return null;
+}
+
+/**
+ * Validates and filters SpO2 percentage.
+ * Input from ghealth is 0.0-1.0, normalize to 0-100 percentage.
+ * Physiological range: 70-100%
+ */
+function filterSpo2Pct(spo2: unknown): number | null {
+  if (typeof spo2 === 'number' && !isNaN(spo2)) {
+    const pct = spo2 <= 1.0 ? spo2 * 100 : spo2; // Normalize if 0.0-1.0
+    if (pct >= 70 && pct <= 100) {
+      return Math.round(pct * 10) / 10; // Keep 1 decimal place
+    }
+  }
+  return null;
+}
+
+/**
+ * Validates and filters step count.
+ * Returns null for invalid, otherwise returns integer count.
+ */
+function filterStepsCount(steps: unknown): number | null {
+  if (typeof steps === 'number' && !isNaN(steps) && steps >= 0 && Number.isInteger(steps)) {
+    return steps;
+  }
+  return null;
+}
+
 const program = new Command();
 
 // ========================================================================
@@ -360,6 +412,11 @@ interface DailyRawBiometrics {
   // Body Composition - PRODUCTION COLUMNS ONLY
   weight_kg?: number | null;
   body_fat_pct?: number | null;
+  // New telemetry (Fase 2) - PRODUCTION COLUMNS ONLY
+  rhr_bpm?: number | null;
+  resp_rate_brpm?: number | null;
+  spo2_pct?: number | null;
+  steps_count?: number | null;
   // Manual fields (preserved from existing row, never overwritten by ETL)
   meals_log_json?: any;
   session_rpe?: number | null;
@@ -518,6 +575,11 @@ async function upsertDailyRawBiometrics(
       'hr_zones_minutes',
       'weight_kg',
       'body_fat_pct',
+      // New telemetry (Fase 2)
+      'rhr_bpm',
+      'resp_rate_brpm',
+      'spo2_pct',
+      'steps_count',
     ]);
 
     const payload: Record<string, unknown> = {
@@ -619,6 +681,11 @@ function buildRawBiometricsFromSleep(
  * Build daily_raw_biometrics from exercise transformer outputs
  * Outputs ONLY production columns from daily_raw_biometrics:
  * pickleball_or_gym_minutes, active_calories_kcal, hr_zones_minutes (jsonb)
+ *
+ * Fase 3: Implements composite key deduplication for workouts:
+ * - Key: ${startTimeMillis}-${endTimeMillis}
+ * - Preserves non-empty name/type from fresh data
+ * - Merges zone data for duplicates
  */
 function buildRawBiometricsFromExercise(
   userId: string,
@@ -633,7 +700,7 @@ function buildRawBiometricsFromExercise(
   const totalDuration = exercises.reduce((sum, e) => sum + e.duration_min, 0);
   const totalKcal = exercises.reduce((sum, e) => sum + e.kcal, 0);
 
-  // Combine HR zones (sum minutes across workouts)
+  // Combine HR zones (sum minutes across workouts) with composite key deduplication
   const combinedZones = exercises.reduce((acc, e) => {
     acc.z1_minutes += e.zones.z1;
     acc.z2_minutes += e.zones.z2;
@@ -647,7 +714,35 @@ function buildRawBiometricsFromExercise(
     acc.z4 += e.zones.z4;
     acc.z5 += e.zones.z5;
     acc.real = acc.real || e.zones.real;
-    acc.workouts.push(...e.zones.workouts);
+
+    // Fase 3: Composite key deduplication for workouts
+    // Key: ${startTimeMillis}-${endTimeMillis}
+    for (const workout of e.zones.workouts) {
+      const compositeKey = `${workout.startTimeMillis}-${workout.endTimeMillis}`;
+      const existingIndex = acc.workouts.findIndex(w =>
+        `${w.startTimeMillis}-${w.endTimeMillis}` === compositeKey
+      );
+
+      if (existingIndex >= 0) {
+        // Duplicate found: merge, preferring non-empty name/type from fresh data
+        const existing = acc.workouts[existingIndex];
+        // Preserve non-empty name/type (fresh data wins if existing is empty)
+        if (!existing.name && workout.name) {
+          existing.name = workout.name;
+        }
+        if (!existing.type && workout.type) {
+          existing.type = workout.type;
+        }
+        // Merge zones (take max to preserve data)
+        for (const zone of ['z1', 'z2', 'z3', 'z4', 'z5'] as const) {
+          existing.zones[zone] = Math.max(existing.zones[zone], workout.zones[zone]);
+        }
+      } else {
+        // New workout: add to array
+        acc.workouts.push(workout);
+      }
+    }
+
     return acc;
   }, {
     z1_minutes: 0,
@@ -723,12 +818,21 @@ function buildRawBiometricsFromBodyComp(
 /**
  * Merge multiple raw biometrics objects (later non-null/undefined properties win)
  * Skips null and undefined values to preserve data from earlier sources
+ * SPECIAL: For steps_count, use MAX(new, existing) to prevent data loss
+ * when ghealth returns 0 for a day that had steps.
  */
 function mergeRawBiometrics(...objects: DailyRawBiometrics[]): DailyRawBiometrics {
   const result: DailyRawBiometrics = { user_id: '', log_date: '' };
   for (const obj of objects) {
     for (const [key, value] of Object.entries(obj)) {
       if (value !== undefined && value !== null) {
+        // Special handling for steps_count: use MAX to prevent overwriting higher count with 0
+        if (key === 'steps_count' && typeof value === 'number') {
+          const existing = (result as any)[key] as number | null | undefined;
+          if (existing !== null && existing !== undefined && existing > value) {
+            continue; // Keep existing higher value
+          }
+        }
         (result as any)[key] = value;
       }
     }
@@ -756,15 +860,61 @@ async function syncDate(
 
   try {
     // Fetch all data for this date using YYYY-MM-DD format
-    const [sleepSessions, hrvSamples, exerciseSessions, hrSamples, exerciseEvents, bodyCompSamples] =
-      await Promise.all([
-        ghealthClient.getSleepSessions(fromGHealth, toGHealth),
-        ghealthClient.getHrvSamples(fromGHealth, toGHealth),
-        ghealthClient.getExerciseSessions(fromGHealth, toGHealth),
-        ghealthClient.getHeartRateSamples(fromGHealth, toGHealth),
-        ghealthClient.getExerciseEvents(fromGHealth, toGHealth),
-        ghealthClient.getBodyCompositionSamples(fromGHealth, toGHealth),
-      ]);
+    // Use individual try/catch per endpoint for error isolation (Fase 2)
+    const fetchWithIsolation = async <T>(
+      fn: () => Promise<T>,
+      endpointName: string
+    ): Promise<{ data: T | null; error: string | null }> => {
+      try {
+        const data = await fn();
+        return { data, error: null };
+      } catch (error) {
+        const errMsg = formatError(error);
+        console.warn(`[${date}] ${endpointName} fetch failed: ${errMsg}`);
+        return { data: null, error: errMsg };
+      }
+    };
+
+    // Fetch core data (existing endpoints)
+    const [
+      sleepResult,
+      hrvResult,
+      exerciseResult,
+      hrResult,
+      exerciseEventsResult,
+      bodyCompResult,
+    ] = await Promise.all([
+      fetchWithIsolation(() => ghealthClient.getSleepSessions(fromGHealth, toGHealth), 'sleepSessions'),
+      fetchWithIsolation(() => ghealthClient.getHrvSamples(fromGHealth, toGHealth), 'hrvSamples'),
+      fetchWithIsolation(() => ghealthClient.getExerciseSessions(fromGHealth, toGHealth), 'exerciseSessions'),
+      fetchWithIsolation(() => ghealthClient.getHeartRateSamples(fromGHealth, toGHealth), 'hrSamples'),
+      fetchWithIsolation(() => ghealthClient.getExerciseEvents(fromGHealth, toGHealth), 'exerciseEvents'),
+      fetchWithIsolation(() => ghealthClient.getBodyCompositionSamples(fromGHealth, toGHealth), 'bodyCompSamples'),
+    ]);
+
+    // Fetch new telemetry endpoints (Fase 2) with error isolation
+    const [
+      rhrResult,
+      respRateResult,
+      spo2Result,
+      stepsResult,
+    ] = await Promise.all([
+      fetchWithIsolation(() => ghealthClient.getRestingHeartRateSamples(fromGHealth, toGHealth), 'restingHeartRate'),
+      fetchWithIsolation(() => ghealthClient.getRespiratoryRateSamples(fromGHealth, toGHealth), 'respiratoryRate'),
+      fetchWithIsolation(() => ghealthClient.getOxygenSaturationSamples(fromGHealth, toGHealth), 'oxygenSaturation'),
+      fetchWithIsolation(() => ghealthClient.getStepsSamples(fromGHealth, toGHealth), 'steps'),
+    ]);
+
+    const sleepSessions = sleepResult.data ?? [];
+    const hrvSamples = hrvResult.data ?? [];
+    const exerciseSessions = exerciseResult.data ?? [];
+    const hrSamples = hrResult.data ?? [];
+    const exerciseEvents = exerciseEventsResult.data ?? [];
+    const bodyCompSamples = bodyCompResult.data ?? { weight: [], bodyFat: [] };
+    const rhrSamples = rhrResult.data ?? [];
+    const respRateSamples = respRateResult.data ?? [];
+    const spo2Samples = spo2Result.data ?? [];
+    const stepsSamples = stepsResult.data ?? [];
 
     // Diagnostic logging before transformers (dry-run only)
     if (dryRun) {
@@ -780,6 +930,10 @@ async function syncDate(
           exerciseEvents: exerciseEvents.length,
           bodyCompWeight: bodyCompSamples.weight.length,
           bodyCompBodyFat: bodyCompSamples.bodyFat.length,
+          rhrSamples: rhrSamples.length,
+          respRateSamples: respRateSamples.length,
+          spo2Samples: spo2Samples.length,
+          stepsSamples: stepsSamples.length,
         },
         firstElements: {
           sleepSessions: firstSleep ? {
@@ -797,6 +951,22 @@ async function syncDate(
           exerciseEvents: getFirstEl(exerciseEvents),
           bodyCompWeight: getFirstEl(bodyCompSamples.weight),
           bodyCompBodyFat: getFirstEl(bodyCompSamples.bodyFat),
+          rhrSample0: getFirstEl(rhrSamples),
+          respRateSample0: getFirstEl(respRateSamples),
+          spo2Sample0: getFirstEl(spo2Samples),
+          stepsSample0: getFirstEl(stepsSamples),
+        },
+        errors: {
+          sleep: sleepResult.error,
+          hrv: hrvResult.error,
+          exercise: exerciseResult.error,
+          hr: hrResult.error,
+          exerciseEvents: exerciseEventsResult.error,
+          bodyComp: bodyCompResult.error,
+          rhr: rhrResult.error,
+          respRate: respRateResult.error,
+          spo2: spo2Result.error,
+          steps: stepsResult.error,
         },
       });
     }
@@ -805,6 +975,15 @@ async function syncDate(
     const sleepData = await transformSleepData(sleepSessions, hrvSamples, date);
     const exerciseData = await transformExerciseData(exerciseSessions, hrSamples, exerciseEvents, date, profile);
     const bodyCompData = await transformBodyCompositionData(bodyCompSamples.weight, bodyCompSamples.bodyFat, date, profile);
+
+    // Apply physiological filters to new telemetry (Fase 2)
+    const rhrBpm = rhrSamples.length > 0 ? filterRhrBpm(rhrSamples[0]!.beatsPerMinute) : null;
+    const respRateBrpm = respRateSamples.length > 0 ? filterRespRateBrpm(respRateSamples[0]!.rate) : null;
+    const spo2Pct = spo2Samples.length > 0 ? filterSpo2Pct(spo2Samples[0]!.percentage) : null;
+    // Steps: sum all delta counts for the day
+    const stepsCount = stepsSamples.length > 0
+      ? filterStepsCount(stepsSamples.reduce((sum, s) => sum + s.count, 0))
+      : null;
 
     // Skip if no data at all (empty day) - don't insert empty rows in backfill
     const hasAnyData = sleepData || exerciseData.length > 0 || bodyCompData;
@@ -820,6 +999,17 @@ async function syncDate(
     if (sleepData) rawParts.push(buildRawBiometricsFromSleep(userId, date, sleepData));
     if (exerciseData.length > 0) rawParts.push(buildRawBiometricsFromExercise(userId, date, exerciseData));
     if (bodyCompData) rawParts.push(buildRawBiometricsFromBodyComp(userId, date, bodyCompData));
+
+    // Add new telemetry as a separate part for non-destructive merge (Fase 2)
+    const telemetryPart: DailyRawBiometrics = { user_id: userId, log_date: date };
+    if (rhrBpm !== null) telemetryPart.rhr_bpm = rhrBpm;
+    if (respRateBrpm !== null) telemetryPart.resp_rate_brpm = respRateBrpm;
+    if (spo2Pct !== null) telemetryPart.spo2_pct = spo2Pct;
+    if (stepsCount !== null) telemetryPart.steps_count = stepsCount;
+    // Only add if we have any telemetry data
+    if (rhrBpm !== null || respRateBrpm !== null || spo2Pct !== null || stepsCount !== null) {
+      rawParts.push(telemetryPart);
+    }
 
     const mergedRaw = mergeRawBiometrics(...rawParts);
 
@@ -877,6 +1067,7 @@ async function runSync(options: SyncOptions): Promise<void> {
   const backfill = options.backfill ?? false;
   const dryRun = options.dryRun ?? false;
   const recomputeOnly = options.recomputeOnly ?? false;
+  const delayMs = options.delayMs ?? 2000; // Default 2s inter-day delay
 
   // If --recompute-only is set, skip ETL sync and only recompute scores
   if (recomputeOnly) {
@@ -935,18 +1126,53 @@ async function runSync(options: SyncOptions): Promise<void> {
 
   console.log(`Syncing ${dates.length} day(s) for user ${options.userId}...`);
   if (dryRun) console.log('DRY RUN MODE - no database writes');
+  if (delayMs > 0) console.log(`[RATE LIMIT] Inter-day delay: ${delayMs}ms`);
 
   let successCount = 0;
   let failCount = 0;
+  let consecutive429Count = 0;
+  const MAX_CONSECUTIVE_429 = 3;
 
-  for (const date of dates) {
+  for (let i = 0; i < dates.length; i++) {
+    const date = dates[i];
+
+    // Apply inter-day delay if previous day had 429 error (Fase 2)
+    if (i > 0 && consecutive429Count > 0 && delayMs > 0) {
+      console.log(`[RATE LIMIT] Waiting ${delayMs}ms before next day (previous day had 429)...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+
     const result = await syncDate(options.userId, date, ghealthClient, profile, dryRun);
+
+    // Check if error is a 429/rate limit error
+    const is429Error = result.error && (
+      result.error.includes('429') ||
+      result.error.includes('RESOURCE_EXHAUSTED') ||
+      result.error.includes('Too Many Requests') ||
+      result.error.includes('Quota exceeded')
+    );
+
     if (result.success) {
       successCount++;
+      consecutive429Count = 0; // Reset counter on success
       console.log(`✓ ${date}`);
     } else {
       failCount++;
       console.error(`✗ ${date}: ${result.error}`);
+
+      if (is429Error) {
+        consecutive429Count++;
+        console.warn(`[RATE LIMIT] Consecutive 429 days: ${consecutive429Count}/${MAX_CONSECUTIVE_429}`);
+
+        // Abort if 3 consecutive 429 days (Fase 2)
+        if (consecutive429Count >= MAX_CONSECUTIVE_429) {
+          console.error(`[ABORT] ${MAX_CONSECUTIVE_429} consecutive days with 429 errors. Aborting to avoid quota exhaustion.`);
+          console.error(`[ABORT] Successfully synced ${successCount} days before abort.`);
+          process.exit(1);
+        }
+      } else {
+        consecutive429Count = 0; // Reset counter on non-429 error
+      }
     }
   }
 
@@ -989,8 +1215,9 @@ program
   .option('--backfill', 'Backfill last 90 days')
   .option('--dry-run', 'Preview without writing to database')
   .option('--recompute-only', 'Skip ETL sync, only recompute computed_daily_scores from existing daily_raw_biometrics')
+  .option('--delay-ms <ms>', 'Inter-day delay in milliseconds to avoid rate limits (default: 2000)', (value) => parseInt(value, 10), 2000)
   .requiredOption('--user-id <uuid>', 'User ID to sync')
-  .action(async (options: { from?: string; to?: string; backfill?: boolean; dryRun?: boolean; recomputeOnly?: boolean; userId: string }) => {
+  .action(async (options: { from?: string; to?: string; backfill?: boolean; dryRun?: boolean; recomputeOnly?: boolean; userId: string; delayMs?: number }) => {
     await runSync({
       from: options.from,
       to: options.to,
@@ -998,6 +1225,7 @@ program
       dryRun: options.dryRun,
       recomputeOnly: options.recomputeOnly,
       userId: options.userId,
+      delayMs: options.delayMs,
     });
   });
 

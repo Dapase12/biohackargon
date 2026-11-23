@@ -284,7 +284,10 @@ export function computeSleepPillarExtended(
   // Bedtime window
   let optimalBedtimeStart: string | null = null;
   let optimalBedtimeEnd: string | null = null;
-  if (profile.habitualWake && efficiency > 0) {
+  if (profile.habitualWake && dynamicNeedH && dynamicNeedH > 0 && !Number.isNaN(dynamicNeedH)) {
+    // bedtimeWindow handles efficiency=0 with 80% floor (Math.max(0.80, efficiency/100))
+    // This allows bedtime calculation even when sleep_missing=true (efficiency=0)
+    // Guard: require valid habitualWake and dynamicNeedH (not NaN, not <= 0)
     const window = bedtimeWindow(profile.habitualWake, dynamicNeedH, efficiency);
     optimalBedtimeStart = window.start;
     optimalBedtimeEnd = window.end;

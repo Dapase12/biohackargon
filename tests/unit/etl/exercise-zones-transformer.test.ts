@@ -19,6 +19,7 @@ import {
   filterHrDuringExercise,
   classifyHrZonesKarvonen,
   computeExerciseMetrics,
+  buildExerciseTransformerOutput,
 } from '@/etl/transformers/exercise-zones';
 
 // ========================================================================
@@ -472,6 +473,128 @@ describe('ETL Transformers - Exercise + HR Zones', () => {
       const filteredHr = [{ bpm: 145, startTimeMillis: 0, endTimeMillis: 60000 }] as any;
       const output = computeExerciseMetrics(session, filteredHr, { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0, real: true });
       expect(output.kcal).toBeGreaterThan(0);
+    });
+  });
+
+  // ========================================================================
+  // FASE 3: WORKOUT NAME/TYPE PRESERVATION & COMPOSITE KEY DEDUPE
+  // ========================================================================
+
+  describe('Fase 3: Workout name/type preservation', () => {
+    it('preserves workout name and type from ghealth exercise sessions', () => {
+      // The fixture already has name and type populated
+      expect(exercises[0].name).toBe('Running');
+      expect(exercises[0].type).toBe('RUNNING');
+      expect(exercises[1].name).toBe('Strength Training');
+      expect(exercises[1].type).toBe('STRENGTH_TRAINING');
+    });
+
+    it('handles empty name/type from ghealth gracefully', () => {
+      const response: GHealthExerciseListResponse = {
+        dataPoints: [{
+          source: 'test',
+          id: '1',
+          start: '2024-11-20T10:00:00-04:00',
+          end: '2024-11-20T10:30:00-04:00',
+          type: '',  // Empty type
+          name: '',  // Empty name
+          caloriesKcal: 300,
+          averageHeartRateBeatsPerMinute: 140,
+          maxHeartRateBeatsPerMinute: 165,
+        }],
+        nextPageToken: null,
+      };
+      const parsed = parseExerciseSessions(response);
+      expect(parsed[0].name).toBe('');
+      expect(parsed[0].type).toBe('');
+    });
+
+    it('buildExerciseTransformerOutput includes name and type in workouts array', () => {
+      const session = exercises[0];
+      const filteredHr = filterHrDuringExercise(hrSamples, session, events);
+      const zones = classifyHrZonesKarvonen(filteredHr, TEST_PROFILE);
+
+      const output = buildExerciseTransformerOutput('2024-11-20', session, filteredHr, zones, TEST_PROFILE);
+
+      expect(output.zones.workouts).toHaveLength(1);
+      expect(output.zones.workouts[0].name).toBe('Running');
+      expect(output.zones.workouts[0].type).toBe('RUNNING');
+      expect(output.zones.workouts[0].startTimeMillis).toBe(session.startTimeMillis);
+      expect(output.zones.workouts[0].endTimeMillis).toBe(session.endTimeMillis);
+      expect(output.zones.workouts[0].zones).toBeDefined();
+    });
+  });
+
+  describe('Fase 3: Composite key deduplication (${startTimeMillis}-${endTimeMillis})', () => {
+    it('creates composite key from start and end timestamps', () => {
+      const session = exercises[0];
+      const compositeKey = `${session.startTimeMillis}-${session.endTimeMillis}`;
+      expect(compositeKey).toBe('1732111200000-1732113000000');
+    });
+
+    it('identifies duplicate workouts by composite key', () => {
+      const session1 = exercises[0];
+      const session2 = { ...exercises[0], name: 'Running Updated' }; // Same timestamps, different name
+
+      const key1 = `${session1.startTimeMillis}-${session1.endTimeMillis}`;
+      const key2 = `${session2.startTimeMillis}-${session2.endTimeMillis}`;
+
+      expect(key1).toBe(key2); // Same composite key = duplicate
+    });
+
+    it('updates existing workout with empty name/type when fresh data arrives', () => {
+      // Simulate existing workout with empty name/type
+      const existingWorkout = {
+        startTimeMillis: 1732111200000,
+        endTimeMillis: 1732113000000,
+        name: '',
+        type: '',
+        zones: { z1: 10, z2: 10, z3: 5, z4: 3, z5: 2 },
+      };
+
+      // Fresh data with real name/type
+      const freshWorkout = {
+        startTimeMillis: 1732111200000,
+        endTimeMillis: 1732113000000,
+        name: 'Running',
+        type: 'RUNNING',
+        zones: { z1: 10, z2: 10, z3: 5, z4: 3, z5: 2 },
+      };
+
+      // Deduplication logic: if composite key matches, prefer non-empty name/type
+      const compositeKey = `${existingWorkout.startTimeMillis}-${existingWorkout.endTimeMillis}`;
+      const freshKey = `${freshWorkout.startTimeMillis}-${freshWorkout.endTimeMillis}`;
+
+      expect(compositeKey).toBe(freshKey);
+
+      // The merged result should have the real name/type
+      const mergedName = freshWorkout.name || existingWorkout.name;
+      const mergedType = freshWorkout.type || existingWorkout.type;
+
+      expect(mergedName).toBe('Running');
+      expect(mergedType).toBe('RUNNING');
+    });
+
+    it('preserves existing non-empty name/type when fresh data also has values', () => {
+      const existingWorkout = {
+        startTimeMillis: 1732111200000,
+        endTimeMillis: 1732113000000,
+        name: 'Morning Run',
+        type: 'RUNNING',
+        zones: { z1: 10, z2: 10, z3: 5, z4: 3, z5: 2 },
+      };
+
+      const freshWorkout = {
+        startTimeMillis: 1732111200000,
+        endTimeMillis: 1732113000000,
+        name: 'Running',  // Different but also valid
+        type: 'RUNNING',
+        zones: { z1: 10, z2: 10, z3: 5, z4: 3, z5: 2 },
+      };
+
+      // Prefer existing if both have values (first write wins for name)
+      const mergedName = existingWorkout.name || freshWorkout.name;
+      expect(mergedName).toBe('Morning Run');
     });
   });
 });

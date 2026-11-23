@@ -117,6 +117,50 @@ export interface GHealthBodyFatListResponse {
   nextPageToken: string | null;
 }
 
+// Resting Heart Rate: dataPoints with time (ISO 8601), beatsPerMinute
+export interface GHealthRestingHeartRateSimplifiedSample extends GHealthSimplifiedDataPoint {
+  time: string; // ISO 8601 with offset
+  beatsPerMinute: number;
+}
+
+export interface GHealthRestingHeartRateListResponse {
+  dataPoints: GHealthRestingHeartRateSimplifiedSample[];
+  nextPageToken: string | null;
+}
+
+// Respiratory Rate: dataPoints with time (ISO 8601), rate (breaths per minute)
+export interface GHealthRespiratoryRateSimplifiedSample extends GHealthSimplifiedDataPoint {
+  time: string; // ISO 8601 with offset
+  rate: number;
+}
+
+export interface GHealthRespiratoryRateListResponse {
+  dataPoints: GHealthRespiratoryRateSimplifiedSample[];
+  nextPageToken: string | null;
+}
+
+// Oxygen Saturation: dataPoints with time (ISO 8601), percentage (0.0-1.0)
+export interface GHealthOxygenSaturationSimplifiedSample extends GHealthSimplifiedDataPoint {
+  time: string; // ISO 8601 with offset
+  percentage: number;
+}
+
+export interface GHealthOxygenSaturationListResponse {
+  dataPoints: GHealthOxygenSaturationSimplifiedSample[];
+  nextPageToken: string | null;
+}
+
+// Steps: dataPoints with time (ISO 8601), count (step count delta)
+export interface GHealthStepsSimplifiedSample extends GHealthSimplifiedDataPoint {
+  time: string; // ISO 8601 with offset
+  count: number;
+}
+
+export interface GHealthStepsListResponse {
+  dataPoints: GHealthStepsSimplifiedSample[];
+  nextPageToken: string | null;
+}
+
 // ========================================================================
 // PARSED/INTERNAL TYPES (after parsing from ghealth simplified JSON)
 // ========================================================================
@@ -274,6 +318,7 @@ export interface SyncOptions {
   backfill?: boolean;
   recomputeOnly?: boolean;
   userId: string;
+  delayMs?: number; // Inter-day delay in ms (for rate limit avoidance)
 }
 
 export interface SyncResult {
