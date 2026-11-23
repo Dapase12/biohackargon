@@ -45,11 +45,11 @@ function createRawDay(overrides: Partial<RawBiometricDay> = {}): RawBiometricDay
     session_rpe: 7,
     pickleball_or_gym_minutes: 60,
     hr_zones_minutes: {
-      z1_minutes: 20,
-      z2_minutes: 30,
-      z3_minutes: 15,
-      z4_minutes: 10,
-      z5_minutes: 5,
+      z1: 20,
+      z2: 30,
+      z3: 15,
+      z4: 10,
+      z5: 5,
       real: false,
       workouts: [],
     },
@@ -58,9 +58,9 @@ function createRawDay(overrides: Partial<RawBiometricDay> = {}): RawBiometricDay
 }
 
 function createHistory(days: number, baseRmssd = 50, baseRhr = 55): HistoryDay[] {
-  return Array.from({ length: days }, (_, i) => ({
+  return Array.from({ length: days }, (_, i): HistoryDay => ({
     ...createRawDay(),
-    log_date: new Date(Date.now() - (i + 1) * 86400000).toISOString().split('T')[0],
+    log_date: new Date(Date.now() - (i + 1) * 86400000).toISOString().split('T')[0]!,
     rmssd_ms: baseRmssd,
     rhr_bpm: baseRhr,
     total_sleep_min: 450,
@@ -68,11 +68,11 @@ function createHistory(days: number, baseRmssd = 50, baseRhr = 55): HistoryDay[]
     rem_sleep_min: 100,
     strain_score: 8,
     hr_zones_minutes: {
-      z1_minutes: 20,
-      z2_minutes: 30,
-      z3_minutes: 15,
-      z4_minutes: 10,
-      z5_minutes: 5,
+      z1: 20,
+      z2: 30,
+      z3: 15,
+      z4: 10,
+      z5: 5,
       real: false,
       workouts: [],
     },
@@ -266,7 +266,7 @@ describe('Compute Engine - Regression Test: 2026-11-22 Real Production Data', ()
 
     for (let i = 1; i <= 14; i++) {
       const date = new Date(baseDate.getTime() - i * 86400000);
-      const logDate = date.toISOString().split('T')[0];
+      const logDate = date.toISOString().split('T')[0]!;
 
       history.push({
         log_date: logDate,
@@ -286,11 +286,11 @@ describe('Compute Engine - Regression Test: 2026-11-22 Real Production Data', ()
         water_mass_kg: 46.7,
         vo2_max_ml_kg_min: 48.5,
         hr_zones_minutes: {
-          z1_minutes: 20,
-          z2_minutes: 30,
-          z3_minutes: 15,
-          z4_minutes: 10,
-          z5_minutes: 5,
+          z1: 20,
+          z2: 30,
+          z3: 15,
+          z4: 10,
+          z5: 5,
           real: false,
           workouts: [],
         },
@@ -328,11 +328,11 @@ describe('Compute Engine - Regression Test: 2026-11-22 Real Production Data', ()
       session_rpe: 0, // Zero RPE - should not cause NaN
       pickleball_or_gym_minutes: 161,
       hr_zones_minutes: {
-        z1_minutes: 91.2,
-        z2_minutes: 30,
-        z3_minutes: 28,
-        z4_minutes: 8,
-        z5_minutes: 0,
+        z1: 91.2,
+        z2: 30,
+        z3: 28,
+        z4: 8,
+        z5: 0,
         real: true,
         workouts: [
           { id: 'w1', type: 'pickleball', min: 161, rpe: 0, start_ms: 0, end_ms: 0 }
@@ -396,7 +396,8 @@ describe('Compute Engine - Regression Test: 2026-11-22 Real Production Data', ()
     // ========================================================================
     expect(result.dynamic_tdee_kcal).not.toBeNull();
     expect(result.dynamic_tdee_kcal).toBeGreaterThan(1200); // Reasonable minimum
-    expect(result.empirical_tdee_kcal).toBeGreaterThanOrEqual(0); // Can be 0 if no intake
+    // empirical_tdee_kcal is null when insufficient valid intake days (need 7+ in 14-day window)
+    expect(result.empirical_tdee_kcal).toBeNull();
     expect(result.target_kcal).not.toBeNull();
     expect(result.target_kcal).toBeGreaterThan(1000);
     expect(result.target_fat_g).not.toBeNull();
@@ -467,5 +468,325 @@ describe('Compute Engine - Regression Test: 2026-11-22 Real Production Data', ()
     const validation = validateComputedOutput(result);
     expect(validation.valid).toBe(true);
     expect(validation.missing).toEqual([]);
+  });
+});
+
+describe('Compute Engine - Regression Test: 5-Day Sequence 2026-11-18 to 2026-11-22', () => {
+  // Exact reproduction of the 5-day failure sequence from SQL diff:
+  // Nov 18: intake=0, tmb=1785, empirical=1294 (accepted, wrong) -> dynamic=1294, target=794
+  // Nov 19: intake=474, tmb=1791, empirical=364 (rejected, <1200) -> dynamic=2418, target=1918
+  // Nov 20: intake=1015, tmb=1780, empirical=575 (rejected, <1200) -> dynamic=2403, target=1903
+  // Nov 21: intake=0, tmb=1780, empirical=1050 (rejected, <1200) -> dynamic=2403, target=1903, sleep_missing=true
+  // Nov 22: intake=0, tmb=1780, empirical=1215 (accepted, wrong, >=1200) -> dynamic=1215, target=715
+  //
+  // Root causes fixed:
+  // 1. computeEmpiricalTDEE now requires 7 valid intake days (intake > 0) in 14-day window
+  // 2. Empirical TDEE must be >= BMR * 1.1 (physiologically plausible) to be accepted
+  // 3. target_kcal has floor of max(1500, round(BMR * 0.85)) for male
+  // 4. optimal_bedtime_start/end calculated even when sleep_missing = true
+
+  const PROFILE: UserProfile = {
+    birth: '1997-11-12',
+    height_m: 1.73,
+    timezone: 'America/Caracas',
+    basalSleepNeedH: 7.5,
+    habitualWake: '06:30',
+    dailyDeficitKcal: 500,
+    biologicalSex: 'male',
+    chronologicalAgeYears: 28,
+  };
+
+  const CONFIG: EngineConfig = { ...DEFAULT_ENGINE_CONFIG };
+
+  // Create 14-day history BEFORE each test day, with only 3 days having intake > 0
+  // This simulates the real scenario where intake logging is sparse
+  function createHistoryBefore(dateStr: string, intakePattern: number[]): HistoryDay[] {
+    const baseDate = new Date(dateStr);
+    const history: HistoryDay[] = [];
+    // intakePattern: [day-1, day-2, ..., day-14] intake values
+    // Only 3 days have intake > 0 (insufficient for empirical TDEE)
+    for (let i = 1; i <= 14; i++) {
+      const date = new Date(baseDate.getTime() - i * 86400000);
+      const logDate = date.toISOString().split('T')[0]!;
+      const intake = intakePattern[i - 1] ?? 0;
+      history.push({
+        log_date: logDate,
+        rmssd_ms: 85,
+        rhr_bpm: 58,
+        total_sleep_min: 420,
+        deep_sleep_min: 85,
+        rem_sleep_min: 95,
+        light_sleep_min: 220,
+        awake_sleep_min: 20,
+        sleep_efficiency_pct: 88,
+        time_in_bed_min: 480,
+        steps: 7200,
+        weight_kg: 85.8,
+        body_fat_pct: 18.2,
+        body_water_pct: 54.6,
+        water_mass_kg: 46.8,
+        vo2_max_ml_kg_min: 48.5,
+        intake_kcal: intake,
+        intake_protein_g: intake > 0 ? 160 : 0,
+        intake_carbs_g: intake > 0 ? 220 : 0,
+        intake_fat_g: intake > 0 ? 70 : 0,
+        hr_zones_minutes: {
+          z1: 20, z2: 30, z3: 15, z4: 10, z5: 5,
+          real: false, workouts: [],
+        },
+        strain_score: 8.5,
+      });
+    }
+    return history;
+  }
+
+  function createRawDay(logDate: string, overrides: Partial<RawBiometricDay> = {}): RawBiometricDay {
+    return {
+      log_date: logDate,
+      rmssd_ms: 88,
+      rhr_bpm: 58,
+      total_sleep_min: 424,
+      deep_sleep_min: 84,
+      rem_sleep_min: 104,
+      light_sleep_min: 236,
+      awake_sleep_min: 5,
+      sleep_efficiency_pct: 98.8,
+      time_in_bed_min: 429,
+      steps: 7420,
+      intake_kcal: 0,
+      intake_protein_g: 0,
+      intake_carbs_g: 0,
+      intake_fat_g: 0,
+      weight_kg: 85.95,
+      body_fat_pct: 18.2,
+      skeletal_muscle_pct: 48.9,
+      body_water_pct: 54.6,
+      water_mass_kg: 46.9,
+      hydration_ml: 3000,
+      resp_rate_brpm: 16,
+      spo2_pct: 97,
+      session_rpe: 0,
+      pickleball_or_gym_minutes: 0,
+      hr_zones_minutes: {
+        z1: 20, z2: 30, z3: 15, z4: 10, z5: 0,
+        real: false, workouts: [],
+      },
+      is_hospital_shift: false,
+      night_awake_shift_hours: 0,
+      ...overrides,
+    };
+  }
+
+  function createPrevComputed(logDate: string): PrevComputed {
+    return {
+      log_date: logDate,
+      trend_weight_kg: 85.8,
+      trend_body_fat_pct: 18.3,
+      rmssd_ms: 85,
+      rhr_bpm: 58,
+      resp_rate_brpm: 15.8,
+      body_water_pct: 54.5,
+      water_mass_kg: 46.8,
+      vo2_max_ml_kg_min: 48.4,
+      strain_score: 8.5,
+      total_sleep_min: 430,
+      recovery_score: 72,
+      dynamic_sleep_need_hours: 7.8,
+      ln_rmssd: 4.44,
+      ln_rmssd_14d_mean: 4.42,
+      ln_rmssd_14d_sd: 0.08,
+      hrv_z_score: 0.3,
+      rhr_z_score: -0.2,
+      sleep_regularity_pct: 82,
+      cumulative_sleep_debt_hours: 1.2,
+      hrv_mode: 'night',
+    };
+  }
+
+  // Intake pattern for 14 days before each test day
+  // Only 3 days have intake > 0 (indices 2, 5, 9 = days 12, 9, 5 before)
+  const SPARSE_INTAKE_HISTORY = [0, 0, 2100, 0, 0, 2200, 0, 0, 0, 2150, 0, 0, 0, 0];
+
+  it('Nov 18: intake=0, tmb=1785 -> dynamic_tdee >= 2100, target_kcal >= 1500', () => {
+    const historyRaw = createHistoryBefore('2026-11-18', SPARSE_INTAKE_HISTORY);
+    const todayRaw = createRawDay('2026-11-18', {
+      intake_kcal: 0,
+      weight_kg: 85.9,
+      body_fat_pct: 18.3, // Will result in tmb_kcal ≈ 1785 from body comp
+    });
+
+    const input = {
+      todayRaw,
+      historyRaw,
+      prevComputed: createPrevComputed('2026-11-17'),
+      profile: PROFILE,
+      config: CONFIG,
+    };
+
+    const result = computeEngine(input);
+
+    // With only 3 valid intake days in 14-day window, empirical TDEE should be null
+    // dynamic_tdee should fall back to baseline (BMR * 1.35) ≈ 1785 * 1.35 ≈ 2410
+    expect(result.empirical_tdee_kcal).toBeNull();
+    expect(result.dynamic_tdee_kcal).toBeGreaterThanOrEqual(2100);
+    expect(result.target_kcal).toBeGreaterThanOrEqual(1500);
+    expect(result.target_kcal).toBeLessThan(2500);
+  });
+
+  it('Nov 19: intake=474, tmb=1791 -> dynamic_tdee >= 2100, target_kcal >= 1500', () => {
+    const historyRaw = createHistoryBefore('2026-11-19', SPARSE_INTAKE_HISTORY);
+    const todayRaw = createRawDay('2026-11-19', {
+      intake_kcal: 474,
+      weight_kg: 85.8,
+    });
+    todayRaw.body_fat_pct = 18.3;
+
+    const input = {
+      todayRaw,
+      historyRaw,
+      prevComputed: createPrevComputed('2026-11-18'),
+      profile: PROFILE,
+      config: CONFIG,
+    };
+
+    const result = computeEngine(input);
+
+    // Still only 3 valid intake days in window (today's 474 doesn't add to history yet)
+    // empirical TDEE should be null
+    expect(result.empirical_tdee_kcal).toBeNull();
+    expect(result.dynamic_tdee_kcal).toBeGreaterThanOrEqual(2100);
+    expect(result.target_kcal).toBeGreaterThanOrEqual(1500);
+  });
+
+  it('Nov 20: intake=1015, tmb=1780 -> dynamic_tdee >= 2100, target_kcal >= 1500', () => {
+    const historyRaw = createHistoryBefore('2026-11-20', SPARSE_INTAKE_HISTORY);
+    const todayRaw = createRawDay('2026-11-20', {
+      intake_kcal: 1015,
+      weight_kg: 85.7,
+    });
+    todayRaw.body_fat_pct = 18.2;
+
+    const input = {
+      todayRaw,
+      historyRaw,
+      prevComputed: createPrevComputed('2026-11-19'),
+      profile: PROFILE,
+      config: CONFIG,
+    };
+
+    const result = computeEngine(input);
+
+    // Still only 3-4 valid intake days in window
+    // empirical TDEE should be null or rejected as physiologically implausible
+    expect(result.dynamic_tdee_kcal).toBeGreaterThanOrEqual(2100);
+    expect(result.target_kcal).toBeGreaterThanOrEqual(1500);
+  });
+
+  it('Nov 21: intake=0, sleep_missing=true -> dynamic_tdee >= 2100, target_kcal >= 1500, bedtime window valid', () => {
+    const historyRaw = createHistoryBefore('2026-11-21', SPARSE_INTAKE_HISTORY);
+    const todayRaw = createRawDay('2026-11-21', {
+      intake_kcal: 0,
+      total_sleep_min: 60, // sleep_missing = true (less than 120 min)
+      time_in_bed_min: 100,
+      sleep_efficiency_pct: 60,
+      weight_kg: 85.8,
+    });
+    todayRaw.body_fat_pct = 18.2;
+
+    const input = {
+      todayRaw,
+      historyRaw,
+      prevComputed: createPrevComputed('2026-11-20'),
+      profile: PROFILE,
+      config: CONFIG,
+    };
+
+    const result = computeEngine(input);
+
+    expect(result.sleep_missing).toBe(true);
+    expect(result.dynamic_tdee_kcal).toBeGreaterThanOrEqual(2100);
+    expect(result.target_kcal).toBeGreaterThanOrEqual(1500);
+
+    // CRITICAL: optimal_bedtime_start/end should be valid even with sleep_missing = true
+    // Code.txt returns "20:58" and "21:28" for this day
+    expect(result.optimal_bedtime_start).not.toBeNull();
+    expect(result.optimal_bedtime_end).not.toBeNull();
+    expect(result.optimal_bedtime_start).toMatch(/^\d{2}:\d{2}$/);
+    expect(result.optimal_bedtime_end).toMatch(/^\d{2}:\d{2}$/);
+    expect(result.optimal_bedtime_start).not.toContain('NaN');
+    expect(result.optimal_bedtime_end).not.toContain('NaN');
+
+    // Verify dynamic_sleep_need_hours is computed (user says 8.85 for this day)
+    expect(result.dynamic_sleep_need_h).not.toBeNull();
+    expect(result.dynamic_sleep_need_h!).toBeGreaterThan(8);
+    expect(result.dynamic_sleep_need_h!).toBeLessThan(10);
+  });
+
+  it('Nov 22: intake=0, tmb=1780 -> dynamic_tdee >= 2100, target_kcal >= 1500', () => {
+    const historyRaw = createHistoryBefore('2026-11-22', SPARSE_INTAKE_HISTORY);
+    const todayRaw = createRawDay('2026-11-22', {
+      intake_kcal: 0,
+      weight_kg: 85.95,
+    });
+    todayRaw.body_fat_pct = 18.2;
+
+    const input = {
+      todayRaw,
+      historyRaw,
+      prevComputed: createPrevComputed('2026-11-21'),
+      profile: PROFILE,
+      config: CONFIG,
+    };
+
+    const result = computeEngine(input);
+
+    // With sparse intake history, empirical TDEE should be null
+    // dynamic_tdee should fall back to baseline ≈ 1780 * 1.35 ≈ 2403
+    expect(result.empirical_tdee_kcal).toBeNull();
+    expect(result.dynamic_tdee_kcal).toBeGreaterThanOrEqual(2100);
+    expect(result.target_kcal).toBeGreaterThanOrEqual(1500);
+    expect(result.target_kcal).toBeLessThan(2500);
+  });
+
+  it('All 5 days: dynamic_tdee_kcal >= 2100 and target_kcal >= 1500', () => {
+    const days = [
+      { date: '2026-11-18', intake: 0, sleepMissing: false },
+      { date: '2026-11-19', intake: 474, sleepMissing: false },
+      { date: '2026-11-20', intake: 1015, sleepMissing: false },
+      { date: '2026-11-21', intake: 0, sleepMissing: true },
+      { date: '2026-11-22', intake: 0, sleepMissing: false },
+    ];
+
+    for (const day of days) {
+      const historyRaw = createHistoryBefore(day.date, SPARSE_INTAKE_HISTORY);
+      const todayRaw = createRawDay(day.date, {
+        intake_kcal: day.intake,
+        total_sleep_min: day.sleepMissing ? 60 : 424,
+        time_in_bed_min: day.sleepMissing ? 100 : 429,
+        sleep_efficiency_pct: day.sleepMissing ? 60 : 98.8,
+      });
+
+      const input = {
+        todayRaw,
+        historyRaw,
+        prevComputed: createPrevComputed(day.date),
+        profile: PROFILE,
+        config: CONFIG,
+      };
+
+      const result = computeEngine(input);
+
+      // These are the key assertions from the bug report
+      expect(result.dynamic_tdee_kcal).toBeGreaterThanOrEqual(2100);
+      expect(result.target_kcal).toBeGreaterThanOrEqual(1500);
+
+      // On sleep_missing day, bedtime window must be valid
+      if (day.sleepMissing) {
+        expect(result.optimal_bedtime_start).not.toBeNull();
+        expect(result.optimal_bedtime_end).not.toBeNull();
+        expect(result.optimal_bedtime_start).toMatch(/^\d{2}:\d{2}$/);
+        expect(result.optimal_bedtime_end).toMatch(/^\d{2}:\d{2}$/);
+      }
+    }
   });
 });

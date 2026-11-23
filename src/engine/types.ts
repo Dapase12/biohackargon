@@ -60,6 +60,7 @@ export interface RawBiometricDay {
   weight_kg?: number | null;
   body_fat_pct?: number | null;
   muscle_mass_kg?: number | null;
+  skeletal_muscle_pct?: number | null;
   hydration_ml?: number | null;
   body_water_pct?: number | null;
   water_mass_kg?: number | null;
@@ -269,6 +270,7 @@ export interface ComputedDailyScore {
   z45_minutes: number;
   hr_zones_minutes: Record<string, unknown>;
   steps_net: number;
+  steps_count: number;
 
   // Sleep Staging
   time_in_bed_min: number | null;

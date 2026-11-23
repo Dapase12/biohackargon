@@ -249,11 +249,13 @@ export function computeSleepPillar(
   const rhrZ = 0; // placeholder - will be computed by RHR pillar
   const highSleepStressPct = highSleepStress(rhrZ, hrvZ);
 
-  // Bedtime window
+  // Bedtime window - Code.txt: Calculate even when sleep_missing = true
+  // Use actual efficiency if available, else assume 85% (Code.txt default for missing sleep)
+  const effectiveEfficiency = efficiency > 0 ? efficiency : 85;
   let optimalBedtimeStart: string | null = null;
   let optimalBedtimeEnd: string | null = null;
-  if (profile.habitualWake && efficiency > 0) {
-    const window = bedtimeWindow(profile.habitualWake, dynamicNeedH, efficiency);
+  if (profile.habitualWake) {
+    const window = bedtimeWindow(profile.habitualWake, dynamicNeedH, effectiveEfficiency);
     optimalBedtimeStart = window.start;
     optimalBedtimeEnd = window.end;
   }

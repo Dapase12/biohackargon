@@ -56,7 +56,14 @@ export function computeTEF(
  * If weight stable: TDEE ≈ intake - deficit
  * If weight changing: adjust based on 7700 kcal/kg
  * Uses historical average intake when today's intake is 0/null (matches Code.txt behavior)
- * Returns null only if insufficient weight history
+ * Returns null only if insufficient weight history OR insufficient valid intake days
+ *
+ * Code.txt behavior: Only days with intake_kcal > 0 count as valid intake days.
+ * Minimum 7 valid intake days required in 14-day window (including today if intake > 0).
+ * Empirical TDEE = mean(valid_intake) + weight_trend_adjustment
+ *
+ * CRITICAL: Even if today's intake > 0, we need 7+ valid intake days in the 14-day window
+ * to compute a reliable empirical TDEE. Otherwise we can't validate the weight trend.
  */
 export function computeEmpiricalTDEE(
   history: HistoryDay[],
@@ -76,21 +83,29 @@ export function computeEmpiricalTDEE(
   // 1 kg fat ≈ 7700 kcal
   const kcalImbalancePerDay = weightChangePerDay * 7700;
 
-  // Use today's intake if available, else historical average intake (last 7-14 days)
-  let intakeForTdee = currentIntakeKcal;
-  if (!intakeForTdee || intakeForTdee <= 0) {
-    const intakeHistory = history
-      .filter(h => h.intake_kcal && h.intake_kcal > 0)
-      .slice(0, 14)
-      .map(h => h.intake_kcal!);
-    if (intakeHistory.length > 0) {
-      // intakeHistory has at least 1 element after check
-      intakeForTdee = Math.round(mean(intakeHistory));
-    }
+  // Count valid intake days in history (days with intake_kcal > 0)
+  const validIntakeDays = history
+    .filter(h => h.intake_kcal && h.intake_kcal > 0)
+    .slice(0, 14);
+
+  // Today counts as a valid intake day only if currentIntakeKcal > 0
+  const todayIsValidIntake = currentIntakeKcal > 0;
+  const totalValidIntakeDays = validIntakeDays.length + (todayIsValidIntake ? 1 : 0);
+
+  // Require minimum 7 valid intake days in 14-day window (Code.txt requirement)
+  if (totalValidIntakeDays < 7) return null;
+
+  // Use today's intake if available (> 0), else historical average intake from VALID days only
+  let intakeForTdee = 0;
+  if (todayIsValidIntake) {
+    intakeForTdee = currentIntakeKcal;
+  } else if (validIntakeDays.length > 0) {
+    const intakeHistory = validIntakeDays.map(h => h.intake_kcal!);
+    intakeForTdee = Math.round(mean(intakeHistory));
   }
 
   // If still no intake data, return null (cannot compute empirical TDEE)
-  if (!intakeForTdee || intakeForTdee <= 0) return null;
+  if (intakeForTdee <= 0) return null;
 
   // Empirical TDEE = intake + imbalance
   const empiricalTdee = Math.round(intakeForTdee + kcalImbalancePerDay);
@@ -113,8 +128,8 @@ export function computeMacroTargets(
   profile: UserProfile,
   bodyFatPct: number | null,
   weightKg: number | null
-): { proteinG: number; carbsG: number; fatG: number } {
-  // Guard: TDEE must be positive and reasonable
+): { proteinG: number; carbsG: number; fatG: number; targetKcal: number } {
+  // Guard: TDEE must be positive and reasonable - Code.txt floor
   const safeTdee = Math.max(tdee, 1200);
   const targetKcal = Math.max(safeTdee - profile.dailyDeficitKcal, 1200);
 
@@ -134,7 +149,7 @@ export function computeMacroTargets(
   const carbsKcal = targetKcal - proteinKcal - fatKcal;
   const carbsG = Math.max(0, Math.round(carbsKcal / 4));
 
-  return { proteinG, carbsG, fatG };
+  return { proteinG, carbsG, fatG, targetKcal };
 }
 
 /**
@@ -150,6 +165,26 @@ export function computeHydrationScore(
   const targetMl = weightKg * 35;
   const score = Math.min(100, Math.round((hydrationMl / targetMl) * 100));
   return clamp(score, 0, 100);
+}
+
+/**
+ * Compute physiologically plausible minimum TDEE
+ * Code.txt: empirical TDEE must be at least BMR * 1.1 (light activity minimum)
+ * to be considered valid and replace the baseline estimate
+ */
+export function computeMinPlausibleTdee(bmr: number): number {
+  // Minimum activity factor 1.1 (sedentary) - empirical TDEE below this is implausible
+  return Math.round(bmr * 1.1);
+}
+
+/**
+ * Compute floor for target_kcal based on BMR
+ * Code.txt: target_kcal never below max(1500, round(BMR * 0.85)) for adult male
+ */
+export function computeTargetKcalFloor(bmr: number, biologicalSex: 'male' | 'female'): number {
+  const bmrFloor = Math.round(bmr * 0.85);
+  const absoluteFloor = biologicalSex === 'male' ? 1500 : 1200;
+  return Math.max(absoluteFloor, bmrFloor);
 }
 
 /**
@@ -194,16 +229,19 @@ export function computeNutritionPillar(
   // Empirical TDEE from weight trend + intake (historical average when today's intake is 0)
   const empiricalTdee = computeEmpiricalTDEE(history, profile, intakeKcal);
 
-  // Use empirical if available and valid, else baseline TDEE (with activity factor)
-  const finalTdee = (empiricalTdee !== null && empiricalTdee > minBmr) ? empiricalTdee : baselineTdee;
+  // Use empirical if available AND physiologically plausible (>= BMR * 1.1), else baseline TDEE
+  const minPlausibleTdee = computeMinPlausibleTdee(bmr);
+  const useEmpirical = empiricalTdee !== null && empiricalTdee >= minPlausibleTdee;
+  const finalTdee = useEmpirical ? empiricalTdee : baselineTdee;
 
-  // Target calories (guarded in computeMacroTargets as well)
-  const targetKcal = Math.round(finalTdee - profile.dailyDeficitKcal);
+  // Target calories with Code.txt floor (never below BMR * 0.85 or 1500 for male)
+  const targetKcalFloor = computeTargetKcalFloor(bmr, profile.biologicalSex);
+  const targetKcal = Math.max(Math.round(finalTdee - profile.dailyDeficitKcal), targetKcalFloor);
 
   // TEF
   const tefKcal = computeTEF(intakeProteinG, intakeCarbsG, intakeFatG);
 
-  // Macro targets
+  // Macro targets (using finalTdee for macro calculations, but targetKcal for calorie target)
   const { proteinG: targetProteinG, carbsG: targetCarbsG, fatG: targetFatG } =
     computeMacroTargets(finalTdee, profile, bodyCompData.body_fat_pct, bodyCompData.weight_kg);
 
