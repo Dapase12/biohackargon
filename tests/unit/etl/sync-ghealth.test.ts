@@ -681,3 +681,96 @@ describe('Fase 2: Inter-day delay and 429 abort logic', () => {
     expect(true).toBe(true)
   })
 })
+
+// ========================================================================
+// DATE RANGE PARSING FIX (Fase 3 bug fix)
+// ========================================================================
+
+describe('Date range parsing - fix for -1 day offset bug', () => {
+  // These tests verify the fix for the bug where --from "2026-11-22" --to "2026-11-22"
+  // incorrectly resolved to ['2026-11-21'] due to UTC->Caracas timezone conversion
+
+  // Copy the relevant functions from sync-ghealth.ts for testing
+  const CARACAS_TIMEZONE = 'America/Caracas'
+
+  function formatDate(date: Date): string {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: CARACAS_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+    const parts = formatter.formatToParts(date)
+    const year = parts.find(p => p.type === 'year')!.value
+    const month = parts.find(p => p.type === 'month')!.value
+    const day = parts.find(p => p.type === 'day')!.value
+    return `${year}-${month}-${day}`
+  }
+
+  function parseDateArg(dateStr: string): Date {
+    const regex = /^(\d{4})-(\d{2})-(\d{2})$/
+    const match = dateStr.match(regex)
+    if (!match) {
+      throw new Error(`Invalid date format: ${dateStr}. Use YYYY-MM-DD`)
+    }
+    const year = parseInt(match[1]!, 10)
+    const month = parseInt(match[2]!, 10) - 1
+    const day = parseInt(match[3]!, 10)
+    return new Date(Date.UTC(year, month, day, 0, 0, 0, 0))
+  }
+
+  function formatGHealthDate(date: Date): string {
+    return date.toISOString().split('T')[0] ?? ''
+  }
+
+  function getDateRange(from: string | undefined, to: string | undefined): { from: string; to: string } {
+    const end = to ? parseDateArg(to) : new Date()
+    const start = from ? parseDateArg(from) : new Date(end.getTime() - 30 * 86400000)
+    return {
+      from: formatGHealthDate(start),
+      to: formatGHealthDate(end),
+    }
+  }
+
+  function incrementDateString(dateStr: string): string {
+    const [year, month, day] = dateStr.split('-').map(Number)
+    const date = new Date(Date.UTC(year, month - 1, day))
+    date.setUTCDate(date.getUTCDate() + 1)
+    return date.toISOString().split('T')[0] ?? ''
+  }
+
+  it('getDateRange returns correct inclusive dates for single day', () => {
+    const range = getDateRange('2026-11-22', '2026-11-22')
+    expect(range.from).toBe('2026-11-22')
+    expect(range.to).toBe('2026-11-22')
+  })
+
+  it('generate dates from range using string comparison (FIXED - no timezone shift)', () => {
+    const range = getDateRange('2026-11-22', '2026-11-22')
+    const dates: string[] = []
+    for (let d = range.from; d <= range.to; d = incrementDateString(d)) {
+      dates.push(d)
+    }
+    // This is the FIXED behavior - should be ['2026-11-22'], not ['2026-11-21']
+    expect(dates).toEqual(['2026-11-22'])
+  })
+
+  it('generate dates for multi-day range correctly', () => {
+    const range = getDateRange('2026-11-20', '2026-11-22')
+    const dates: string[] = []
+    for (let d = range.from; d <= range.to; d = incrementDateString(d)) {
+      dates.push(d)
+    }
+    expect(dates).toEqual(['2026-11-20', '2026-11-21', '2026-11-22'])
+  })
+
+  it('FIXED behavior: using string comparison avoids timezone issues', () => {
+    const range = getDateRange('2026-11-22', '2026-11-22')
+    const dates: string[] = []
+    for (let d = range.from; d <= range.to; d = incrementDateString(d)) {
+      dates.push(d)
+    }
+    // FIXED: dates are compared as strings, no timezone conversion
+    expect(dates).toEqual(['2026-11-22'])
+  })
+})

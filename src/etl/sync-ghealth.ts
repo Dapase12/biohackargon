@@ -299,6 +299,17 @@ function formatGHealthDate(date: Date): string {
 }
 
 /**
+ * Increment a YYYY-MM-DD date string by one day.
+ * Works purely on strings to avoid timezone issues.
+ */
+function incrementDateString(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().split('T')[0] ?? '';
+}
+
+/**
  * Get date range for ghealth CLI.
  * ghealth CLI --to is INCLUSIVE of the named day (it advances to next day internally).
  * Returns { from: YYYY-MM-DD, to: YYYY-MM-DD (inclusive, same as end date) }
@@ -1110,12 +1121,11 @@ async function runSync(options: SyncOptions): Promise<void> {
   } else {
     const range = getDateRange(options.from, options.to);
     // getDateRange returns inclusive dates (both from and to are actual dates to sync)
-    // Generate dates from range.from to range.to (both inclusive)
-    const start = parseDateArg(range.from);
-    const end = parseDateArg(range.to);
+    // Generate dates from range.from to range.to (both inclusive) using string comparison
+    // to avoid timezone issues (parsing as UTC then formatting in Caracas caused -1 day shift)
     dates = [];
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      dates.push(formatDate(d));
+    for (let d = range.from; d <= range.to; d = incrementDateString(d)) {
+      dates.push(d);
     }
   }
 

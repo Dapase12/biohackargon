@@ -26,6 +26,8 @@ interface GHealthCliOptions {
   limit?: number;
   pageToken?: string;
   detail?: boolean;   // for sleep list --detail
+  /** If true, skip --from/--to flags (for endpoints that don't support date filtering) */
+  skipDateFlags?: boolean;
 }
 
 interface CliResult<T> {
@@ -46,11 +48,14 @@ async function executeGHealth<T>(
     ...command,
   ];
 
-  if (options.from) {
-    args.push('--from', options.from);
-  }
-  if (options.to) {
-    args.push('--to', options.to);
+  // Skip --from/--to for endpoints that don't support date filtering (e.g., resting-heart-rate, respiratory-rate, oxygen-saturation, steps)
+  if (!options.skipDateFlags) {
+    if (options.from) {
+      args.push('--from', options.from);
+    }
+    if (options.to) {
+      args.push('--to', options.to);
+    }
   }
   if (options.limit) {
     args.push('--limit', String(options.limit));
@@ -385,6 +390,8 @@ export class GHealthClient {
 
   /**
    * Fetch resting heart rate samples for date range
+   * Note: ghealth CLI 'resting-heart-rate' endpoint does NOT support --from/--to flags.
+   * We fetch all data and filter locally by date.
    */
   async getRestingHeartRateSamples(
     from: string,
@@ -395,15 +402,21 @@ export class GHealthClient {
       GHealthRestingHeartRateListResponse['dataPoints'][0]
     >(
       ['data', 'resting-heart-rate', 'list'],
-      { ...this.config, from, to, limit: 500 },
+      { ...this.config, from, to, limit: 500, skipDateFlags: true },
       (data) => data.dataPoints ?? [],
       (data) => data.nextPageToken ?? null
     );
-    return samples;
+    // Filter by date locally since --from/--to not supported
+    return samples.filter(s => {
+      const sampleDate = s.time.split('T')[0]; // YYYY-MM-DD
+      return sampleDate >= from && sampleDate <= to;
+    });
   }
 
   /**
    * Fetch respiratory rate samples for date range
+   * Note: ghealth CLI 'respiratory-rate' endpoint does NOT support --from/--to flags.
+   * We fetch all data and filter locally by date.
    */
   async getRespiratoryRateSamples(
     from: string,
@@ -414,15 +427,21 @@ export class GHealthClient {
       GHealthRespiratoryRateListResponse['dataPoints'][0]
     >(
       ['data', 'respiratory-rate', 'list'],
-      { ...this.config, from, to, limit: 500 },
+      { ...this.config, from, to, limit: 500, skipDateFlags: true },
       (data) => data.dataPoints ?? [],
       (data) => data.nextPageToken ?? null
     );
-    return samples;
+    // Filter by date locally since --from/--to not supported
+    return samples.filter(s => {
+      const sampleDate = s.time.split('T')[0]; // YYYY-MM-DD
+      return sampleDate >= from && sampleDate <= to;
+    });
   }
 
   /**
    * Fetch oxygen saturation samples for date range
+   * Note: ghealth CLI 'oxygen-saturation' endpoint does NOT support --from/--to flags.
+   * We fetch all data and filter locally by date.
    */
   async getOxygenSaturationSamples(
     from: string,
@@ -433,15 +452,21 @@ export class GHealthClient {
       GHealthOxygenSaturationListResponse['dataPoints'][0]
     >(
       ['data', 'oxygen-saturation', 'list'],
-      { ...this.config, from, to, limit: 500 },
+      { ...this.config, from, to, limit: 500, skipDateFlags: true },
       (data) => data.dataPoints ?? [],
       (data) => data.nextPageToken ?? null
     );
-    return samples;
+    // Filter by date locally since --from/--to not supported
+    return samples.filter(s => {
+      const sampleDate = s.time.split('T')[0]; // YYYY-MM-DD
+      return sampleDate >= from && sampleDate <= to;
+    });
   }
 
   /**
    * Fetch steps samples for date range
+   * Note: ghealth CLI 'steps' endpoint does NOT support --from/--to flags.
+   * We fetch all data and filter locally by date.
    */
   async getStepsSamples(
     from: string,
@@ -452,11 +477,15 @@ export class GHealthClient {
       GHealthStepsListResponse['dataPoints'][0]
     >(
       ['data', 'steps', 'list'],
-      { ...this.config, from, to, limit: 500 },
+      { ...this.config, from, to, limit: 500, skipDateFlags: true },
       (data) => data.dataPoints ?? [],
       (data) => data.nextPageToken ?? null
     );
-    return samples;
+    // Filter by date locally since --from/--to not supported
+    return samples.filter(s => {
+      const sampleDate = s.time.split('T')[0]; // YYYY-MM-DD
+      return sampleDate >= from && sampleDate <= to;
+    });
   }
 
   /**
