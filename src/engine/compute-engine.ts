@@ -21,6 +21,7 @@ import { computeBodyCompPillar } from './pillars/body-comp';
 import { computeLongevityPillar } from './pillars/longevity';
 import { computeNutritionPillar } from './pillars/nutrition';
 import { ARGON_ENGINE_COLS } from '@/engine/types';
+import { mean } from './utils';
 
 const ENGINE_VERSION = '7.0.0';
 const COMPUTATION_VERSION = 'v7.0-mbe';
@@ -127,13 +128,56 @@ export const computeEngine: ComputeEngineFn = (input: ComputeEngineInput): Compu
   // ========================================================================
   // MERGE ALL RESULTS
   // ========================================================================
+
+  // Compute RHR 14-day mean and Resp 14-day mean from history (matching Code.txt)
+  const validRhrHistory = historyRaw.filter(h => h.rhr_bpm && h.rhr_bpm > 0).slice(0, 14);
+  const rhr14dMean = validRhrHistory.length > 0 ? +(mean(validRhrHistory.map(h => h.rhr_bpm!))).toFixed(1) : null;
+
+  const validRespHistory = historyRaw.filter(h => h.resp_rate_brpm && h.resp_rate_brpm > 0).slice(0, 14);
+  const resp14dMean = validRespHistory.length > 0 ? +(mean(validRespHistory.map(h => h.resp_rate_brpm!))).toFixed(1) : null;
+
+  // Compute VO2 max from HR max / RHR 14d mean (Code.txt line 1517: vo2Max = 15.3 * (hrMax / meanRhr))
+  const age = profile.chronologicalAgeYears ?? new Date().getFullYear() - new Date(profile.birth).getFullYear();
+  const hrMax = 208 - (0.7 * age);
+  const vo2Max = rhr14dMean && rhr14dMean > 0 ? +(15.3 * (hrMax / rhr14dMean)).toFixed(1) : null;
+
+  // Generate clinical coach notes matching Code.txt (lines 1539-1543)
+  const recoveryScore = recovery.recovery_score;
+  const recoveryStatus = recovery.recovery_status;
+  const strainScore = strain.strain_score ?? 0;
+  const recMaxStrain = recovery.recommended_max_strain ?? 12.0;
+  const rawW = bodyComp.weight_kg ?? todayRaw.weight_kg ?? 0;
+  const rawBf = bodyComp.body_fat_pct ?? todayRaw.body_fat_pct ?? 0;
+  const ffmKg = bodyComp.ffm_kg ?? 0;
+  const targetKcal = nutrition.target_kcal ?? 2200;
+  const realIntakeKcal = todayRaw.intake_kcal ?? 0;
+  const kcalLeft = Math.max(0, targetKcal - realIntakeKcal);
+  const dynamicNeedH = sleep.dynamic_sleep_need_h ?? 7.5;
+  const sleepEfficiency = sleep.sleep_efficiency_pct ?? 85;
+  const bedtimeWindow = sleep.optimal_bedtime_start && sleep.optimal_bedtime_end
+    ? { start: sleep.optimal_bedtime_start, end: sleep.optimal_bedtime_end }
+    : { start: '22:30', end: '23:15' }; // fallback
+
+  const recTxt = recoveryScore === null
+    ? `Recuperación en calibración (${(recovery.hrv_baseline_rmssd ? 7 : 0)}/${config.minBaselineDays} días)`
+    : `Recuperación ${recoveryScore}% (${recoveryStatus === 'OPTIMAL' ? 'Óptima para alta carga' : 'Moderar intensidad'})`;
+
+  const fmtTime = (timeStr: string | null): string => {
+    if (!timeStr) return '22:30';
+    // Normalize HH:mm to HH:mm or HH:mm:ss to HH:mm
+    return timeStr.length > 5 ? timeStr.slice(0, 5) : timeStr;
+  };
+
+  const clinicalCoachNotes = `${recTxt} | Strain hoy: ${strainScore.toFixed(1)}/21 (Meta: ${recMaxStrain.toFixed(1)}). ` +
+    `Peso Feelfit: ${rawW} kg (${rawBf}% grasa, ${ffmKg} kg sin grasa). Meta Atwater: ${targetKcal} kcal (Comido: ${realIntakeKcal} kcal, restan ${kcalLeft} kcal). Acuéstate entre ${fmtTime(bedtimeWindow.start)} y ${fmtTime(bedtimeWindow.end)}.`;
+
   const merged: ComputedDailyScore = {
     log_date: logDate,
 
     // Recovery (from recovery pillar)
     recovery_score: recovery.recovery_score ?? null,
     readiness_score: recovery.readiness_score ?? null,
-    recovery_status: recovery.recovery_status ?? 'unknown',
+    recovery_status: recovery.recovery_status ?? 'INSUFFICIENT_DATA',
     calibrating: recovery.calibrating ?? true,
     sleep_missing: recovery.sleep_missing ?? false,
     hrv_missing: recovery.hrv_missing ?? false,
@@ -144,7 +188,7 @@ export const computeEngine: ComputeEngineFn = (input: ComputeEngineInput): Compu
     hrv_7d_avg_rmssd: recovery.hrv_7d_avg_rmssd ?? null,
     hrv_14d_avg_rmssd: recovery.hrv_14d_avg_rmssd ?? null,
     hrv_swc: recovery.hrv_swc ?? null,
-    hrv_z_score: recovery.hrv_z_score ?? null,
+    hrv_z_score: recovery.hrv_z_score ?? 0, // Code.txt: 0 when missing, not null
     ln_rmssd: recovery.ln_rmssd ?? null,
     ln_rmssd_14d_mean: recovery.ln_rmssd_14d_mean ?? null,
     ln_rmssd_14d_sd: recovery.ln_rmssd_14d_sd ?? null,
@@ -154,7 +198,7 @@ export const computeEngine: ComputeEngineFn = (input: ComputeEngineInput): Compu
     // RHR Pillar
     rhr_baseline: recovery.rhr_baseline ?? null,
     rhr_7d_avg: recovery.rhr_7d_avg ?? null,
-    rhr_z_score: recovery.rhr_z_score ?? null,
+    rhr_z_score: recovery.rhr_z_score ?? 0, // Code.txt: 0 when missing, not null
 
     // Sleep Pillar (from sleep extended)
     sleep_hours_vs_needed_pct: sleep.sleep_hours_vs_needed_pct ?? null,
@@ -168,13 +212,13 @@ export const computeEngine: ComputeEngineFn = (input: ComputeEngineInput): Compu
     cumulative_sleep_debt_hours: sleep.cumulative_sleep_debt_hours ?? null,
 
     // Strain
-    strain_score: strain.strain_score ?? null,
+    strain_score: strain.strain_score ?? 0, // Code.txt: always a number when computed
     training_load_7d: strain.training_load_7d ?? null,
     acwr: strain.acwr ?? null,
     acwr_penalty_strain: strain.acwr_penalty_strain ?? null,
     cardio_trimp_load: strain.cardio_trimp_load ?? null,
-    neuromuscular_load: strain.neuromuscular_load ?? null,
-    shift_orthostatic_load: strain.shift_orthostatic_load ?? null,
+    neuromuscular_load: strain.neuromuscular_load ?? 0, // Code.txt: 0 when no workouts
+    shift_orthostatic_load: strain.shift_orthostatic_load ?? 0, // Code.txt: 0 when no shift
     z13_minutes: strain.z13_minutes ?? 0,
     z45_minutes: strain.z45_minutes ?? 0,
     hr_zones_minutes: strain.hr_zones_minutes ?? {},
@@ -188,15 +232,15 @@ export const computeEngine: ComputeEngineFn = (input: ComputeEngineInput): Compu
     light_sleep_min: sleep.light_sleep_min ?? null,
     sleep_efficiency_pct: sleep.sleep_efficiency_pct ?? null,
     sleep_onset_latency_min: sleep.sleep_onset_latency_min ?? null,
-    nap_sleep_min: sleep.nap_sleep_min ?? null,
+    nap_sleep_min: sleep.nap_sleep_min ?? 0, // Code.txt: 0 when no naps
 
     // Autonomic
     rmssd_ms: todayRaw.rmssd_ms ?? todayRaw.hrv_rmssd_ms ?? null,
     rmssd_14d_mean_ms: recovery.hrv_14d_avg_rmssd ?? null,
     rhr_bpm: recovery.rhr_bpm ?? null,
-    rhr_14d_mean_bpm: recovery.rhr_14d_mean_bpm ?? null,
+    rhr_14d_mean_bpm: rhr14dMean, // Computed from history
     resp_rate_brpm: todayRaw.resp_rate_brpm ?? null,
-    resp_14d_mean_brpm: null, // computed if needed
+    resp_14d_mean_brpm: resp14dMean, // Computed from history
     spo2_pct: todayRaw.spo2_pct ?? null,
 
     // Nutrition
@@ -234,7 +278,7 @@ export const computeEngine: ComputeEngineFn = (input: ComputeEngineInput): Compu
     argon_physiological_age: longevity.argon_physiological_age ?? null,
     pace_of_aging_x: longevity.pace_of_aging_x ?? null,
     total_age_delta: longevity.total_age_delta ?? null,
-    vo2_max_ml_kg_min: longevity.vo2_max_ml_kg_min ?? null,
+    vo2_max_ml_kg_min: vo2Max, // Computed from HR max / RHR 14d mean
     delta_cardio_years: longevity.delta_cardio_years ?? null,
     delta_metabolic_years: longevity.delta_metabolic_years ?? null,
     delta_inflammatory_years: longevity.delta_inflammatory_years ?? null,
@@ -266,7 +310,7 @@ export const computeEngine: ComputeEngineFn = (input: ComputeEngineInput): Compu
     night_awake_shift_hours: todayRaw.night_awake_shift_hours ?? 0,
 
     // Clinical
-    clinical_coach_notes: null, // generated separately by coach
+    clinical_coach_notes: clinicalCoachNotes,
 
     // Meta
     computed_at: now,

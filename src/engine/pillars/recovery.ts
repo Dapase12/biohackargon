@@ -276,8 +276,10 @@ export function computeSleepPillar(
 
 /**
  * Compute combined recovery score from three pillars
- * Matches Code.txt behavior: provides defaults even during calibration/missing data
- * Code.txt lines 1500-1514: recStatus='CALIBRATING', recMaxStrain=12.0 as defaults
+ * Matches Code.txt behavior exactly (lines 1495-1514):
+ * - During calibration: recovery_score=null, recovery_status='CALIBRATING', recommended_max_strain=12.0
+ * - When NOT calibrating: always computes weighted score, status = OPTIMAL/MODERATE/COMPROMISED
+ * - hrv_z_score = 0 when hrvMissing (not null), rhr_z_score = 0 when rhrMissing (not null)
  */
 export function computeRecoveryScore(
   hrvScore: number | null,
@@ -285,29 +287,39 @@ export function computeRecoveryScore(
   sleepScore: number | null,
   todayRaw: RawBiometricDay,
   config: EngineConfig,
-  calibrating: boolean
+  calibrating: boolean,
+  hrvZ: number,      // HRV z-score (0 when missing, matching Code.txt)
+  rhrZ: number,      // RHR z-score (0 when missing, matching Code.txt)
+  sleepArchScore: number | null // Sleep architecture score
 ): { recovery_score: number | null; recovery_status: string; recommended_max_strain: number | null } {
   // Default values matching Code.txt (lines 1500-1514)
-  let recoveryStatus = calibrating ? 'calibrating' : 'insufficient_data';
+  let recoveryStatus = calibrating ? 'CALIBRATING' : 'INSUFFICIENT_DATA';
   let recommendedMaxStrain = 12.0; // Code.txt default
   let recoveryScore: number | null = null;
 
-  // Only compute weighted score if NOT calibrating AND all pillars have data
-  if (!calibrating && hrvScore !== null && rhrScore !== null && sleepScore !== null) {
-    // Penalties
+  // Code.txt: Only skip weighted computation if calibrating
+  // When NOT calibrating, it ALWAYS computes (hrvRecovery/rhrRecovery/sleepRecovery default to 50 when missing)
+  if (!calibrating) {
+    // Penalties (Code.txt lines 1493-1494)
     let penalties = 0;
-    if (todayRaw.spo2_pct && todayRaw.spo2_pct < config.spo2PenaltyThreshold) {
+    if (todayRaw.spo2_pct !== undefined && todayRaw.spo2_pct !== null && todayRaw.spo2_pct < config.spo2PenaltyThreshold) {
       penalties += config.recoveryPenalty.spo2;
     }
-    if (todayRaw.resp_rate_brpm && todayRaw.resp_rate_brpm > 20) {
+    if (todayRaw.resp_rate_brpm !== undefined && todayRaw.resp_rate_brpm !== null && todayRaw.resp_rate_brpm > config.rhrPenaltyThreshold) {
       penalties += config.recoveryPenalty.respRate;
     }
 
-    const weighted = recoveryFromPillars(hrvScore, rhrScore, sleepScore, config.recoveryWeights, penalties);
+    // Pillar scores (Code.txt lines 1489-1491): default to 50 when missing
+    const hrvRecovery = hrvScore ?? 50;
+    const rhrRecovery = rhrScore ?? 50;
+    const sleepRecovery = sleepScore ?? 50;
+
+    const weighted = recoveryFromPillars(hrvRecovery, rhrRecovery, sleepRecovery, config.recoveryWeights, penalties);
     recoveryScore = weighted ?? null;
 
-    // Recovery status (Code.txt uses OPTIMAL/MODERATE/COMPROMISED)
+    // Recovery status (Code.txt lines 1500-1514) - UPPERCASE
     if (recoveryScore !== null) {
+      recoveryScore = Math.min(99, Math.max(1, recoveryScore)); // clamp 1-99 like Code.txt
       if (recoveryScore >= 67) {
         recoveryStatus = 'OPTIMAL';
         recommendedMaxStrain = +(14.5 + (recoveryScore - 67) * 0.14).toFixed(1);
@@ -318,9 +330,6 @@ export function computeRecoveryScore(
         recoveryStatus = 'MODERATE';
         recommendedMaxStrain = +(10.0 + (recoveryScore - 34) * 0.13).toFixed(1);
       }
-      // Apply ACWR penalty if available (from strain pillar)
-      // Note: acwr_penalty_strain is computed in strain pillar, not available here directly
-      // The recommended_max_strain will be adjusted in computeEngine after strain is computed
     }
   }
 
@@ -351,7 +360,10 @@ export function computeRecoveryPillar(
     sleep._sleepRecoveryScore,
     todayRaw,
     config,
-    hrv.calibrating ?? true
+    hrv.calibrating ?? true,
+    hrv.hrv_z_score ?? 0,      // hrvZ (0 when missing, matching Code.txt)
+    rhr.rhr_z_score ?? 0,       // rhrZ (0 when missing, matching Code.txt)
+    sleep.sleep_architecture_score ?? null // sleepArchScore
   );
 
   // Clean up internal fields

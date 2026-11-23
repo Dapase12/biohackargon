@@ -291,14 +291,14 @@ export function computeSleepPillarExtended(
 
   return {
     sleep_missing: sleepMissing,
-    time_in_bed_min: tibMin || null,
-    total_sleep_min: tstMin || null,
-    deep_sleep_min: deepMin || null,
-    rem_sleep_min: remMin || null,
-    light_sleep_min: lightMin || null,
-    sleep_efficiency_pct: efficiency || null,
-    sleep_onset_latency_min: sleepOnsetLatency || null,
-    nap_sleep_min: napSleepMin || null,
+    time_in_bed_min: tibMin ?? null,
+    total_sleep_min: tstMin ?? null,
+    deep_sleep_min: deepMin ?? null,
+    rem_sleep_min: remMin ?? null,
+    light_sleep_min: lightMin ?? null,
+    sleep_efficiency_pct: efficiency ?? null,
+    sleep_onset_latency_min: sleepOnsetLatency ?? null,
+    nap_sleep_min: napSleepMin ?? 0, // Default to 0 (not null) when no naps - matching Code.txt
     sleep_hours_vs_needed_pct: hoursVsNeededPct,
     sleep_regularity_pct: sleepRegularityPct,
     high_sleep_stress_pct: highSleepStressPct,

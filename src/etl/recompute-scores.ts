@@ -264,6 +264,7 @@ export const INTEGER_SCORES_COLUMNS = new Set<string>([
  */
 export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
+  const warnings: string[] = [];
 
   for (const [key, value] of Object.entries(obj)) {
     // Skip columns not in production schema
@@ -285,6 +286,7 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
     // Handle NaN/Infinity for numbers
     if (typeof value === 'number') {
       if (Number.isNaN(value) || !Number.isFinite(value)) {
+        warnings.push(`NaN/Infinity → null: ${key}`);
         result[key] = null;
         continue;
       }
@@ -298,11 +300,15 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
           // Clamp to int32 range and column-specific min/max
           const min = spec.min ?? -2147483648;
           const max = spec.max ?? 2147483647;
-          rounded = Math.max(min, Math.min(max, rounded));
-          result[key] = rounded;
+          const clamped = Math.max(min, Math.min(max, rounded));
+          if (clamped !== rounded) {
+            warnings.push(`Clamped ${key}: ${rounded} → ${clamped} (range: ${min}..${max})`);
+          }
+          result[key] = clamped;
         } else if (typeof value === 'string') {
           // Try to parse string numbers - empty string should be null
           if (value.trim() === '') {
+            warnings.push(`Empty string → null: ${key}`);
             result[key] = null;
           } else {
             const parsed = Number(value);
@@ -310,13 +316,18 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
               let rounded = Math.round(parsed);
               const min = spec.min ?? -2147483648;
               const max = spec.max ?? 2147483647;
-              rounded = Math.max(min, Math.min(max, rounded));
-              result[key] = rounded;
+              const clamped = Math.max(min, Math.min(max, rounded));
+              if (clamped !== rounded) {
+                warnings.push(`Clamped ${key}: ${rounded} → ${clamped} (range: ${min}..${max})`);
+              }
+              result[key] = clamped;
             } else {
+              warnings.push(`Invalid number string → null: ${key}="${value}"`);
               result[key] = null;
             }
           }
         } else {
+          warnings.push(`Non-number → null: ${key} (type: ${typeof value})`);
           result[key] = null;
         }
         break;
@@ -328,13 +339,20 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
           // Round to scale decimal places if precision/scale specified
           if (spec.scale !== undefined) {
             const factor = Math.pow(10, spec.scale);
-            num = Math.round(num * factor) / factor;
+            const rounded = Math.round(num * factor) / factor;
+            if (rounded !== num) {
+              warnings.push(`Rounded ${key}: ${num} → ${rounded} (scale: ${spec.scale})`);
+            }
+            num = rounded;
           }
           // Clamp to min/max
           const min = spec.min ?? -1e15;
           const max = spec.max ?? 1e15;
-          num = Math.max(min, Math.min(max, num));
-          result[key] = num;
+          const clamped = Math.max(min, Math.min(max, num));
+          if (clamped !== num) {
+            warnings.push(`Clamped ${key}: ${num} → ${clamped} (range: ${min}..${max})`);
+          }
+          result[key] = clamped;
         } else if (typeof value === 'string') {
           const parsed = Number(value);
           if (Number.isFinite(parsed)) {
@@ -345,12 +363,17 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
             }
             const min = spec.min ?? -1e15;
             const max = spec.max ?? 1e15;
-            num = Math.max(min, Math.min(max, num));
-            result[key] = num;
+            const clamped = Math.max(min, Math.min(max, num));
+            if (clamped !== num) {
+              warnings.push(`Clamped ${key}: ${num} → ${clamped} (range: ${min}..${max})`);
+            }
+            result[key] = clamped;
           } else {
+            warnings.push(`Invalid number string → null: ${key}="${value}"`);
             result[key] = null;
           }
         } else {
+          warnings.push(`Non-number → null: ${key} (type: ${typeof value})`);
           result[key] = null;
         }
         break;
@@ -362,11 +385,17 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
           const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/;
           if (timeRegex.test(value)) {
             // Normalize HH:mm to HH:mm:00 for PostgreSQL time column
-            result[key] = value.length === 5 ? `${value}:00` : value;
+            const normalized = value.length === 5 ? `${value}:00` : value;
+            if (normalized !== value) {
+              warnings.push(`Normalized time ${key}: ${value} → ${normalized}`);
+            }
+            result[key] = normalized;
           } else {
+            warnings.push(`Invalid time format → null: ${key}="${value}"`);
             result[key] = null; // Invalid time format → null
           }
         } else {
+          warnings.push(`Non-string time → null: ${key} (type: ${typeof value})`);
           result[key] = null;
         }
         break;
@@ -384,6 +413,7 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
           const lower = value.toLowerCase();
           result[key] = lower === 'true' || lower === '1' || lower === 'yes';
         } else {
+          warnings.push(`Non-boolean → false: ${key} (type: ${typeof value})`);
           result[key] = false;
         }
         break;
@@ -403,14 +433,17 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
                 parsed.getUTCDate() === day) {
               result[key] = value;
             } else {
+              warnings.push(`Invalid date → null: ${key}="${value}"`);
               result[key] = null;
             }
           } else {
+            warnings.push(`Invalid date format → null: ${key}="${value}"`);
             result[key] = null;
           }
         } else if (value instanceof Date) {
           result[key] = value.toISOString().split('T')[0];
         } else {
+          warnings.push(`Non-date → null: ${key} (type: ${typeof value})`);
           result[key] = null;
         }
         break;
@@ -423,11 +456,13 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
           if (!isNaN(parsed.getTime())) {
             result[key] = parsed.toISOString();
           } else {
+            warnings.push(`Invalid timestamp → null: ${key}="${value}"`);
             result[key] = null;
           }
         } else if (value instanceof Date) {
           result[key] = value.toISOString();
         } else {
+          warnings.push(`Non-timestamp → null: ${key} (type: ${typeof value})`);
           result[key] = null;
         }
         break;
@@ -440,9 +475,11 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
           if (uuidRegex.test(value)) {
             result[key] = value.toLowerCase();
           } else {
+            warnings.push(`Invalid UUID → null: ${key}="${value}"`);
             result[key] = null;
           }
         } else {
+          warnings.push(`Non-UUID string → null: ${key} (type: ${typeof value})`);
           result[key] = null;
         }
         break;
@@ -453,6 +490,7 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
         if (value && typeof value === 'object') {
           result[key] = sanitizeJsonb(value);
         } else {
+          warnings.push(`Non-object jsonb → null: ${key}`);
           result[key] = null;
         }
         break;
@@ -461,7 +499,11 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
       case 'text': {
         // Passthrough with length limit
         if (typeof value === 'string') {
-          result[key] = value.length > 10000 ? value.slice(0, 10000) : value;
+          const truncated = value.length > 10000 ? value.slice(0, 10000) : value;
+          if (truncated.length !== value.length) {
+            warnings.push(`Truncated text ${key}: ${value.length} → ${truncated.length} chars`);
+          }
+          result[key] = truncated;
         } else if (value === null || value === undefined) {
           result[key] = null;
         } else {
@@ -475,6 +517,11 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
         result[key] = value;
       }
     }
+  }
+
+  // Output warnings after processing all fields
+  if (warnings.length > 0) {
+    console.warn(`[SANITIZE] ${warnings.length} transformation(s): ${warnings.join('; ')}`);
   }
 
   return result;
@@ -518,6 +565,82 @@ export function filterAllowedColumns(payload: Record<string, unknown>): Record<s
     console.warn(`[WARN] Dropped unmapped keys: ${droppedKeys.join(', ')}`);
   }
   return filtered;
+}
+
+/**
+ * Build history array for a specific date
+ * Includes rhr_bpm, resp_rate_brpm, body_water_pct, water_mass_kg from raw data
+ * for 14-day rolling window calculations in computeEngine
+ */
+function buildHistory(
+  allRaw: RawBiometricDay[],
+  allComputed: ComputedDailyScore[],
+  targetDate: string
+): HistoryDay[] {
+  const targetIndex = allRaw.findIndex(r => r.log_date === targetDate);
+  if (targetIndex === -1) return [];
+
+  // History is all days BEFORE target date (most recent first)
+  const history: HistoryDay[] = [];
+  for (let i = targetIndex - 1; i >= 0; i--) {
+    const raw = allRaw[i];
+    if (!raw) continue;
+    const computed = allComputed.find(c => c.log_date === raw.log_date);
+    history.push({
+      ...raw,
+      // Ensure these fields from daily_raw_biometrics are passed for 14-day windows
+      rhr_bpm: raw.rhr_bpm ?? null,
+      resp_rate_brpm: raw.resp_rate_brpm ?? null,
+      body_water_pct: raw.body_water_pct ?? null,
+      water_mass_kg: raw.water_mass_kg ?? null,
+      vo2_max_ml_kg_min: raw.vo2_max_ml_kg_min ?? null,
+      strain_score: computed?.strain_score ?? null,
+    });
+  }
+  return history;
+}
+
+/**
+ * Build prevComputed from previous day
+ * Includes rhr_bpm, resp_rate_brpm, body_water_pct, water_mass_kg, vo2_max
+ * for previous-day-dependent calculations in computeEngine
+ */
+function buildPrevComputed(
+  allRaw: RawBiometricDay[],
+  allComputed: ComputedDailyScore[],
+  targetDate: string
+): PrevComputed | null {
+  const targetIndex = allRaw.findIndex(r => r.log_date === targetDate);
+  if (targetIndex === 0) return null;
+
+  const prevRaw = allRaw[targetIndex - 1];
+  if (!prevRaw) return null;
+  const prevComputed = allComputed.find(c => c.log_date === prevRaw.log_date);
+  if (!prevComputed) return null;
+
+  return {
+    log_date: prevComputed.log_date,
+    trend_weight_kg: prevComputed.trend_weight_kg ?? null,
+    trend_body_fat_pct: prevComputed.trend_body_fat_pct ?? null,
+    rmssd_ms: prevRaw.rmssd_ms ?? prevRaw.hrv_rmssd_ms ?? null,
+    rhr_bpm: prevRaw.rhr_bpm ?? null,
+    resp_rate_brpm: prevRaw.resp_rate_brpm ?? null,
+    body_water_pct: prevRaw.body_water_pct ?? null,
+    water_mass_kg: prevRaw.water_mass_kg ?? null,
+    vo2_max_ml_kg_min: prevComputed.vo2_max_ml_kg_min ?? null,
+    strain_score: prevComputed.strain_score ?? null,
+    total_sleep_min: prevRaw.total_sleep_min ?? null,
+    recovery_score: prevComputed.recovery_score ?? null,
+    dynamic_sleep_need_hours: prevComputed.dynamic_sleep_need_h ?? null,
+    ln_rmssd: prevComputed.ln_rmssd ?? null,
+    ln_rmssd_14d_mean: prevComputed.ln_rmssd_14d_mean ?? null,
+    ln_rmssd_14d_sd: prevComputed.ln_rmssd_14d_sd ?? null,
+    hrv_z_score: prevComputed.hrv_z_score ?? null,
+    rhr_z_score: prevComputed.rhr_z_score ?? null,
+    sleep_regularity_pct: prevComputed.sleep_regularity_pct ?? null,
+    cumulative_sleep_debt_hours: prevComputed.cumulative_sleep_debt_hours ?? null,
+    hrv_mode: undefined,
+  };
 }
 
 /**
@@ -748,68 +871,6 @@ async function fetchComputedScores(
 
   if (error) throw error;
   return data ?? [];
-}
-
-/**
- * Build history array for a specific date
- */
-function buildHistory(
-  allRaw: RawBiometricDay[],
-  allComputed: ComputedDailyScore[],
-  targetDate: string
-): HistoryDay[] {
-  const targetIndex = allRaw.findIndex(r => r.log_date === targetDate);
-  if (targetIndex === -1) return [];
-
-  // History is all days BEFORE target date (most recent first)
-  const history: HistoryDay[] = [];
-  for (let i = targetIndex - 1; i >= 0; i--) {
-    const raw = allRaw[i];
-    if (!raw) continue;
-    const computed = allComputed.find(c => c.log_date === raw.log_date);
-    history.push({
-      ...raw,
-      strain_score: computed?.strain_score ?? null,
-    });
-  }
-  return history;
-}
-
-/**
- * Build prevComputed from previous day
- */
-function buildPrevComputed(
-  allRaw: RawBiometricDay[],
-  allComputed: ComputedDailyScore[],
-  targetDate: string
-): PrevComputed | null {
-  const targetIndex = allRaw.findIndex(r => r.log_date === targetDate);
-  if (targetIndex === 0) return null;
-
-  const prevRaw = allRaw[targetIndex - 1];
-  if (!prevRaw) return null;
-  const prevComputed = allComputed.find(c => c.log_date === prevRaw.log_date);
-  if (!prevComputed) return null;
-
-  return {
-    log_date: prevComputed.log_date,
-    trend_weight_kg: prevComputed.trend_weight_kg ?? null,
-    trend_body_fat_pct: prevComputed.trend_body_fat_pct ?? null,
-    rmssd_ms: prevRaw.rmssd_ms ?? prevRaw.hrv_rmssd_ms ?? null,
-    rhr_bpm: prevRaw.rhr_bpm ?? null,
-    strain_score: prevComputed.strain_score ?? null,
-    total_sleep_min: prevRaw.total_sleep_min ?? null,
-    recovery_score: prevComputed.recovery_score ?? null,
-    dynamic_sleep_need_hours: prevComputed.dynamic_sleep_need_h ?? null,
-    ln_rmssd: prevComputed.ln_rmssd ?? null,
-    ln_rmssd_14d_mean: prevComputed.ln_rmssd_14d_mean ?? null,
-    ln_rmssd_14d_sd: prevComputed.ln_rmssd_14d_sd ?? null,
-    hrv_z_score: prevComputed.hrv_z_score ?? null,
-    rhr_z_score: prevComputed.rhr_z_score ?? null,
-    sleep_regularity_pct: prevComputed.sleep_regularity_pct ?? null,
-    cumulative_sleep_debt_hours: prevComputed.cumulative_sleep_debt_hours ?? null,
-    hrv_mode: undefined,
-  };
 }
 
 // ========================================================================

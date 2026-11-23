@@ -165,6 +165,7 @@ export function computeCardioTrimp(
 
 /**
  * Compute neuromuscular load (sRPE * workoutMin * factor)
+ * Returns 0 (not null) when no workouts - matching Code.txt behavior
  */
 export function computeNeuroLoad(
   todayRaw: RawBiometricDay,

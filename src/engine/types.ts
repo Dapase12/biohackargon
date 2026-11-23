@@ -61,6 +61,9 @@ export interface RawBiometricDay {
   body_fat_pct?: number | null;
   muscle_mass_kg?: number | null;
   hydration_ml?: number | null;
+  body_water_pct?: number | null;
+  water_mass_kg?: number | null;
+  vo2_max_ml_kg_min?: number | null;
 
   // Nutrition (manual PWA meals + ghealth nutrition)
   intake_kcal?: number;
@@ -138,9 +141,16 @@ export interface RawBiometricDay {
 
 // ========================================================================
 // HISTORY ROW (raw biometric + strain_score from computed)
+// Includes extra fields for 14-day rolling window calculations
 // ========================================================================
 export interface HistoryDay extends RawBiometricDay {
   strain_score?: number | null;
+  // Extra fields from daily_raw_biometrics for 14-day windows
+  rhr_bpm?: number | null;
+  resp_rate_brpm?: number | null;
+  body_water_pct?: number | null;
+  water_mass_kg?: number | null;
+  vo2_max_ml_kg_min?: number | null;
 }
 
 // ========================================================================
@@ -152,6 +162,10 @@ export interface PrevComputed {
   trend_body_fat_pct?: number | null;
   rmssd_ms?: number | null;
   rhr_bpm?: number | null;
+  resp_rate_brpm?: number | null;
+  body_water_pct?: number | null;
+  water_mass_kg?: number | null;
+  vo2_max_ml_kg_min?: number | null;
   strain_score?: number | null;
   total_sleep_min?: number | null;
   recovery_score?: number | null;

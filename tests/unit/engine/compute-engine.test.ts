@@ -193,7 +193,8 @@ describe('Compute Engine - Full Orchestration', () => {
     const result = computeEngine(calibratingInput);
     expect(result.calibrating).toBe(true);
     expect(result.recovery_score).toBeNull();
-    expect(result.recovery_status).toBe('calibrating');
+    // Code.txt uses 'CALIBRATING' (uppercase) during calibration
+    expect(result.recovery_status).toBe('CALIBRATING');
   });
 
   it('should handle sleep_missing when TST < 120 min', () => {
