@@ -276,6 +276,8 @@ export function computeSleepPillar(
 
 /**
  * Compute combined recovery score from three pillars
+ * Matches Code.txt behavior: provides defaults even during calibration/missing data
+ * Code.txt lines 1500-1514: recStatus='CALIBRATING', recMaxStrain=12.0 as defaults
  */
 export function computeRecoveryScore(
   hrvScore: number | null,
@@ -285,41 +287,42 @@ export function computeRecoveryScore(
   config: EngineConfig,
   calibrating: boolean
 ): { recovery_score: number | null; recovery_status: string; recommended_max_strain: number | null } {
-  // Return null if calibrating or any pillar missing
-  if (calibrating || hrvScore === null || rhrScore === null || sleepScore === null) {
-    return {
-      recovery_score: null,
-      recovery_status: calibrating ? 'calibrating' : 'insufficient_data',
-      recommended_max_strain: null,
-    };
-  }
+  // Default values matching Code.txt (lines 1500-1514)
+  let recoveryStatus = calibrating ? 'calibrating' : 'insufficient_data';
+  let recommendedMaxStrain = 12.0; // Code.txt default
+  let recoveryScore: number | null = null;
 
-  // Penalties
-  let penalties = 0;
-  if (todayRaw.spo2_pct && todayRaw.spo2_pct < config.spo2PenaltyThreshold) {
-    penalties += config.recoveryPenalty.spo2;
-  }
-  if (todayRaw.resp_rate_brpm && todayRaw.resp_rate_brpm > 20) {
-    penalties += config.recoveryPenalty.respRate;
-  }
+  // Only compute weighted score if NOT calibrating AND all pillars have data
+  if (!calibrating && hrvScore !== null && rhrScore !== null && sleepScore !== null) {
+    // Penalties
+    let penalties = 0;
+    if (todayRaw.spo2_pct && todayRaw.spo2_pct < config.spo2PenaltyThreshold) {
+      penalties += config.recoveryPenalty.spo2;
+    }
+    if (todayRaw.resp_rate_brpm && todayRaw.resp_rate_brpm > 20) {
+      penalties += config.recoveryPenalty.respRate;
+    }
 
-  const weighted = recoveryFromPillars(hrvScore, rhrScore, sleepScore, config.recoveryWeights, penalties);
-  const recoveryScore = weighted ?? null;
+    const weighted = recoveryFromPillars(hrvScore, rhrScore, sleepScore, config.recoveryWeights, penalties);
+    recoveryScore = weighted ?? null;
 
-  // Recovery status
-  let recoveryStatus = 'balanced';
-  if (recoveryScore !== null) {
-    if (recoveryScore >= 85) recoveryStatus = 'optimal';
-    else if (recoveryScore >= 70) recoveryStatus = 'good';
-    else if (recoveryScore >= 50) recoveryStatus = 'balanced';
-    else if (recoveryScore >= 30) recoveryStatus = 'low';
-    else recoveryStatus = 'critical';
+    // Recovery status (Code.txt uses OPTIMAL/MODERATE/COMPROMISED)
+    if (recoveryScore !== null) {
+      if (recoveryScore >= 67) {
+        recoveryStatus = 'OPTIMAL';
+        recommendedMaxStrain = +(14.5 + (recoveryScore - 67) * 0.14).toFixed(1);
+      } else if (recoveryScore < 34) {
+        recoveryStatus = 'COMPROMISED';
+        recommendedMaxStrain = +(6.0 + recoveryScore * 0.10).toFixed(1);
+      } else {
+        recoveryStatus = 'MODERATE';
+        recommendedMaxStrain = +(10.0 + (recoveryScore - 34) * 0.13).toFixed(1);
+      }
+      // Apply ACWR penalty if available (from strain pillar)
+      // Note: acwr_penalty_strain is computed in strain pillar, not available here directly
+      // The recommended_max_strain will be adjusted in computeEngine after strain is computed
+    }
   }
-
-  // Recommended max strain (simplified: 21 - (100 - recovery) * 0.21)
-  const recommendedMaxStrain = recoveryScore !== null
-    ? clamp(Math.round(21 - (100 - recoveryScore) * 0.21), 0, 21)
-    : null;
 
   return {
     recovery_score: recoveryScore,

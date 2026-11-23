@@ -72,6 +72,12 @@ export const computeEngine: ComputeEngineFn = (input: ComputeEngineInput): Compu
   // ========================================================================
   const recovery = computeRecoveryPillar(todayRaw, historyRaw, prevComputed, profile, config);
 
+  // Apply ACWR penalty to recommended_max_strain (matching Code.txt line 1513)
+  // recMaxStrain = Math.max(4.0, recMaxStrain - acwrPenalty)
+  if (recovery.recommended_max_strain !== null && strain.acwr_penalty_strain !== null) {
+    recovery.recommended_max_strain = Math.max(4.0, +(recovery.recommended_max_strain - strain.acwr_penalty_strain).toFixed(1));
+  }
+
   // ========================================================================
   // 5. LONGEVITY (needs recovery, body comp, sleep, strain)
   // ========================================================================

@@ -357,11 +357,12 @@ export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unkn
       }
 
       case 'time': {
-        // Validate HH:mm[:ss] format
+        // Validate HH:mm[:ss] format, normalize to HH:mm:ss for PostgreSQL time type
         if (typeof value === 'string') {
           const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/;
           if (timeRegex.test(value)) {
-            result[key] = value;
+            // Normalize HH:mm to HH:mm:00 for PostgreSQL time column
+            result[key] = value.length === 5 ? `${value}:00` : value;
           } else {
             result[key] = null; // Invalid time format → null
           }
@@ -501,15 +502,149 @@ function sanitizeJsonb(value: unknown): unknown {
 
 /**
  * Filter payload to only allowed columns
+ * Logs warning for any keys that are dropped (not in production schema)
  */
 export function filterAllowedColumns(payload: Record<string, unknown>): Record<string, unknown> {
   const filtered: Record<string, unknown> = {};
+  const droppedKeys: string[] = [];
   for (const [key, value] of Object.entries(payload)) {
     if (ALLOWED_SCORES_COLUMNS.has(key)) {
       filtered[key] = value;
+    } else {
+      droppedKeys.push(key);
     }
   }
+  if (droppedKeys.length > 0) {
+    console.warn(`[WARN] Dropped unmapped keys: ${droppedKeys.join(', ')}`);
+  }
   return filtered;
+}
+
+/**
+ * Map engine output to production DB row
+ * Exact mapping matching Code.txt computeArgonEngine_ return object (lines 1545-1635)
+ * This is the single source of truth for column names and value transformations
+ */
+export function mapEngineOutputToDbRow(
+  computed: ComputedDailyScore,
+  todayRaw: RawBiometricDay,
+  profile: UserProfile
+): Record<string, unknown> {
+  const row: Record<string, unknown> = {};
+
+  // log_date (DATE) - primary key
+  row.log_date = computed.log_date;
+
+  // TIMESTAMPTZ
+  row.computed_at = computed.computed_at ?? new Date().toISOString();
+
+  // UUID
+  // user_id is added separately in recomputeDailyScores
+
+  // TIME columns (HH:mm:ss for PostgreSQL)
+  row.optimal_bedtime_start = computed.optimal_bedtime_start;
+  row.optimal_bedtime_end = computed.optimal_bedtime_end;
+
+  // BOOLEAN columns
+  row.calibrating = computed.calibrating ?? false;
+  row.sleep_missing = computed.sleep_missing ?? false;
+  row.hrv_missing = computed.hrv_missing ?? false;
+  row.is_hospital_shift = computed.is_hospital_shift ?? false;
+
+  // JSONB columns
+  row.hr_zones_minutes = computed.hr_zones_minutes ?? {};
+  row.meals_log_json = todayRaw.meals_log_json ?? [];
+
+  // TEXT columns
+  row.recovery_status = computed.recovery_status ?? 'insufficient_data';
+  row.clinical_coach_notes = computed.clinical_coach_notes ?? null;
+
+  // INTEGER columns (28)
+  row.recovery_score = computed.recovery_score ?? null;
+  row.dynamic_tdee_kcal = computed.dynamic_tdee_kcal ?? null;
+  row.target_kcal = computed.target_kcal ?? null;
+  row.target_protein_g = computed.target_protein_g ?? null;
+  row.target_carbs_g = computed.target_carbs_g ?? null;
+  row.target_fat_g = computed.target_fat_g ?? null;
+  row.tmb_kcal = computed.tmb_kcal ?? null;
+  row.sleep_hours_vs_needed_pct = computed.sleep_hours_vs_needed_pct ?? null;
+  row.sleep_regularity_pct = computed.sleep_regularity_pct ?? null;
+  row.high_sleep_stress_pct = computed.high_sleep_stress_pct ?? null;
+  row.intake_kcal = computed.intake_kcal ?? null;
+  row.intake_protein_g = computed.intake_protein_g ?? null;
+  row.intake_carbs_g = computed.intake_carbs_g ?? null;
+  row.intake_fat_g = computed.intake_fat_g ?? null;
+  row.dynamic_rmssd_cap_ms = computed.dynamic_rmssd_cap_ms ?? null;
+  row.nap_sleep_min = computed.nap_sleep_min ?? null;
+  row.time_in_bed_min = computed.time_in_bed_min ?? null;
+  row.total_sleep_min = computed.total_sleep_min ?? null;
+  row.deep_sleep_min = computed.deep_sleep_min ?? null;
+  row.rem_sleep_min = computed.rem_sleep_min ?? null;
+  row.light_sleep_min = computed.light_sleep_min ?? null;
+  row.steps_net = computed.steps_net ?? 0;
+  row.session_rpe = computed.session_rpe ?? null;
+  row.z13_minutes = computed.z13_minutes ?? 0;
+  row.z45_minutes = computed.z45_minutes ?? 0;
+  row.tef_kcal = computed.tef_kcal ?? null;
+  row.empirical_tdee_kcal = computed.empirical_tdee_kcal ?? null;
+  row.pickleball_or_gym_minutes = computed.pickleball_or_gym_minutes ?? null;
+  row.steps_count = computed.steps_count ?? null;
+
+  // NUMERIC with precision/scale (22)
+  row.ln_rmssd = computed.ln_rmssd ?? null;
+  row.ln_rmssd_14d_mean = computed.ln_rmssd_14d_mean ?? null;
+  row.ln_rmssd_14d_sd = computed.ln_rmssd_14d_sd ?? null;
+  row.hrv_z_score = computed.hrv_z_score ?? null;
+  row.rhr_z_score = computed.rhr_z_score ?? null;
+  row.cardio_trimp_load = computed.cardio_trimp_load ?? null;
+  row.neuromuscular_load = computed.neuromuscular_load ?? null;
+  row.shift_orthostatic_load = computed.shift_orthostatic_load ?? null;
+  row.strain_score = computed.strain_score ?? null;
+  row.recommended_max_strain = computed.recommended_max_strain ?? null;
+  row.sleep_efficiency_pct = computed.sleep_efficiency_pct ?? null;
+  row.sleep_architecture_score = computed.sleep_architecture_score ?? null;
+  row.cumulative_sleep_debt_hours = computed.cumulative_sleep_debt_hours ?? null;
+  row.dynamic_sleep_need_hours = computed.dynamic_sleep_need_hours ?? computed.dynamic_sleep_need_h ?? null;
+  row.trend_weight_kg = computed.trend_weight_kg ?? null;
+  row.trend_body_fat_pct = computed.trend_body_fat_pct ?? null;
+  row.vo2_max_ml_kg_min = computed.vo2_max_ml_kg_min ?? null;
+  row.argon_physiological_age = computed.argon_physiological_age ?? null;
+  row.pace_of_aging_x = computed.pace_of_aging_x ?? null;
+  row.chronological_age = computed.chronological_age ?? null;
+  row.total_age_delta = computed.total_age_delta ?? null;
+
+  // NUMERIC unbounded (29)
+  row.weight_kg = computed.weight_kg ?? todayRaw.weight_kg ?? null;
+  row.body_fat_pct = computed.body_fat_pct ?? todayRaw.body_fat_pct ?? null;
+  row.fat_mass_kg = computed.fat_mass_kg ?? null;
+  row.ffm_kg = computed.ffm_kg ?? null;
+  row.ffm_pct = computed.ffm_pct ?? null;
+  row.muscle_mass_kg = computed.muscle_mass_kg ?? null;
+  row.bone_mass_kg = computed.bone_mass_kg ?? null;
+  row.water_mass_kg = computed.water_mass_kg ?? null;
+  row.bmi = computed.bmi ?? null;
+  row.rmssd_ms = computed.rmssd_ms ?? todayRaw.rmssd_ms ?? todayRaw.hrv_rmssd_ms ?? null;
+  row.rmssd_14d_mean_ms = computed.rmssd_14d_mean_ms ?? null;
+  row.rhr_bpm = computed.rhr_bpm ?? todayRaw.rhr_bpm ?? null;
+  row.rhr_14d_mean_bpm = computed.rhr_14d_mean_bpm ?? null;
+  row.resp_rate_brpm = computed.resp_rate_brpm ?? todayRaw.resp_rate_brpm ?? null;
+  row.resp_14d_mean_brpm = computed.resp_14d_mean_brpm ?? null;
+  row.spo2_pct = computed.spo2_pct ?? todayRaw.spo2_pct ?? null;
+  row.cv_lnrmssd_7d_pct = computed.cv_lnrmssd_7d_pct ?? null;
+  row.swc_lnrmssd = computed.swc_lnrmssd ?? null;
+  row.acwr_penalty_strain = computed.acwr_penalty_strain ?? null;
+  row.night_awake_shift_hours = computed.night_awake_shift_hours ?? null;
+  row.skeletal_muscle_pct = computed.skeletal_muscle_pct ?? null;
+  row.visceral_fat_index = computed.visceral_fat_index ?? null;
+  row.body_water_pct = computed.body_water_pct ?? null;
+  row.delta_vo2_years = computed.delta_vo2_years ?? computed.delta_cardio_years ?? null;
+  row.delta_rhr_years = computed.delta_rhr_years ?? computed.delta_metabolic_years ?? null;
+  row.delta_lnrmssd_years = computed.delta_lnrmssd_years ?? computed.delta_inflammatory_years ?? null;
+  row.delta_ffm_years = computed.delta_ffm_years ?? computed.delta_autonomic_years ?? null;
+  row.delta_sleep_years = computed.delta_sleep_years ?? null;
+  row.delta_act_years = computed.delta_act_years ?? null;
+
+  return row;
 }
 
 /**
@@ -765,13 +900,11 @@ export async function recomputeDailyScores(options: RecomputeOptions): Promise<{
       console.warn(`[RECOMPUTE] Missing columns for ${logDate}: ${validation.missing.join(', ')}`);
     }
 
-    // Sanitize NaN/Infinity and round integer columns
-    const sanitized = sanitizeForDb(computed as unknown as Record<string, unknown>);
+    // Map engine output to production DB row (exact Code.txt mapping)
+    const dbRow = mapEngineOutputToDbRow(computed, todayRaw, profile);
 
-    // Map engine output field names to production column names
-    if (sanitized.dynamic_sleep_need_h !== undefined && sanitized.dynamic_sleep_need_h !== null) {
-      sanitized.dynamic_sleep_need_hours = sanitized.dynamic_sleep_need_h;
-    }
+    // Sanitize NaN/Infinity and apply strict type validation
+    const sanitized = sanitizeForDb(dbRow);
 
     // Build payload: add user_id and computed_at, then filter to allowed columns LAST
     const payload = filterAllowedColumns({
