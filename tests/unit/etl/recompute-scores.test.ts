@@ -705,7 +705,7 @@ describe('recompute-scores utilities', () => {
       }
 
       expect(integerCount).toBe(29) // includes session_rpe
-      expect(numericWithPrecision).toBe(21)
+      expect(numericWithPrecision).toBe(21) // 21 columns with precision/scale (ln_rmssd, ln_rmssd_14d_mean, ln_rmssd_14d_sd, hrv_z_score, rhr_z_score, cardio_trimp_load, neuromuscular_load, shift_orthostatic_load, strain_score, recommended_max_strain, sleep_efficiency_pct, sleep_architecture_score, cumulative_sleep_debt_hours, dynamic_sleep_need_hours, trend_weight_kg, trend_body_fat_pct, vo2_max_ml_kg_min, argon_physiological_age, pace_of_aging_x, chronological_age, total_age_delta)
       expect(numericUnbounded).toBe(29)
       expect(timeCount).toBe(2)
       expect(booleanCount).toBe(4)
@@ -714,7 +714,7 @@ describe('recompute-scores utilities', () => {
       expect(uuidCount).toBe(1)
       expect(jsonbCount).toBe(2)
       expect(textCount).toBe(2)
-      // Total: 28 + 22 + 29 + 2 + 4 + 1 + 1 + 1 + 2 + 2 = 92
+      // Total: 29 + 22 + 29 + 2 + 4 + 1 + 1 + 1 + 2 + 2 = 92
     })
 
     it('should have correct spec for log_date (date)', () => {
@@ -776,7 +776,7 @@ describe('recompute-scores utilities', () => {
       const lnRmssdSpec = SCORES_COLUMN_SPECS.get('ln_rmssd')
       expect(lnRmssdSpec?.kind).toBe('numeric')
       expect(lnRmssdSpec?.precision).toBe(6)
-      expect(lnRmssdSpec?.scale).toBe(3)
+      expect(lnRmssdSpec?.scale).toBe(4) // Changed from 3 to 4 to match production numeric(6,4)
 
       const hrvZSpec = SCORES_COLUMN_SPECS.get('hrv_z_score')
       expect(hrvZSpec?.kind).toBe('numeric')
@@ -811,9 +811,9 @@ describe('recompute-scores utilities', () => {
     })
 
     describe('numeric(p,s) columns: precision/scale rounding + clamping', () => {
-      it('should round ln_rmssd to 3 decimal places and clamp 0-10', () => {
-        expect(sanitizeForDb({ ln_rmssd: 4.123456 }).ln_rmssd).toBe(4.123)
-        expect(sanitizeForDb({ ln_rmssd: 4.1235 }).ln_rmssd).toBe(4.124)
+      it('should round ln_rmssd to 4 decimal places and clamp 0-10', () => {
+        expect(sanitizeForDb({ ln_rmssd: 4.123456 }).ln_rmssd).toBe(4.1235)
+        expect(sanitizeForDb({ ln_rmssd: 4.12355 }).ln_rmssd).toBe(4.1236)
         expect(sanitizeForDb({ ln_rmssd: -1 }).ln_rmssd).toBe(0)
         expect(sanitizeForDb({ ln_rmssd: 15 }).ln_rmssd).toBe(10)
       })

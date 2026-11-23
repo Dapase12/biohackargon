@@ -148,6 +148,7 @@ export function detectNaps(
 /**
  * Compute sleep architecture score (0-100)
  * Weighted: duration 50%, regularity 25%, efficiency 15%, architecture 10%
+ * Uses default regularity (85) when not enough history - matches Code.txt behavior
  */
 export function computeSleepArchitectureScore(
   hoursVsNeededPct: number | null,
@@ -158,16 +159,19 @@ export function computeSleepArchitectureScore(
   tstMin: number,
   config: EngineConfig
 ): number | null {
-  if (hoursVsNeededPct === null || regularityPct === null || efficiencyPct === null || tstMin <= 0) {
+  if (hoursVsNeededPct === null || efficiencyPct === null || tstMin <= 0) {
     return null;
   }
+
+  // Use default regularity of 85 when not enough history (Code.txt behavior)
+  const effectiveRegularity = regularityPct ?? 85;
 
   const swsRemPct = tstMin > 0 ? ((deepMin + remMin) / tstMin) * 100 : 0;
   const effScore = (efficiencyPct / 88) * 100; // normalize to 88% baseline
 
   const archScore = Math.round(
     config.sleepArchWeights.duration * clamp(hoursVsNeededPct, 0, 100) +
-    config.sleepArchWeights.regularity * clamp(regularityPct, 0, 100) +
+    config.sleepArchWeights.regularity * clamp(effectiveRegularity, 0, 100) +
     config.sleepArchWeights.efficiency * clamp(effScore, 0, 100) +
     config.sleepArchWeights.architecture * clamp((swsRemPct / 40) * 100, 0, 100)
   );

@@ -123,12 +123,13 @@ export function computeBodyCompTrends(
 
 /**
  * Compute all body composition metrics from latest measurement
+ * Preserves raw skeletal_muscle_pct and body_water_pct when available (matching Code.txt)
  */
 export function computeBodyCompMetrics(
   input: BodyCompInput,
   profile: UserProfile,
   trends: BodyCompTrends,
-  todayRaw: RawBiometricDay // for hydration fallback
+  todayRaw: RawBiometricDay // for hydration fallback and raw body comp fields
 ): Partial<ComputedDailyScore> {
   const { weightKg, bodyFatPct, hydrationMl } = input;
 
@@ -143,11 +144,11 @@ export function computeBodyCompMetrics(
       ffm_pct: null,
       muscle_mass_kg: null,
       bone_mass_kg: null,
-      skeletal_muscle_pct: null,
+      skeletal_muscle_pct: todayRaw.skeletal_muscle_pct ?? null, // Preserve raw if available
       visceral_fat_index: null,
       tmb_kcal: null,
-      body_water_pct: null,
-      water_mass_kg: null,
+      body_water_pct: todayRaw.body_water_pct ?? null, // Preserve raw if available
+      water_mass_kg: todayRaw.water_mass_kg ?? null, // Preserve raw if available
       bmi: null,
       body_comp_score: null,
     };
@@ -159,18 +160,34 @@ export function computeBodyCompMetrics(
   const ffmPct = +((ffm / weightKg) * 100).toFixed(1);
   const muscleMass = muscleMassKg(ffm);
   const boneMass = boneMassKg(weightKg);
-  const skeletalMusclePct = +((muscleMass / weightKg) * 100).toFixed(1);
+
+  // FIX: Preserve raw skeletal_muscle_pct when available (Code.txt uses raw value 48.9, not calculated)
+  // Only calculate if raw not available
+  const skeletalMusclePct = todayRaw.skeletal_muscle_pct !== undefined && todayRaw.skeletal_muscle_pct !== null
+    ? todayRaw.skeletal_muscle_pct
+    : +((muscleMass / weightKg) * 100).toFixed(1);
+
   const visceralFat = visceralFatIndex(bodyFatPct);
   const bmiVal = bmi(weightKg, profile.height_m);
   const tmb = tdeeKatchMcArdle(ffm);
 
-  // Hydration
-  let bodyWaterPct: number | null = null;
-  let waterMass: number | null = null;
-  const hydrationMlFinal = hydrationMl ?? todayRaw.hydration_ml ?? null;
-  if (hydrationMlFinal && hydrationMlFinal > 0) {
-    bodyWaterPct = +((hydrationMlFinal / 1000 / weightKg) * 100).toFixed(1);
-    waterMass = waterMassKg(weightKg, bodyWaterPct);
+  // Hydration - preserve raw body_water_pct when available
+  let bodyWaterPct: number | null = todayRaw.body_water_pct ?? null;
+  let waterMass: number | null = todayRaw.water_mass_kg ?? null;
+
+  // If raw not available, calculate from hydration_ml
+  if (bodyWaterPct === null) {
+    const hydrationMlFinal = hydrationMl ?? todayRaw.hydration_ml ?? null;
+    if (hydrationMlFinal && hydrationMlFinal > 0) {
+      bodyWaterPct = +((hydrationMlFinal / 1000 / weightKg) * 100).toFixed(1);
+    }
+  }
+
+  // Calculate water_mass_kg using weight (trend or current) and body_water_pct
+  // Use trend_weight_kg as carry-forward weight if available, else current weight
+  const weightForWater = trends.trendWeightKg ?? weightKg;
+  if (waterMass === null && bodyWaterPct !== null && weightForWater > 0) {
+    waterMass = waterMassKg(weightForWater, bodyWaterPct);
   }
 
   // Body composition score (0-100): based on FFM%, visceral fat, BF%

@@ -153,9 +153,9 @@ export const SCORES_COLUMN_SPECS: ReadonlyMap<string, ColumnType> = new Map([
   ['steps_count', { kind: 'integer', min: 0, max: 200000 }],
 
   // 22 NUMERIC columns with precision/scale (PostgreSQL numeric(p,s))
-  ['ln_rmssd', { kind: 'numeric', precision: 6, scale: 3, min: 0, max: 10 }],
-  ['ln_rmssd_14d_mean', { kind: 'numeric', precision: 6, scale: 3, min: 0, max: 10 }],
-  ['ln_rmssd_14d_sd', { kind: 'numeric', precision: 6, scale: 3, min: 0, max: 5 }],
+  ['ln_rmssd', { kind: 'numeric', precision: 6, scale: 4, min: 0, max: 10 }],
+  ['ln_rmssd_14d_mean', { kind: 'numeric', precision: 6, scale: 4, min: 0, max: 10 }],
+  ['ln_rmssd_14d_sd', { kind: 'numeric', precision: 6, scale: 4, min: 0, max: 5 }],
   ['hrv_z_score', { kind: 'numeric', precision: 4, scale: 2, min: -10, max: 10 }],
   ['rhr_z_score', { kind: 'numeric', precision: 4, scale: 2, min: -10, max: 10 }],
   ['cardio_trimp_load', { kind: 'numeric', precision: 7, scale: 2, min: 0, max: 10000 }],

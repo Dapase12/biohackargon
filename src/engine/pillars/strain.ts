@@ -166,6 +166,7 @@ export function computeCardioTrimp(
 /**
  * Compute neuromuscular load (sRPE * workoutMin * factor)
  * Returns 0 (not null) when no workouts - matching Code.txt behavior
+ * Handles undefined min/rpe to prevent NaN cascade
  */
 export function computeNeuroLoad(
   todayRaw: RawBiometricDay,
@@ -177,8 +178,10 @@ export function computeNeuroLoad(
   let totalNeuroLoad = 0;
   for (const w of workouts) {
     const rpe = w.rpe ?? todayRaw.session_rpe ?? 5;
-    const min = w.min;
-    totalNeuroLoad += config.neuroLoadFactor * rpe * min;
+    const min = w.min ?? 0; // FIX: default to 0 to prevent NaN when min is undefined
+    if (min > 0 && rpe > 0) {
+      totalNeuroLoad += config.neuroLoadFactor * rpe * min;
+    }
   }
   return totalNeuroLoad;
 }

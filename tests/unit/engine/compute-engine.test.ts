@@ -238,3 +238,234 @@ describe('Compute Engine - Empty/Edge Cases', () => {
     expect(validation.missing).toContain('recovery_score');
   });
 });
+
+describe('Compute Engine - Regression Test: 2026-11-22 Real Production Data', () => {
+  // Real production data from 2026-11-22 that previously had 4 failure blocks:
+  // Block 1: neuromuscular_load NaN cascade
+  // Block 2: Negative TDEE/macros
+  // Block 3: Body comp (skeletal_muscle_pct calculated vs raw, body_water_pct/water_mass_kg null)
+  // Block 4: sleep_architecture_score null, steps_count null, ln_rmssd precision
+
+  const PROFILE_2026_11_22: UserProfile = {
+    birth: '1997-11-12',
+    height_m: 1.73,
+    timezone: 'America/Caracas',
+    basalSleepNeedH: 7.5,
+    habitualWake: '06:30',
+    dailyDeficitKcal: 500,
+    biologicalSex: 'male',
+    chronologicalAgeYears: 28,
+  };
+
+  const CONFIG: EngineConfig = { ...DEFAULT_ENGINE_CONFIG };
+
+  // Create 14 days of history for rolling window calculations
+  function createHistoryForRegression(): HistoryDay[] {
+    const baseDate = new Date('2026-11-22');
+    const history: HistoryDay[] = [];
+
+    for (let i = 1; i <= 14; i++) {
+      const date = new Date(baseDate.getTime() - i * 86400000);
+      const logDate = date.toISOString().split('T')[0];
+
+      history.push({
+        log_date: logDate,
+        rmssd_ms: 80 + Math.random() * 10,
+        rhr_bpm: 58 + Math.random() * 4,
+        total_sleep_min: 400 + Math.random() * 50,
+        deep_sleep_min: 80 + Math.random() * 20,
+        rem_sleep_min: 90 + Math.random() * 20,
+        light_sleep_min: 200 + Math.random() * 30,
+        awake_sleep_min: 20,
+        sleep_efficiency_pct: 85 + Math.random() * 10,
+        time_in_bed_min: 480,
+        steps: 7000 + Math.random() * 2000,
+        weight_kg: 85.5 + (Math.random() - 0.5) * 1,
+        body_fat_pct: 18 + Math.random() * 2,
+        body_water_pct: 54.6,
+        water_mass_kg: 46.7,
+        vo2_max_ml_kg_min: 48.5,
+        hr_zones_minutes: {
+          z1_minutes: 20,
+          z2_minutes: 30,
+          z3_minutes: 15,
+          z4_minutes: 10,
+          z5_minutes: 5,
+          real: false,
+          workouts: [],
+        },
+        strain_score: 8 + Math.random() * 3,
+      });
+    }
+    return history;
+  }
+
+  function createRawDay20261122(): RawBiometricDay {
+    return {
+      log_date: '2026-11-22',
+      rmssd_ms: 88,
+      rhr_bpm: null, // Missing RHR - tests recovery defaults
+      total_sleep_min: 424,
+      deep_sleep_min: 84,
+      rem_sleep_min: 104,
+      light_sleep_min: 236,
+      awake_sleep_min: 5,
+      sleep_efficiency_pct: 98.8,
+      time_in_bed_min: 429,
+      steps: 7420, // Should produce steps_count = 7420 (not null)
+      intake_kcal: 2100,
+      intake_protein_g: 165,
+      intake_carbs_g: 220,
+      intake_fat_g: 73,
+      weight_kg: 85.95,
+      body_fat_pct: 18.2,
+      skeletal_muscle_pct: 48.9, // Raw value - should be preserved (not calculated 73.5)
+      body_water_pct: 54.6, // Raw value - should be preserved
+      water_mass_kg: 46.9, // Should be calculated from trend weight * body_water_pct
+      hydration_ml: 3000,
+      resp_rate_brpm: 16,
+      spo2_pct: 97,
+      session_rpe: 0, // Zero RPE - should not cause NaN
+      pickleball_or_gym_minutes: 161,
+      hr_zones_minutes: {
+        z1_minutes: 91.2,
+        z2_minutes: 30,
+        z3_minutes: 28,
+        z4_minutes: 8,
+        z5_minutes: 0,
+        real: true,
+        workouts: [
+          { id: 'w1', type: 'pickleball', min: 161, rpe: 0, start_ms: 0, end_ms: 0 }
+        ],
+      },
+      is_hospital_shift: false,
+      night_awake_shift_hours: 0,
+    };
+  }
+
+  function createPrevComputed20261122(): PrevComputed {
+    return {
+      log_date: '2026-11-21',
+      trend_weight_kg: 85.8,
+      trend_body_fat_pct: 18.3,
+      rmssd_ms: 85,
+      rhr_bpm: 58,
+      resp_rate_brpm: 15.8,
+      body_water_pct: 54.5,
+      water_mass_kg: 46.8,
+      vo2_max_ml_kg_min: 48.4,
+      strain_score: 8.5,
+      total_sleep_min: 430,
+      recovery_score: 72,
+      dynamic_sleep_need_hours: 7.8,
+      ln_rmssd: 4.44,
+      ln_rmssd_14d_mean: 4.42,
+      ln_rmssd_14d_sd: 0.08,
+      hrv_z_score: 0.3,
+      rhr_z_score: -0.2,
+      sleep_regularity_pct: 82,
+      cumulative_sleep_debt_hours: 1.2,
+      hrv_mode: 'night',
+    };
+  }
+
+  it('should compute all fields correctly for 2026-11-22 (no NaN, no negative, no null for key fields)', () => {
+    const todayRaw = createRawDay20261122();
+    const historyRaw = createHistoryForRegression();
+    const prevComputed = createPrevComputed20261122();
+
+    const input = {
+      todayRaw,
+      historyRaw,
+      prevComputed,
+      profile: PROFILE_2026_11_22,
+      config: CONFIG,
+    };
+
+    const result = computeEngine(input);
+
+    // ========================================================================
+    // Block 1: neuromuscular_load NaN cascade
+    // ========================================================================
+    expect(result.neuromuscular_load).not.toBeNaN();
+    expect(result.neuromuscular_load).toBeGreaterThanOrEqual(0);
+    expect(typeof result.neuromuscular_load).toBe('number');
+
+    // ========================================================================
+    // Block 2: Negative TDEE/macros
+    // ========================================================================
+    expect(result.dynamic_tdee_kcal).not.toBeNull();
+    expect(result.dynamic_tdee_kcal).toBeGreaterThan(1200); // Reasonable minimum
+    expect(result.empirical_tdee_kcal).toBeGreaterThanOrEqual(0); // Can be 0 if no intake
+    expect(result.target_kcal).not.toBeNull();
+    expect(result.target_kcal).toBeGreaterThan(1000);
+    expect(result.target_fat_g).not.toBeNull();
+    expect(result.target_fat_g).toBeGreaterThan(0);
+    expect(result.target_protein_g).not.toBeNull();
+    expect(result.target_protein_g).toBeGreaterThan(0);
+    expect(result.target_carbs_g).not.toBeNull();
+    expect(result.target_carbs_g).toBeGreaterThanOrEqual(0);
+
+    // Verify Code.txt 2026-11-20 reference values (approximate)
+    // tmb_kcal: 1780, empirical_tdee_kcal: 2200, dynamic_tdee_kcal: 2200, target_kcal: 2200, target_fat_g: 73
+    expect(result.tmb_kcal).toBeGreaterThan(1500);
+    expect(result.tmb_kcal).toBeLessThan(2200);
+
+    // ========================================================================
+    // Block 3: Body comp - preserve raw values
+    // ========================================================================
+    // skeletal_muscle_pct should preserve raw 48.9, not calculate 73.5
+    expect(result.skeletal_muscle_pct).not.toBeNull();
+    expect(result.skeletal_muscle_pct).toBe(48.9); // Raw value preserved
+    expect(result.skeletal_muscle_pct).toBeLessThan(60); // Not clamped
+
+    // body_water_pct should preserve raw 54.6
+    expect(result.body_water_pct).not.toBeNull();
+    expect(result.body_water_pct).toBe(54.6);
+
+    // water_mass_kg should be calculated from trend_weight * body_water_pct
+    // trend_weight ~85.8 * 0.546 = 46.8
+    expect(result.water_mass_kg).not.toBeNull();
+    expect(result.water_mass_kg).toBeGreaterThan(45);
+    expect(result.water_mass_kg).toBeLessThan(50);
+
+    // ========================================================================
+    // Block 4: Sleep issues
+    // ========================================================================
+    // sleep_architecture_score should be computed (not null) despite missing regularity history
+    expect(result.sleep_architecture_score).not.toBeNull();
+    expect(result.sleep_architecture_score).toBeGreaterThan(0);
+    expect(result.sleep_architecture_score).toBeLessThanOrEqual(100);
+
+    // steps_count should be 7420 (not null)
+    expect(result.steps_count).toBe(7420);
+
+    // ln_rmssd should be a valid finite number (sanitization to 4 decimals happens in recompute-scores.ts)
+    expect(result.ln_rmssd).not.toBeNull();
+    expect(typeof result.ln_rmssd).toBe('number');
+    expect(Number.isFinite(result.ln_rmssd)).toBe(true);
+    expect(result.ln_rmssd).toBeGreaterThan(0);
+    expect(result.ln_rmssd).toBeLessThan(10);
+
+    // optimal_bedtime_start/end should be valid times (not "NaN:NaN")
+    expect(result.optimal_bedtime_start).not.toBeNull();
+    expect(result.optimal_bedtime_end).not.toBeNull();
+    expect(result.optimal_bedtime_start).not.toContain('NaN');
+    expect(result.optimal_bedtime_end).not.toContain('NaN');
+    expect(result.optimal_bedtime_start).toMatch(/^\d{2}:\d{2}/);
+    expect(result.optimal_bedtime_end).toMatch(/^\d{2}:\d{2}/);
+
+    // clinical_coach_notes should be generated
+    expect(result.clinical_coach_notes).not.toBeNull();
+    expect(result.clinical_coach_notes).toContain('Recuperación');
+    expect(result.clinical_coach_notes).toContain('Strain hoy');
+    expect(result.clinical_coach_notes).toContain('Acuéstate entre');
+
+    // ========================================================================
+    // General validation
+    // ========================================================================
+    const validation = validateComputedOutput(result);
+    expect(validation.valid).toBe(true);
+    expect(validation.missing).toEqual([]);
+  });
+});

@@ -302,8 +302,8 @@ export const computeEngine: ComputeEngineFn = (input: ComputeEngineInput): Compu
     // Sleep aliases
     dynamic_sleep_need_hours: sleep.dynamic_sleep_need_h ?? null,
 
-    // Activity fields from todayRaw
-    steps_count: todayRaw.steps ?? null,
+    // Activity fields from todayRaw - steps_count should be 0 (not null) when no steps - matching Code.txt
+    steps_count: todayRaw.steps ?? 0,
     pickleball_or_gym_minutes: todayRaw.pickleball_or_gym_minutes ?? null,
     session_rpe: todayRaw.session_rpe ?? null,
     is_hospital_shift: todayRaw.is_hospital_shift ?? false,
