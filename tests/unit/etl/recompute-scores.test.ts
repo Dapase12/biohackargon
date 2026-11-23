@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { INTEGER_SCORES_COLUMNS } from '@/etl/recompute-scores'
 
 // ============================================================================
 // TEST UTILITIES (copied from setup for isolated testing)
@@ -474,33 +475,6 @@ describe('recompute-scores utilities', () => {
   })
 
   describe('integer column rounding', () => {
-    const INTEGER_COLUMNS = new Set<string>([
-      'recovery_score',
-      'dynamic_tdee_kcal',
-      'target_kcal',
-      'target_protein_g',
-      'target_carbs_g',
-      'target_fat_g',
-      'tmb_kcal',
-      'sleep_hours_vs_needed_pct',
-      'sleep_regularity_pct',
-      'high_sleep_stress_pct',
-      'intake_kcal',
-      'nap_sleep_min',
-      'time_in_bed_min',
-      'total_sleep_min',
-      'deep_sleep_min',
-      'rem_sleep_min',
-      'light_sleep_min',
-      'steps_net',
-      'z13_minutes',
-      'z45_minutes',
-      'tef_kcal',
-      'empirical_tdee_kcal',
-      'pickleball_or_gym_minutes',
-      'steps_count',
-    ])
-
     function sanitizeForDbWithRounding(obj: Record<string, unknown>): Record<string, unknown> {
       const result: Record<string, unknown> = {}
       for (const [key, value] of Object.entries(obj)) {
@@ -517,9 +491,9 @@ describe('recompute-scores utilities', () => {
           result[key] = value
         }
       }
-      // Round integer columns if they have decimals
+      // Round integer columns if they have decimals (uses production INTEGER_SCORES_COLUMNS)
       for (const [key, value] of Object.entries(result)) {
-        if (INTEGER_COLUMNS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
+        if (INTEGER_SCORES_COLUMNS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
           result[key] = Math.round(value)
         }
       }
@@ -539,6 +513,24 @@ describe('recompute-scores utilities', () => {
       expect(result.recovery_score).toBe(86)
     })
 
+    it('should round dynamic_rmssd_cap_ms from 139.96 to 140', () => {
+      const input = { dynamic_rmssd_cap_ms: 139.96513755080673 }
+      const result = sanitizeForDbWithRounding(input)
+      expect(result.dynamic_rmssd_cap_ms).toBe(140)
+    })
+
+    it('should round intake_protein_g, intake_carbs_g, intake_fat_g', () => {
+      const input = {
+        intake_protein_g: 149.7,
+        intake_carbs_g: 250.3,
+        intake_fat_g: 79.8,
+      }
+      const result = sanitizeForDbWithRounding(input)
+      expect(result.intake_protein_g).toBe(150)
+      expect(result.intake_carbs_g).toBe(250)
+      expect(result.intake_fat_g).toBe(80)
+    })
+
     it('should round multiple integer columns', () => {
       const input = {
         recovery_score: 85.7,
@@ -554,6 +546,10 @@ describe('recompute-scores utilities', () => {
         sleep_regularity_pct: 87.3,
         high_sleep_stress_pct: 12.7,
         intake_kcal: 2100.9,
+        intake_protein_g: 149.7,
+        intake_carbs_g: 250.3,
+        intake_fat_g: 79.8,
+        dynamic_rmssd_cap_ms: 139.96,
         nap_sleep_min: 30.5,
         time_in_bed_min: 480.2,
         total_sleep_min: 420.8,
@@ -580,6 +576,10 @@ describe('recompute-scores utilities', () => {
       expect(result.sleep_regularity_pct).toBe(87)
       expect(result.high_sleep_stress_pct).toBe(13)
       expect(result.intake_kcal).toBe(2101)
+      expect(result.intake_protein_g).toBe(150)
+      expect(result.intake_carbs_g).toBe(250)
+      expect(result.intake_fat_g).toBe(80)
+      expect(result.dynamic_rmssd_cap_ms).toBe(140)
       expect(result.nap_sleep_min).toBe(31)
       expect(result.time_in_bed_min).toBe(480)
       expect(result.total_sleep_min).toBe(421)
@@ -620,10 +620,11 @@ describe('recompute-scores utilities', () => {
     })
 
     it('should handle NaN in integer columns (convert to null)', () => {
-      const input = { recovery_score: NaN, z13_minutes: NaN }
+      const input = { recovery_score: NaN, z13_minutes: NaN, dynamic_rmssd_cap_ms: NaN }
       const result = sanitizeForDbWithRounding(input)
       expect(result.recovery_score).toBeNull()
       expect(result.z13_minutes).toBeNull()
+      expect(result.dynamic_rmssd_cap_ms).toBeNull()
     })
   })
 

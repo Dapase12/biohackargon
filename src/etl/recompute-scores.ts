@@ -107,7 +107,8 @@ const ALLOWED_SCORES_COLUMNS = new Set<string>([
 // ========================================================================
 
 // Integer columns in computed_daily_scores that must be rounded (not truncated)
-const INTEGER_COLUMNS = new Set<string>([
+// Matches production schema: these are integer type in computed_daily_scores
+export const INTEGER_SCORES_COLUMNS = new Set<string>([
   'recovery_score',
   'dynamic_tdee_kcal',
   'target_kcal',
@@ -119,6 +120,10 @@ const INTEGER_COLUMNS = new Set<string>([
   'sleep_regularity_pct',
   'high_sleep_stress_pct',
   'intake_kcal',
+  'intake_protein_g',
+  'intake_carbs_g',
+  'intake_fat_g',
+  'dynamic_rmssd_cap_ms',
   'nap_sleep_min',
   'time_in_bed_min',
   'total_sleep_min',
@@ -156,7 +161,7 @@ function sanitizeForDb(obj: Record<string, unknown>): Record<string, unknown> {
   }
   // Round integer columns if they have decimals
   for (const [key, value] of Object.entries(result)) {
-    if (INTEGER_COLUMNS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
+    if (INTEGER_SCORES_COLUMNS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
       result[key] = Math.round(value);
     }
   }
