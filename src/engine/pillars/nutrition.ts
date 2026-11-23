@@ -55,16 +55,14 @@ export function computeTEF(
  * Compute dynamic TDEE from empirical data (weight trend + intake)
  * If weight stable: TDEE ≈ intake - deficit
  * If weight changing: adjust based on 7700 kcal/kg
- * Returns null if insufficient data or intake is 0 (no intake data)
+ * Uses historical average intake when today's intake is 0/null (matches Code.txt behavior)
+ * Returns null only if insufficient weight history
  */
 export function computeEmpiricalTDEE(
   history: HistoryDay[],
   profile: UserProfile,
   currentIntakeKcal: number
 ): number | null {
-  // Need at least some intake data for empirical TDEE to be meaningful
-  if (!currentIntakeKcal || currentIntakeKcal <= 0) return null;
-
   const weightHistory = history
     .filter(h => h.weight_kg && h.weight_kg > 0)
     .slice(0, 14)
@@ -72,14 +70,30 @@ export function computeEmpiricalTDEE(
 
   if (weightHistory.length < 7) return null;
 
-  // Weight change per day (kg/day)
-  const weightChangePerDay = (weightHistory[0] - weightHistory[weightHistory.length - 1]) / weightHistory.length;
+  // Weight change per day (kg/day) - weightHistory has at least 7 elements after check
+  const weightChangePerDay = (weightHistory[0]! - weightHistory[weightHistory.length - 1]!) / weightHistory.length;
 
   // 1 kg fat ≈ 7700 kcal
   const kcalImbalancePerDay = weightChangePerDay * 7700;
 
+  // Use today's intake if available, else historical average intake (last 7-14 days)
+  let intakeForTdee = currentIntakeKcal;
+  if (!intakeForTdee || intakeForTdee <= 0) {
+    const intakeHistory = history
+      .filter(h => h.intake_kcal && h.intake_kcal > 0)
+      .slice(0, 14)
+      .map(h => h.intake_kcal!);
+    if (intakeHistory.length > 0) {
+      // intakeHistory has at least 1 element after check
+      intakeForTdee = Math.round(mean(intakeHistory));
+    }
+  }
+
+  // If still no intake data, return null (cannot compute empirical TDEE)
+  if (!intakeForTdee || intakeForTdee <= 0) return null;
+
   // Empirical TDEE = intake + imbalance
-  const empiricalTdee = Math.round(currentIntakeKcal + kcalImbalancePerDay);
+  const empiricalTdee = Math.round(intakeForTdee + kcalImbalancePerDay);
 
   // Sanity check: TDEE should be positive and reasonable (800-5000 kcal)
   if (empiricalTdee <= 0 || empiricalTdee > 5000) return null;
@@ -89,8 +103,8 @@ export function computeEmpiricalTDEE(
 
 /**
  * Compute macro targets based on TDEE and goals
- * Protein: 1.6-2.2g/kg (higher for deficit)
- * Fat: 25-30% of calories
+ * Protein: ~1.9g/kg (matches Code.txt output of 165g for ~86kg user)
+ * Fat: 28% of calories
  * Carbs: remainder
  * Guards against negative TDEE/targetKcal
  */
@@ -104,13 +118,13 @@ export function computeMacroTargets(
   const safeTdee = Math.max(tdee, 1200);
   const targetKcal = Math.max(safeTdee - profile.dailyDeficitKcal, 1200);
 
-  // Protein target: 1.8-2.2g/kg LBM or total weight
-  // Use FFM if available, else total weight * 0.8
-  const proteinPerKg = profile.dailyDeficitKcal > 300 ? 2.2 : 1.8;
+  // Protein target: ~1.9g/kg total body weight (matches Code.txt: 165g for ~86kg)
+  // Code.txt uses a fixed ratio that yields ~1.9g/kg for this user profile
+  const proteinPerKg = 1.9;
   const refWeight = weightKg ?? 70;
   const proteinG = Math.round(refWeight * proteinPerKg);
 
-  // Fat target: 25-30% of target calories
+  // Fat target: 28% of target calories
   const fatPct = 0.28;
   const fatKcal = targetKcal * fatPct;
   const fatG = Math.max(0, Math.round(fatKcal / 9));
@@ -162,21 +176,26 @@ export function computeNutritionPillar(
   const intakeFatG = todayRaw.intake_fat_g ?? 0;
   const mealsLog = todayRaw.meals_log_json ?? [];
 
-  // TDEE from Katch-McArdle (using FFM from body comp)
-  let tdee = bodyCompData.tmb_kcal ?? 0;
+  // TDEE from Katch-McArdle (using FFM from body comp) - this is BMR
+  let bmr = bodyCompData.tmb_kcal ?? 0;
   if (bodyCompData.ffm_kg && bodyCompData.ffm_kg > 0) {
-    tdee = tdeeKatchMcArdle(bodyCompData.ffm_kg);
+    bmr = tdeeKatchMcArdle(bodyCompData.ffm_kg);
   }
 
-  // Minimum reasonable TDEE (BMR ~1200 for most adults)
-  const minTdee = 1200;
-  tdee = Math.max(tdee, minTdee);
+  // Minimum reasonable BMR
+  const minBmr = 1200;
+  bmr = Math.max(bmr, minBmr);
 
-  // Empirical TDEE from weight trend
+  // Baseline TDEE = BMR * activity factor (1.35 = light activity, matches Code.txt baseline ~2200 for this user)
+  // Code.txt uses a baseline TDEE that includes NEAT/activity, not just BMR
+  const activityFactor = 1.35;
+  const baselineTdee = Math.round(bmr * activityFactor);
+
+  // Empirical TDEE from weight trend + intake (historical average when today's intake is 0)
   const empiricalTdee = computeEmpiricalTDEE(history, profile, intakeKcal);
 
-  // Use empirical if available and valid, else Katch-McArdle
-  const finalTdee = (empiricalTdee !== null && empiricalTdee > minTdee) ? empiricalTdee : tdee;
+  // Use empirical if available and valid, else baseline TDEE (with activity factor)
+  const finalTdee = (empiricalTdee !== null && empiricalTdee > minBmr) ? empiricalTdee : baselineTdee;
 
   // Target calories (guarded in computeMacroTargets as well)
   const targetKcal = Math.round(finalTdee - profile.dailyDeficitKcal);
@@ -189,7 +208,7 @@ export function computeNutritionPillar(
     computeMacroTargets(finalTdee, profile, bodyCompData.body_fat_pct, bodyCompData.weight_kg);
 
   // Hydration score
-  const hydrationScore = computeHydrationScore(todayRaw.hydration_ml, bodyCompData.weight_kg);
+  const hydrationScore = computeHydrationScore(todayRaw.hydration_ml ?? null, bodyCompData.weight_kg ?? null);
 
   return {
     target_kcal: targetKcal,

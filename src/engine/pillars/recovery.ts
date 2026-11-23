@@ -25,6 +25,11 @@ import {
   recoveryFromPillars,
 } from '@/engine/utils';
 
+interface PillarResult<T extends Partial<ComputedDailyScore>> {
+  data: T;
+  recoveryScore: number | null;
+}
+
 /**
  * Compute HRV pillar metrics
  */
@@ -33,7 +38,7 @@ export function computeHRVPillar(
   history: HistoryDay[],
   config: EngineConfig,
   prevComputed: PrevComputed | null
-): Partial<ComputedDailyScore> {
+): PillarResult<Partial<ComputedDailyScore>> {
   const todayRmssd = todayRaw.rmssd_ms ?? todayRaw.hrv_rmssd_ms;
 
   // Need at least 7 valid HRV days for calibration
@@ -42,18 +47,21 @@ export function computeHRVPillar(
 
   if (!todayRmssd || todayRmssd <= 0) {
     return {
-      hrv_missing: true,
-      calibrating: isCalibrating,
-      ln_rmssd: null,
-      ln_rmssd_14d_mean: null,
-      ln_rmssd_14d_sd: null,
-      hrv_z_score: null,
-      hrv_swc: null,
-      hrv_baseline_rmssd: null,
-      hrv_7d_avg_rmssd: null,
-      hrv_14d_avg_rmssd: null,
-      dynamic_rmssd_cap_ms: null,
-      cv_lnrmssd_7d_pct: null,
+      data: {
+        hrv_missing: true,
+        calibrating: isCalibrating,
+        ln_rmssd: null,
+        ln_rmssd_14d_mean: null,
+        ln_rmssd_14d_sd: null,
+        hrv_z_score: null,
+        hrv_swc: null,
+        hrv_baseline_rmssd: null,
+        hrv_7d_avg_rmssd: null,
+        hrv_14d_avg_rmssd: null,
+        dynamic_rmssd_cap_ms: null,
+        cv_lnrmssd_7d_pct: null,
+      },
+      recoveryScore: null,
     };
   }
 
@@ -95,70 +103,69 @@ export function computeHRVPillar(
   const hrvRecoveryScore = clamp(50 + hrvZ * 16.67, 0, 100);
 
   return {
-    hrv_missing: false,
-    calibrating: isCalibrating,
-    ln_rmssd: todayLn,
-    ln_rmssd_14d_mean: ln14Mean,
-    ln_rmssd_14d_sd: ln14Sd,
-    hrv_z_score: hrvZ,
-    hrv_swc: swc,
-    hrv_baseline_rmssd: rms14dAvg,
-    hrv_7d_avg_rmssd: rms7dAvg,
-    hrv_14d_avg_rmssd: rms14dAvg,
-    dynamic_rmssd_cap_ms: dynamicCap,
-    cv_lnrmssd_7d_pct: cvLn7d,
-    // Store for final recovery computation
-    _hrvRecoveryScore: hrvRecoveryScore,
-  } as Partial<ComputedDailyScore> & { _hrvRecoveryScore: number };
+    data: {
+      hrv_missing: false,
+      calibrating: isCalibrating,
+      ln_rmssd: todayLn,
+      ln_rmssd_14d_mean: ln14Mean,
+      ln_rmssd_14d_sd: ln14Sd,
+      hrv_z_score: hrvZ,
+      hrv_swc: swc,
+      hrv_baseline_rmssd: rms14dAvg,
+      hrv_7d_avg_rmssd: rms7dAvg,
+      hrv_14d_avg_rmssd: rms14dAvg,
+      dynamic_rmssd_cap_ms: dynamicCap,
+      cv_lnrmssd_7d_pct: cvLn7d,
+    },
+    recoveryScore: hrvRecoveryScore,
+  };
 }
 
 /**
  * Compute RHR pillar metrics
+ * Matches Code.txt: meanRhr computed from 14-day history regardless of today's RHR availability
  */
 export function computeRHRPillar(
   todayRaw: RawBiometricDay,
   history: HistoryDay[],
   config: EngineConfig
-): Partial<ComputedDailyScore> {
+): PillarResult<Partial<ComputedDailyScore>> {
   const todayRhr = todayRaw.rhr_bpm;
 
   const validRhrHistory = history.filter(h => h.rhr_bpm && h.rhr_bpm > 0);
 
-  if (!todayRhr || todayRhr <= 0) {
-    return {
-      rhr_bpm: null,
-      rhr_14d_mean_bpm: null,
-      rhr_z_score: null,
-      rhr_baseline: null,
-      rhr_7d_avg: null,
-      _rhrRecoveryScore: null,
-    };
-  }
-
+  // Compute 14-day mean from history (Code.txt behavior: meanRhr from histRhr)
   const rhr14 = validRhrHistory.slice(0, 14).map(h => h.rhr_bpm!);
-  const rhr14Mean = mean(rhr14);
-  const rhr14Sd = sd(rhr14);
+  const rhr14Mean = rhr14.length > 0 ? mean(rhr14) : null;
+  const rhr14Sd = rhr14.length > 1 ? sd(rhr14) : 0;
 
   const rhr7 = validRhrHistory.slice(0, 7).map(h => h.rhr_bpm!);
-  const rhr7Mean = mean(rhr7);
+  const rhr7Mean = rhr7.length > 0 ? mean(rhr7) : null;
 
   let rhrZ = 0;
-  if (rhr14Sd > 0) {
-    // Lower RHR is better, so invert: (today - mean) / sd
-    rhrZ = clamp((todayRhr - rhr14Mean) / rhr14Sd, -3, 3);
+  let rhrRecoveryScore: number | null = null;
+  let todayRhrOut: number | null = null;
+
+  if (todayRhr && todayRhr > 0) {
+    todayRhrOut = todayRhr;
+    if (rhr14Sd > 0 && rhr14Mean !== null) {
+      // Lower RHR is better, so invert: (today - mean) / sd
+      rhrZ = clamp((todayRhr - rhr14Mean) / rhr14Sd, -3, 3);
+    }
+    // RHR recovery score: 50 - z * 16.67 (inverted because lower RHR = better)
+    rhrRecoveryScore = clamp(50 - rhrZ * 16.67, 0, 100);
   }
 
-  // RHR recovery score: 50 - z * 16.67 (inverted because lower RHR = better)
-  const rhrRecoveryScore = clamp(50 - rhrZ * 16.67, 0, 100);
-
   return {
-    rhr_bpm: todayRhr,
-    rhr_14d_mean_bpm: rhr14Mean,
-    rhr_z_score: rhrZ,
-    rhr_baseline: rhr14Mean,
-    rhr_7d_avg: rhr7Mean,
-    _rhrRecoveryScore: rhrRecoveryScore,
-  } as Partial<ComputedDailyScore> & { _rhrRecoveryScore: number };
+    data: {
+      rhr_bpm: todayRhrOut,
+      rhr_14d_mean_bpm: rhr14Mean,
+      rhr_z_score: rhrZ,
+      rhr_baseline: rhr14Mean,
+      rhr_7d_avg: rhr7Mean,
+    },
+    recoveryScore: rhrRecoveryScore,
+  };
 }
 
 /**
@@ -169,7 +176,7 @@ export function computeSleepPillar(
   history: HistoryDay[],
   config: EngineConfig,
   profile: UserProfile
-): Partial<ComputedDailyScore> {
+): PillarResult<Partial<ComputedDailyScore>> {
   const tstMin = todayRaw.total_sleep_min ?? 0;
   const napMin = todayRaw.naps_total_min ?? 0;
   const deepMin = todayRaw.deep_sleep_min ?? 0;
@@ -252,26 +259,28 @@ export function computeSleepPillar(
   }
 
   return {
-    sleep_missing: sleepMissing,
-    time_in_bed_min: tibMin || null,
-    total_sleep_min: tstMin || null,
-    deep_sleep_min: deepMin || null,
-    rem_sleep_min: remMin || null,
-    light_sleep_min: lightMin || null,
-    sleep_efficiency_pct: efficiency || null,
-    sleep_onset_latency_min: todayRaw.sleep_onset_latency_min ?? null,
-    nap_sleep_min: napMin || null,
-    sleep_hours_vs_needed_pct: hoursVsNeededPct,
-    sleep_regularity_pct: sleepRegularityPct,
-    high_sleep_stress_pct: highSleepStressPct,
-    sleep_architecture_score: sleepArchitectureScore,
-    sleep_debt_h: sleepDebtH,
-    dynamic_sleep_need_h: dynamicNeedH,
-    optimal_bedtime_start: optimalBedtimeStart,
-    optimal_bedtime_end: optimalBedtimeEnd,
-    cumulative_sleep_debt_hours: sleepDebtH,
-    _sleepRecoveryScore: sleepRecoveryScore,
-  } as Partial<ComputedDailyScore> & { _sleepRecoveryScore: number };
+    data: {
+      sleep_missing: sleepMissing,
+      time_in_bed_min: tibMin || null,
+      total_sleep_min: tstMin || null,
+      deep_sleep_min: deepMin || null,
+      rem_sleep_min: remMin || null,
+      light_sleep_min: lightMin || null,
+      sleep_efficiency_pct: efficiency || null,
+      sleep_onset_latency_min: todayRaw.sleep_onset_latency_min ?? null,
+      nap_sleep_min: napMin || null,
+      sleep_hours_vs_needed_pct: hoursVsNeededPct,
+      sleep_regularity_pct: sleepRegularityPct,
+      high_sleep_stress_pct: highSleepStressPct,
+      sleep_architecture_score: sleepArchitectureScore,
+      sleep_debt_h: sleepDebtH,
+      dynamic_sleep_need_h: dynamicNeedH,
+      optimal_bedtime_start: optimalBedtimeStart,
+      optimal_bedtime_end: optimalBedtimeEnd,
+      cumulative_sleep_debt_hours: sleepDebtH,
+    },
+    recoveryScore: sleepRecoveryScore,
+  };
 }
 
 /**
@@ -355,26 +364,21 @@ export function computeRecoveryPillar(
   const sleep = computeSleepPillar(todayRaw, history, config, profile);
 
   const recovery = computeRecoveryScore(
-    hrv._hrvRecoveryScore,
-    rhr._rhrRecoveryScore,
-    sleep._sleepRecoveryScore,
+    hrv.recoveryScore,
+    rhr.recoveryScore,
+    sleep.recoveryScore,
     todayRaw,
     config,
-    hrv.calibrating ?? true,
-    hrv.hrv_z_score ?? 0,      // hrvZ (0 when missing, matching Code.txt)
-    rhr.rhr_z_score ?? 0,       // rhrZ (0 when missing, matching Code.txt)
-    sleep.sleep_architecture_score ?? null // sleepArchScore
+    hrv.data.calibrating ?? true,
+    hrv.data.hrv_z_score ?? 0,      // hrvZ (0 when missing, matching Code.txt)
+    rhr.data.rhr_z_score ?? 0,       // rhrZ (0 when missing, matching Code.txt)
+    sleep.data.sleep_architecture_score ?? null // sleepArchScore
   );
 
-  // Clean up internal fields
-  const { _hrvRecoveryScore, _rhrRecoveryScore, _sleepRecoveryScore, ...hrvClean } = hrv;
-  const { _hrvRecoveryScore: _, _rhrRecoveryScore: __, _sleepRecoveryScore: ___, ...rhrClean } = rhr;
-  const { _hrvRecoveryScore: ____, _rhrRecoveryScore: _____, _sleepRecoveryScore: ______, ...sleepClean } = sleep;
-
   return {
-    ...hrvClean,
-    ...rhrClean,
-    ...sleepClean,
+    ...hrv.data,
+    ...rhr.data,
+    ...sleep.data,
     ...recovery,
     readiness_score: recovery.recovery_score, // alias for compatibility
   };

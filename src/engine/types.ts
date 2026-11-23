@@ -297,6 +297,7 @@ export interface ComputedDailyScore {
   intake_fat_g: number | null;
   tef_kcal: number | null;
   empirical_tdee_kcal: number | null;
+  dynamic_tdee_kcal: number | null;
   target_protein_g: number | null;
   target_carbs_g: number | null;
   target_fat_g: number | null;
@@ -325,6 +326,8 @@ export interface ComputedDailyScore {
   total_age_delta: number | null;
   vo2_max_ml_kg_min: number | null;
   delta_cardio_years: number | null;
+  delta_vo2_years: number | null;
+  delta_rhr_years: number | null;
   delta_metabolic_years: number | null;
   delta_inflammatory_years: number | null;
   delta_autonomic_years: number | null;

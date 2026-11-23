@@ -184,12 +184,45 @@ async function fetchUserProfile(userId: string): Promise<UserEtlProfile> {
 // DATE UTILITIES
 // ========================================================================
 
+// Timezone for date calculations (America/Caracas = UTC-4)
+const CARACAS_TIMEZONE = 'America/Caracas';
+
 function formatDate(date: Date): string {
-  // Use UTC to ensure consistent date strings regardless of local timezone
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
+  // Use America/Caracas timezone to ensure consistent date strings matching user's local date
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CARACAS_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find(p => p.type === 'year')!.value;
+  const month = parts.find(p => p.type === 'month')!.value;
+  const day = parts.find(p => p.type === 'day')!.value;
   return `${year}-${month}-${day}`;
+}
+
+function getCaracasNow(): Date {
+  // Returns current date/time in America/Caracas timezone
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CARACAS_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(now);
+  const year = parseInt(parts.find(p => p.type === 'year')!.value, 10);
+  const month = parseInt(parts.find(p => p.type === 'month')!.value, 10) - 1;
+  const day = parseInt(parts.find(p => p.type === 'day')!.value, 10);
+  const hour = parseInt(parts.find(p => p.type === 'hour')!.value, 10);
+  const minute = parseInt(parts.find(p => p.type === 'minute')!.value, 10);
+  const second = parseInt(parts.find(p => p.type === 'second')!.value, 10);
+  return new Date(Date.UTC(year, month, day, hour, minute, second));
 }
 
 function parseDateArg(dateStr: string): Date {
@@ -847,10 +880,12 @@ async function runSync(options: SyncOptions): Promise<void> {
 
   // If --recompute-only is set, skip ETL sync and only recompute scores
   if (recomputeOnly) {
-    const fromDate = options.from ?? formatDate(new Date());
-    const toDate = options.to ?? fromDate;
+    // Use Caracas timezone for default date range when --backfill is also specified
+    const caracasNow = getCaracasNow();
+    const fromDate = options.from ?? (backfill ? formatDate(new Date(caracasNow.getTime() - 90 * 86400000)) : formatDate(caracasNow));
+    const toDate = options.to ?? formatDate(caracasNow);
 
-    console.log(`[RECOMPUTE ONLY] Recomputing scores for ${fromDate} to ${toDate}`);
+    console.log(`[RECOMPUTE ONLY] Recomputing scores for ${fromDate} to ${toDate} (${backfill ? 'backfill 90 days' : 'single day'})`);
 
     const result = await recomputeDailyScores({
       userId: options.userId,
@@ -873,8 +908,9 @@ async function runSync(options: SyncOptions): Promise<void> {
   let dates: string[];
 
   if (backfill) {
-    // Backfill last 90 days
-    const end = new Date();
+    // Backfill last 90 days using Caracas timezone
+    const caracasNow = getCaracasNow();
+    const end = caracasNow;
     const start = new Date(end.getTime() - 90 * 86400000);
     dates = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
