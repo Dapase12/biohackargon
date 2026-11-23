@@ -76,31 +76,139 @@ const DEFAULT_CONFIG: EngineConfig = {
 // ALLOWED COLUMNS WHITELIST (92 production columns)
 // ========================================================================
 
-const ALLOWED_SCORES_COLUMNS = new Set<string>([
-  'log_date',
-  'ln_rmssd', 'ln_rmssd_14d_mean', 'ln_rmssd_14d_sd', 'hrv_z_score', 'rhr_z_score',
-  'recovery_score', 'recovery_status', 'cardio_trimp_load', 'neuromuscular_load',
-  'shift_orthostatic_load', 'strain_score', 'recommended_max_strain',
-  'sleep_efficiency_pct', 'sleep_architecture_score', 'cumulative_sleep_debt_hours',
-  'dynamic_sleep_need_hours', 'optimal_bedtime_start', 'optimal_bedtime_end',
-  'trend_weight_kg', 'trend_body_fat_pct', 'dynamic_tdee_kcal', 'target_kcal',
-  'target_protein_g', 'target_carbs_g', 'target_fat_g', 'clinical_coach_notes',
-  'computed_at', 'skeletal_muscle_pct', 'visceral_fat_index', 'body_water_pct',
-  'tmb_kcal', 'sleep_hours_vs_needed_pct', 'sleep_regularity_pct', 'high_sleep_stress_pct',
-  'vo2_max_ml_kg_min', 'argon_physiological_age', 'pace_of_aging_x',
-  'intake_kcal', 'intake_protein_g', 'intake_carbs_g', 'intake_fat_g',
-  'chronological_age', 'total_age_delta', 'delta_vo2_years', 'delta_rhr_years',
-  'delta_lnrmssd_years', 'delta_ffm_years', 'delta_sleep_years', 'delta_act_years',
-  'weight_kg', 'body_fat_pct', 'fat_mass_kg', 'ffm_kg', 'ffm_pct', 'muscle_mass_kg',
-  'bone_mass_kg', 'water_mass_kg', 'bmi', 'rmssd_ms', 'rmssd_14d_mean_ms',
-  'rhr_bpm', 'rhr_14d_mean_bpm', 'resp_rate_brpm', 'resp_14d_mean_brpm', 'spo2_pct',
-  'dynamic_rmssd_cap_ms', 'cv_lnrmssd_7d_pct', 'swc_lnrmssd', 'acwr_penalty_strain',
-  'calibrating', 'sleep_missing', 'hrv_missing', 'nap_sleep_min', 'time_in_bed_min',
-  'total_sleep_min', 'deep_sleep_min', 'rem_sleep_min', 'light_sleep_min',
-  'steps_net', 'session_rpe', 'hr_zones_minutes', 'z13_minutes', 'z45_minutes',
-  'is_hospital_shift', 'night_awake_shift_hours', 'tef_kcal', 'empirical_tdee_kcal',
-  'pickleball_or_gym_minutes', 'steps_count', 'meals_log_json', 'user_id',
+// ========================================================================
+// SCORES_COLUMN_SPECS — Strict typed validator for all 92 production columns
+// Matches information_schema.columns from production Supabase
+// Types: integer | numeric(p,s) | numeric | time | boolean | date | timestamptz | uuid | jsonb | text
+// ========================================================================
+
+type ColumnType =
+  | { kind: 'integer'; min?: number; max?: number }
+  | { kind: 'numeric'; precision?: number; scale?: number; min?: number; max?: number }
+  | { kind: 'time' }
+  | { kind: 'boolean' }
+  | { kind: 'date' }
+  | { kind: 'timestamptz' }
+  | { kind: 'uuid' }
+  | { kind: 'jsonb' }
+  | { kind: 'text' };
+
+export const SCORES_COLUMN_SPECS: ReadonlyMap<string, ColumnType> = new Map([
+  // 1 DATE column
+  ['log_date', { kind: 'date' }],
+
+  // 1 TIMESTAMPTZ column
+  ['computed_at', { kind: 'timestamptz' }],
+
+  // 1 UUID column
+  ['user_id', { kind: 'uuid' }],
+
+  // 2 TIME columns (HH:mm[:ss] format)
+  ['optimal_bedtime_start', { kind: 'time' }],
+  ['optimal_bedtime_end', { kind: 'time' }],
+
+  // 4 BOOLEAN columns
+  ['calibrating', { kind: 'boolean' }],
+  ['sleep_missing', { kind: 'boolean' }],
+  ['hrv_missing', { kind: 'boolean' }],
+  ['is_hospital_shift', { kind: 'boolean' }],
+
+  // 2 JSONB columns
+  ['hr_zones_minutes', { kind: 'jsonb' }],
+  ['meals_log_json', { kind: 'jsonb' }],
+
+  // 2 TEXT columns
+  ['recovery_status', { kind: 'text' }],
+  ['clinical_coach_notes', { kind: 'text' }],
+
+  // 28 INTEGER columns (PostgreSQL integer / smallint)
+  ['recovery_score', { kind: 'integer', min: 0, max: 100 }],
+  ['dynamic_tdee_kcal', { kind: 'integer', min: 0, max: 10000 }],
+  ['target_kcal', { kind: 'integer', min: 0, max: 10000 }],
+  ['target_protein_g', { kind: 'integer', min: 0, max: 500 }],
+  ['target_carbs_g', { kind: 'integer', min: 0, max: 1000 }],
+  ['target_fat_g', { kind: 'integer', min: 0, max: 500 }],
+  ['tmb_kcal', { kind: 'integer', min: 0, max: 10000 }],
+  ['sleep_hours_vs_needed_pct', { kind: 'integer', min: 0, max: 200 }],
+  ['sleep_regularity_pct', { kind: 'integer', min: 0, max: 100 }],
+  ['high_sleep_stress_pct', { kind: 'integer', min: 0, max: 100 }],
+  ['intake_kcal', { kind: 'integer', min: 0, max: 10000 }],
+  ['intake_protein_g', { kind: 'integer', min: 0, max: 500 }],
+  ['intake_carbs_g', { kind: 'integer', min: 0, max: 1000 }],
+  ['intake_fat_g', { kind: 'integer', min: 0, max: 500 }],
+  ['dynamic_rmssd_cap_ms', { kind: 'integer', min: 0, max: 2000 }],
+  ['nap_sleep_min', { kind: 'integer', min: 0, max: 1440 }],
+  ['time_in_bed_min', { kind: 'integer', min: 0, max: 1440 }],
+  ['total_sleep_min', { kind: 'integer', min: 0, max: 1440 }],
+  ['deep_sleep_min', { kind: 'integer', min: 0, max: 1440 }],
+  ['rem_sleep_min', { kind: 'integer', min: 0, max: 1440 }],
+  ['light_sleep_min', { kind: 'integer', min: 0, max: 1440 }],
+  ['steps_net', { kind: 'integer', min: -100000, max: 100000 }],
+  ['session_rpe', { kind: 'integer', min: 0, max: 10 }],
+  ['z13_minutes', { kind: 'integer', min: 0, max: 1440 }],
+  ['z45_minutes', { kind: 'integer', min: 0, max: 1440 }],
+  ['tef_kcal', { kind: 'integer', min: 0, max: 500 }],
+  ['empirical_tdee_kcal', { kind: 'integer', min: 0, max: 10000 }],
+  ['pickleball_or_gym_minutes', { kind: 'integer', min: 0, max: 1440 }],
+  ['steps_count', { kind: 'integer', min: 0, max: 200000 }],
+
+  // 22 NUMERIC columns with precision/scale (PostgreSQL numeric(p,s))
+  ['ln_rmssd', { kind: 'numeric', precision: 6, scale: 3, min: 0, max: 10 }],
+  ['ln_rmssd_14d_mean', { kind: 'numeric', precision: 6, scale: 3, min: 0, max: 10 }],
+  ['ln_rmssd_14d_sd', { kind: 'numeric', precision: 6, scale: 3, min: 0, max: 5 }],
+  ['hrv_z_score', { kind: 'numeric', precision: 4, scale: 2, min: -10, max: 10 }],
+  ['rhr_z_score', { kind: 'numeric', precision: 4, scale: 2, min: -10, max: 10 }],
+  ['cardio_trimp_load', { kind: 'numeric', precision: 7, scale: 2, min: 0, max: 10000 }],
+  ['neuromuscular_load', { kind: 'numeric', precision: 7, scale: 2, min: 0, max: 10000 }],
+  ['shift_orthostatic_load', { kind: 'numeric', precision: 7, scale: 2, min: 0, max: 10000 }],
+  ['strain_score', { kind: 'numeric', precision: 4, scale: 2, min: 0, max: 21 }],
+  ['recommended_max_strain', { kind: 'numeric', precision: 4, scale: 2, min: 0, max: 21 }],
+  ['sleep_efficiency_pct', { kind: 'numeric', precision: 5, scale: 2, min: 0, max: 100 }],
+  ['sleep_architecture_score', { kind: 'numeric', precision: 5, scale: 2, min: 0, max: 100 }],
+  ['cumulative_sleep_debt_hours', { kind: 'numeric', precision: 5, scale: 2, min: -100, max: 100 }],
+  ['dynamic_sleep_need_hours', { kind: 'numeric', precision: 4, scale: 2, min: 4, max: 12 }],
+  ['trend_weight_kg', { kind: 'numeric', precision: 5, scale: 2, min: 30, max: 200 }],
+  ['trend_body_fat_pct', { kind: 'numeric', precision: 5, scale: 2, min: 2, max: 60 }],
+  ['vo2_max_ml_kg_min', { kind: 'numeric', precision: 5, scale: 2, min: 10, max: 100 }],
+  ['argon_physiological_age', { kind: 'numeric', precision: 5, scale: 2, min: 10, max: 120 }],
+  ['pace_of_aging_x', { kind: 'numeric', precision: 4, scale: 2, min: 0.1, max: 5 }],
+  ['chronological_age', { kind: 'numeric', precision: 5, scale: 2, min: 0, max: 150 }],
+  ['total_age_delta', { kind: 'numeric', precision: 5, scale: 2, min: -50, max: 50 }],
+
+  // 29 NUMERIC columns unbounded (PostgreSQL numeric without precision/scale)
+  ['weight_kg', { kind: 'numeric', min: 20, max: 300 }],
+  ['body_fat_pct', { kind: 'numeric', min: 2, max: 60 }],
+  ['fat_mass_kg', { kind: 'numeric', min: 0, max: 200 }],
+  ['ffm_kg', { kind: 'numeric', min: 10, max: 150 }],
+  ['ffm_pct', { kind: 'numeric', min: 10, max: 100 }],
+  ['muscle_mass_kg', { kind: 'numeric', min: 5, max: 100 }],
+  ['bone_mass_kg', { kind: 'numeric', min: 1, max: 10 }],
+  ['water_mass_kg', { kind: 'numeric', min: 10, max: 100 }],
+  ['bmi', { kind: 'numeric', min: 10, max: 60 }],
+  ['rmssd_ms', { kind: 'numeric', min: 0, max: 300 }],
+  ['rmssd_14d_mean_ms', { kind: 'numeric', min: 0, max: 300 }],
+  ['rhr_bpm', { kind: 'numeric', min: 30, max: 120 }],
+  ['rhr_14d_mean_bpm', { kind: 'numeric', min: 30, max: 120 }],
+  ['resp_rate_brpm', { kind: 'numeric', min: 5, max: 50 }],
+  ['resp_14d_mean_brpm', { kind: 'numeric', min: 5, max: 50 }],
+  ['spo2_pct', { kind: 'numeric', min: 70, max: 100 }],
+  ['cv_lnrmssd_7d_pct', { kind: 'numeric', min: 0, max: 100 }],
+  ['swc_lnrmssd', { kind: 'numeric', min: 0, max: 5 }],
+  ['acwr_penalty_strain', { kind: 'numeric', min: 0, max: 21 }],
+  ['night_awake_shift_hours', { kind: 'numeric', min: 0, max: 24 }],
+  ['skeletal_muscle_pct', { kind: 'numeric', min: 0, max: 60 }],
+  ['visceral_fat_index', { kind: 'numeric', min: 0, max: 30 }],
+  ['body_water_pct', { kind: 'numeric', min: 30, max: 80 }],
+  ['delta_vo2_years', { kind: 'numeric', min: -50, max: 50 }],
+  ['delta_rhr_years', { kind: 'numeric', min: -50, max: 50 }],
+  ['delta_lnrmssd_years', { kind: 'numeric', min: -50, max: 50 }],
+  ['delta_ffm_years', { kind: 'numeric', min: -50, max: 50 }],
+  ['delta_sleep_years', { kind: 'numeric', min: -50, max: 50 }],
+  ['delta_act_years', { kind: 'numeric', min: -50, max: 50 }],
 ]);
+
+// Derived whitelist from specs (single source of truth)
+export const ALLOWED_SCORES_COLUMNS = new Set<string>(SCORES_COLUMN_SPECS.keys());
 
 // ========================================================================
 // UTILITIES
@@ -108,6 +216,7 @@ const ALLOWED_SCORES_COLUMNS = new Set<string>([
 
 // Integer columns in computed_daily_scores that must be rounded (not truncated)
 // Matches production schema: these are integer type in computed_daily_scores
+// Kept for backward compatibility with existing code
 export const INTEGER_SCORES_COLUMNS = new Set<string>([
   'recovery_score',
   'dynamic_tdee_kcal',
@@ -140,38 +249,260 @@ export const INTEGER_SCORES_COLUMNS = new Set<string>([
 ]);
 
 /**
- * Convert NaN/Infinity to null in an object recursively
- * Also rounds integer columns to avoid PostgreSQL 22P02 errors
+ * Strict validator & sanitizer using SCORES_COLUMN_SPECS
+ * Applies exact type rules for all 92 production columns:
+ * - integer: round + clamp to int32 range
+ * - numeric(p,s): round to scale decimal places + clamp to min/max
+ * - numeric: clamp to min/max
+ * - time: validate HH:mm[:ss] regex, null if invalid
+ * - boolean: coerce to boolean
+ * - date: validate YYYY-MM-DD
+ * - timestamptz: validate ISO 8601
+ * - uuid: validate UUID v4 format
+ * - jsonb: recursive NaN/Infinity → null
+ * - text: passthrough (max 10000 chars)
  */
-function sanitizeForDb(obj: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeForDb(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
+
   for (const [key, value] of Object.entries(obj)) {
-    if (typeof value === 'number' && (Number.isNaN(value) || !Number.isFinite(value))) {
+    // Skip columns not in production schema
+    const spec = SCORES_COLUMN_SPECS.get(key);
+    if (!spec) continue;
+
+    // Special handling for boolean: null/undefined -> false
+    if (spec.kind === 'boolean' && (value === null || value === undefined)) {
+      result[key] = false;
+      continue;
+    }
+
+    // Handle null/undefined for other types
+    if (value === null || value === undefined) {
       result[key] = null;
-    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
-      result[key] = sanitizeForDb(value as Record<string, unknown>);
-    } else if (Array.isArray(value)) {
-      result[key] = value.map(v =>
-        typeof v === 'number' && (Number.isNaN(v) || !Number.isFinite(v)) ? null :
-        v && typeof v === 'object' ? sanitizeForDb(v as Record<string, unknown>) : v
-      );
-    } else {
-      result[key] = value;
+      continue;
+    }
+
+    // Handle NaN/Infinity for numbers
+    if (typeof value === 'number') {
+      if (Number.isNaN(value) || !Number.isFinite(value)) {
+        result[key] = null;
+        continue;
+      }
+    }
+
+    // Apply type-specific validation & coercion
+    switch (spec.kind) {
+      case 'integer': {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          let rounded = Math.round(value);
+          // Clamp to int32 range and column-specific min/max
+          const min = spec.min ?? -2147483648;
+          const max = spec.max ?? 2147483647;
+          rounded = Math.max(min, Math.min(max, rounded));
+          result[key] = rounded;
+        } else if (typeof value === 'string') {
+          // Try to parse string numbers - empty string should be null
+          if (value.trim() === '') {
+            result[key] = null;
+          } else {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed)) {
+              let rounded = Math.round(parsed);
+              const min = spec.min ?? -2147483648;
+              const max = spec.max ?? 2147483647;
+              rounded = Math.max(min, Math.min(max, rounded));
+              result[key] = rounded;
+            } else {
+              result[key] = null;
+            }
+          }
+        } else {
+          result[key] = null;
+        }
+        break;
+      }
+
+      case 'numeric': {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          let num = value;
+          // Round to scale decimal places if precision/scale specified
+          if (spec.scale !== undefined) {
+            const factor = Math.pow(10, spec.scale);
+            num = Math.round(num * factor) / factor;
+          }
+          // Clamp to min/max
+          const min = spec.min ?? -1e15;
+          const max = spec.max ?? 1e15;
+          num = Math.max(min, Math.min(max, num));
+          result[key] = num;
+        } else if (typeof value === 'string') {
+          const parsed = Number(value);
+          if (Number.isFinite(parsed)) {
+            let num = parsed;
+            if (spec.scale !== undefined) {
+              const factor = Math.pow(10, spec.scale);
+              num = Math.round(num * factor) / factor;
+            }
+            const min = spec.min ?? -1e15;
+            const max = spec.max ?? 1e15;
+            num = Math.max(min, Math.min(max, num));
+            result[key] = num;
+          } else {
+            result[key] = null;
+          }
+        } else {
+          result[key] = null;
+        }
+        break;
+      }
+
+      case 'time': {
+        // Validate HH:mm[:ss] format
+        if (typeof value === 'string') {
+          const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/;
+          if (timeRegex.test(value)) {
+            result[key] = value;
+          } else {
+            result[key] = null; // Invalid time format → null
+          }
+        } else {
+          result[key] = null;
+        }
+        break;
+      }
+
+      case 'boolean': {
+        // Coerce to boolean - null/undefined becomes false
+        if (value === null || value === undefined) {
+          result[key] = false;
+        } else if (typeof value === 'boolean') {
+          result[key] = value;
+        } else if (typeof value === 'number') {
+          result[key] = value !== 0;
+        } else if (typeof value === 'string') {
+          const lower = value.toLowerCase();
+          result[key] = lower === 'true' || lower === '1' || lower === 'yes';
+        } else {
+          result[key] = false;
+        }
+        break;
+      }
+
+      case 'date': {
+        // Validate YYYY-MM-DD format
+        if (typeof value === 'string') {
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          if (dateRegex.test(value)) {
+            // Additional validation: check it's a valid date (no month/day overflow)
+            const [year, month, day] = value.split('-').map(Number);
+            const parsed = new Date(Date.UTC(year, month - 1, day));
+            if (!isNaN(parsed.getTime()) &&
+                parsed.getUTCFullYear() === year &&
+                parsed.getUTCMonth() === month - 1 &&
+                parsed.getUTCDate() === day) {
+              result[key] = value;
+            } else {
+              result[key] = null;
+            }
+          } else {
+            result[key] = null;
+          }
+        } else if (value instanceof Date) {
+          result[key] = value.toISOString().split('T')[0];
+        } else {
+          result[key] = null;
+        }
+        break;
+      }
+
+      case 'timestamptz': {
+        // Validate ISO 8601 datetime
+        if (typeof value === 'string') {
+          const parsed = new Date(value);
+          if (!isNaN(parsed.getTime())) {
+            result[key] = parsed.toISOString();
+          } else {
+            result[key] = null;
+          }
+        } else if (value instanceof Date) {
+          result[key] = value.toISOString();
+        } else {
+          result[key] = null;
+        }
+        break;
+      }
+
+      case 'uuid': {
+        // Validate UUID format (any version)
+        if (typeof value === 'string') {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (uuidRegex.test(value)) {
+            result[key] = value.toLowerCase();
+          } else {
+            result[key] = null;
+          }
+        } else {
+          result[key] = null;
+        }
+        break;
+      }
+
+      case 'jsonb': {
+        // Recursively sanitize JSONB: NaN/Infinity → null
+        if (value && typeof value === 'object') {
+          result[key] = sanitizeJsonb(value);
+        } else {
+          result[key] = null;
+        }
+        break;
+      }
+
+      case 'text': {
+        // Passthrough with length limit
+        if (typeof value === 'string') {
+          result[key] = value.length > 10000 ? value.slice(0, 10000) : value;
+        } else if (value === null || value === undefined) {
+          result[key] = null;
+        } else {
+          result[key] = String(value);
+        }
+        break;
+      }
+
+      default: {
+        // Exhaustive check - should never reach here
+        result[key] = value;
+      }
     }
   }
-  // Round integer columns if they have decimals
-  for (const [key, value] of Object.entries(result)) {
-    if (INTEGER_SCORES_COLUMNS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
-      result[key] = Math.round(value);
-    }
-  }
+
   return result;
+}
+
+/**
+ * Recursively sanitize JSONB values: NaN/Infinity → null
+ */
+function sanitizeJsonb(value: unknown): unknown {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitizeJsonb);
+  }
+  if (value && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      result[k] = sanitizeJsonb(v);
+    }
+    return result;
+  }
+  return value;
 }
 
 /**
  * Filter payload to only allowed columns
  */
-function filterAllowedColumns(payload: Record<string, unknown>): Record<string, unknown> {
+export function filterAllowedColumns(payload: Record<string, unknown>): Record<string, unknown> {
   const filtered: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(payload)) {
     if (ALLOWED_SCORES_COLUMNS.has(key)) {
@@ -179,6 +510,27 @@ function filterAllowedColumns(payload: Record<string, unknown>): Record<string, 
     }
   }
   return filtered;
+}
+
+/**
+ * Normalize habitual_wake to HH:mm format with safe fallback
+ * Root cause of "NaN:NaN": habitual_wake was null/undefined/empty from profiles,
+ * causing computeEngine to produce NaN bedtime calculations.
+ */
+export function normalizeHabitualWake(raw: string | null | undefined): string {
+  if (!raw || typeof raw !== 'string' || raw.trim() === '') {
+    return '07:00'; // Safe default: 7 AM
+  }
+  const trimmed = raw.trim();
+  // Validate HH:mm or HH:mm:ss format
+  const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/;
+  if (timeRegex.test(trimmed)) {
+    // Return HH:mm (strip seconds if present)
+    return trimmed.slice(0, 5);
+  }
+  // Invalid format → fallback
+  console.warn(`[RECOMPUTE] Invalid habitual_wake format "${raw}", using fallback 07:00`);
+  return '07:00';
 }
 
 /**
@@ -204,12 +556,15 @@ async function fetchUserProfile(supabase: SupabaseClient, userId: string): Promi
     age--;
   }
 
+  // Normalize habitual_wake with safe fallback (fixes NaN:NaN root cause)
+  const habitualWake = normalizeHabitualWake(data.habitual_wake);
+
   return {
     birth: data.birth_date,
     height_m: Number(data.height_m),
     timezone: data.timezone,
     basalSleepNeedH: Number(data.basal_sleep_need_h) || 7.5,
-    habitualWake: data.habitual_wake,
+    habitualWake,
     goalWeightKg: data.goal_weight_kg ? Number(data.goal_weight_kg) : undefined,
     goalDate: data.goal_date ?? undefined,
     dailyDeficitKcal: Number(data.daily_deficit_kcal) || 500,
@@ -432,9 +787,10 @@ export async function recomputeDailyScores(options: RecomputeOptions): Promise<{
     }
 
     // Upsert to computed_daily_scores
+    // FIX: Production PK is log_date only (not user_id,log_date)
     const { error } = await supabase
       .from('computed_daily_scores')
-      .upsert(payload, { onConflict: 'user_id,log_date' });
+      .upsert(payload, { onConflict: 'log_date' });
 
     if (error) {
       failed++;
